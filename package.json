@@ -1,0 +1,30 @@
+{
+  "name": "pulumi-homelab",
+  "description": "Pulumi resources for a Linux machine you own: desired state over SSH, with real drift detection.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pulumi/pulumi": "^3.140.0",
+    "@pulumi/command": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "main": "src/index.ts",
+  "keywords": [
+    "pulumi",
+    "homelab",
+    "ssh",
+    "linux",
+    "systemd",
+    "apt",
+    "configuration-management"
+  ]
+}
