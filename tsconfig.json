@@ -3,6 +3,11 @@
     "target": "es2022",
     "module": "esnext",
     "moduleResolution": "bundler",
+    // Relative imports carry their .ts extension. That is what lets plain
+    // `node --experimental-strip-types` load this package with no build step, which is how the
+    // audit runs from a two-line script rather than only inside a Pulumi program. A consumer
+    // compiling these sources through a `link:` dependency needs the same flag.
+    "allowImportingTsExtensions": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,

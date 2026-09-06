@@ -1,5 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
-import { asRoot, ask, must, shellQuote, type Host } from '../ssh';
+import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
+import { providerChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A package that should be installed.
@@ -35,7 +36,7 @@ interface AptPackageState {
 }
 
 /** What dpkg says about it, or null when it is not installed. */
-export async function readPackage(host: Host, name: string): Promise<string | null> {
+export async function readPackage(host: Target, name: string): Promise<string | null> {
   // dpkg-query exits non-zero for a package it has never heard of, which is an answer and not a
   // fault. It also reports packages that are known but removed, hence the status check.
   const asked = await ask(host, `dpkg-query -W -f='\${db:Status-Status} \${Version}' ${shellQuote(name)} 2>/dev/null`);
@@ -44,12 +45,12 @@ export async function readPackage(host: Host, name: string): Promise<string | nu
   return status === 'installed' ? (version ?? '') : null;
 }
 
-function providerFor(host: Host): pulumi.dynamic.ResourceProvider<AptPackageArgs, AptPackageState> {
+function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackageArgs, AptPackageState> {
   const install = async (args: AptPackageArgs): Promise<string> => {
     const refresh = args.update ? 'apt-get update -qq && ' : '';
     // noninteractive or a package with a config prompt hangs the deployment for ever behind a
     // dialogue nobody can see, let alone answer
-    await must(host, asRoot(
+    await must(host, escalate(host,
       `${refresh}DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${shellQuote(args.name)}`,
     ));
     const version = await readPackage(host, args.name);
@@ -81,7 +82,8 @@ function providerFor(host: Host): pulumi.dynamic.ResourceProvider<AptPackageArgs
 
     async diff(_id, old, args) {
       return {
-        changes: old.name !== args.name || old.update !== (args.update ?? false),
+        changes: providerChanged(old, args)
+          || old.name !== args.name || old.update !== (args.update ?? false),
         replaces: old.name !== args.name ? ['name'] : [],
         stables: [],
         deleteBeforeReplace: false,
@@ -92,7 +94,7 @@ function providerFor(host: Host): pulumi.dynamic.ResourceProvider<AptPackageArgs
       // purge rather than remove, so configuration does not linger to surprise a later install.
       // Autoremove is deliberately not run: it reaches beyond this resource and could take out a
       // dependency something undeclared on the machine still needs.
-      await must(host, asRoot(`DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq ${shellQuote(id)}`));
+      await must(host, escalate(host, `DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq ${shellQuote(id)}`));
     },
   };
 }
@@ -102,7 +104,7 @@ export class AptPackage extends pulumi.dynamic.Resource {
   declare readonly name: pulumi.Output<string>;
   declare readonly version: pulumi.Output<string>;
 
-  constructor(name: string, host: Host, args: AptPackageArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { version: undefined, update: false, ...args }, opts);
+  constructor(name: string, host: Target, args: AptPackageArgs, opts?: pulumi.CustomResourceOptions) {
+    super(providerFor(host), name, { version: undefined, update: false, ...args }, withLegacyAlias(opts), 'homelab', 'AptPackage');
   }
 }

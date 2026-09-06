@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { asRoot, heredoc, shellQuote } from './ssh';
+import { asRoot, escalate, heredoc, shellQuote, sshArgs } from './ssh.ts';
 
 /**
  * Everything sent to the machine goes through quoting: file contents, unit definitions, package
@@ -61,5 +61,81 @@ describe('running as root', () => {
 
   it('refuses to sit and wait for a password, because a deployment cannot answer one', () => {
     expect(asRoot('true')).toContain('-n');
+  });
+});
+
+/**
+ * Authentication and privilege escalation are separate steps, and treating them as one made a
+ * transport decision look like a law: with `sudo -n` as the only option, this provider could adopt
+ * a machine that already had passwordless sudo and could never bootstrap a fresh one — which is
+ * exactly the machine you have after an SD card dies.
+ */
+describe('becoming root, on a machine that says how', () => {
+  const host = { address: '198.51.100.10', user: 'admin' };
+
+  it('uses sudo -n by default, which fails rather than waiting for a password', () => {
+    expect(escalate(host, 'true')).toBe(asRoot('true'));
+    expect(escalate(host, 'true')).toContain('-n');
+  });
+
+  it('prepends nothing at all when the connection is already root', () => {
+    // and does not wrap it in sh -c either: there is nothing to escalate, so there is nothing to
+    // quote, and an extra shell is one more thing between the code and the machine
+    expect(escalate({ ...host, user: 'root', become: 'none' }, 'rm -f /x && echo done'))
+      .toBe('rm -f /x && echo done');
+  });
+
+  it('uses sudo -S with a password, and keeps the password out of the command', () => {
+    const command = escalate({ ...host, become: { password: 'hunter2' } }, 'true');
+    expect(command).toContain('sudo -S');
+    // the password goes down ssh's stdin: anything on the command line is readable by every user on
+    // the machine through `ps`, which is worse than the problem it solves
+    expect(command).not.toContain('hunter2');
+  });
+
+  it('silences sudo’s prompt, which would otherwise be quoted back inside an error', () => {
+    expect(escalate({ ...host, become: { password: 'x' } }, 'true')).toContain("-p ''");
+  });
+
+  it('still passes the whole command as one argument, however it escalates', () => {
+    for (const become of ['sudo', { password: 'x' }] as const) {
+      expect(escalate({ ...host, become }, 'a && b')).toContain("'a && b'");
+    }
+  });
+});
+
+/**
+ * Pulumi refreshes resources in parallel, so a stack of any size opens its connections within a
+ * second or two of each other. Twenty-one of them trips sshd's default `MaxStartups 10:30:100` and
+ * most of the run dies with `kex_exchange_identification: read: Connection reset by peer`, which
+ * reads as a network fault rather than a limit. It happened on the first real refresh.
+ */
+describe('not opening a connection per question', () => {
+  const host = { address: '198.51.100.10', user: 'admin' };
+
+  it('reuses one connection for every command', () => {
+    const args = sshArgs(host, 'true');
+    expect(args).toContain('ControlMaster=auto');
+    expect(args).toContain('ControlPersist=60s');
+  });
+
+  it('keeps the control socket short, since a unix path has about a hundred characters', () => {
+    // a home directory plus a long hostname can exceed it, and the error nobody reads correctly
+    const path = sshArgs(host, 'true').find((arg) => arg.startsWith('ControlPath='));
+    expect(path).toBe('ControlPath=/tmp/pulumi-homelab-%C');
+  });
+
+  it('still refuses to wait for a password nobody can type', () => {
+    expect(sshArgs(host, 'true')).toContain('BatchMode=yes');
+  });
+
+  it('puts the command last, after the destination', () => {
+    const args = sshArgs(host, 'systemctl show player');
+    expect(args[args.length - 2]).toBe('admin@198.51.100.10');
+    expect(args[args.length - 1]).toBe('systemctl show player');
+  });
+
+  it('takes the timeout from the host, so a slow link can say so', () => {
+    expect(sshArgs({ ...host, timeout: 30 }, 'true')).toContain('ConnectTimeout=30');
   });
 });

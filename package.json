@@ -4,11 +4,14 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run && node --experimental-strip-types scripts/serialise-check.ts",
+    "test:unit": "vitest run",
+    "check:serialise": "node --experimental-strip-types scripts/serialise-check.ts"
   },
   "dependencies": {
+    "@pulumi/command": "^1.0.1",
     "@pulumi/pulumi": "^3.140.0",
-    "@pulumi/command": "^1.0.1"
+    "@pulumi/kubernetes": "^4.34.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -16,15 +19,17 @@
     "vitest": "^3.0.0"
   },
   "version": "0.1.0",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "main": "src/index.ts",
   "keywords": [
-    "pulumi",
-    "homelab",
-    "ssh",
-    "linux",
-    "systemd",
     "apt",
-    "configuration-management"
+    "configuration-management",
+    "flux",
+    "homelab",
+    "kubernetes",
+    "linux",
+    "pulumi",
+    "ssh",
+    "systemd"
   ]
 }

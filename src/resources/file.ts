@@ -1,5 +1,7 @@
 import * as pulumi from '@pulumi/pulumi';
-import { asRoot, ask, heredoc, must, shellQuote, type Host } from '../ssh';
+import { normaliseMode } from '../mode.ts';
+import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
+import { providerChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A file on the managed machine, with its content, owner and mode.
@@ -20,6 +22,18 @@ export interface FileArgs {
   mode?: string;
   owner?: string;
   group?: string;
+  /**
+   * Run `systemctl daemon-reload` after writing.
+   *
+   * For the case `SystemdUnit` refuses: a **static** unit, one with no `[Install]` section, cannot
+   * be enabled and so cannot be described by that resource at all. Writing it as a file works and
+   * reads back correctly, but systemd caches unit files and would go on running the old one —
+   * the file managed, and the daemon never told.
+   *
+   * Off by default because most files are not units, and a reload on every deployment that touches
+   * an unrelated file is noise.
+   */
+  reloadSystemd?: boolean;
 }
 
 interface FileState extends FileArgs {
@@ -28,14 +42,15 @@ interface FileState extends FileArgs {
   mode: string;
   owner: string;
   group: string;
+  reloadSystemd: boolean;
 }
 
-const DEFAULTS = { mode: '0644', owner: 'root', group: 'root' } as const;
+const DEFAULTS = { mode: '0644', owner: 'root', group: 'root', reloadSystemd: false } as const;
 
 /** What the machine says is there now, or null where there is no such file. */
-export async function readFile(host: Host, path: string): Promise<FileState | null> {
+export async function readFile(host: Target, path: string): Promise<Omit<FileState, 'reloadSystemd'> | null> {
   // one round trip for all four questions: an ssh handshake costs far more than the work
-  const asked = await ask(host, asRoot(
+  const asked = await ask(host, escalate(host,
     `test -f ${shellQuote(path)} || exit 9; ` +
     `stat -c '%a %U %G' ${shellQuote(path)} && cat ${shellQuote(path)}`,
   ));
@@ -46,9 +61,7 @@ export async function readFile(host: Host, path: string): Promise<FileState | nu
   const [mode = '', owner = '', group = ''] = asked.out.slice(0, split).trim().split(/\s+/);
   return {
     path,
-    // stat gives '644' where we write '0644'; comparing those as strings would report drift on
-    // every refresh for ever, on a file nobody had touched
-    mode: mode.length === 3 ? `0${mode}` : mode,
+    mode: normaliseMode(mode),
     owner,
     group,
     content: asked.out.slice(split + 1),
@@ -56,13 +69,14 @@ export async function readFile(host: Host, path: string): Promise<FileState | nu
 }
 
 /** Put it there, exactly as described. */
-export async function writeFile(host: Host, args: FileState): Promise<void> {
+export async function writeFile(host: Target, args: Omit<FileState, 'reloadSystemd'> & { reloadSystemd?: boolean }): Promise<void> {
   const parent = args.path.replace(/\/[^/]*$/, '') || '/';
-  await must(host, asRoot(
+  await must(host, escalate(host,
     `mkdir -p ${shellQuote(parent)} && ` +
     `${heredoc(args.path, args.content)}\n` +
     `chmod ${args.mode} ${shellQuote(args.path)} && ` +
-    `chown ${args.owner}:${args.group} ${shellQuote(args.path)}`,
+    `chown ${args.owner}:${args.group} ${shellQuote(args.path)}` +
+    (args.reloadSystemd ? ' && systemctl daemon-reload' : ''),
   ));
 }
 
@@ -73,7 +87,7 @@ export async function writeFile(host: Host, args: FileState): Promise<void> {
  * replacement is legible in a preview: moving a file is a different act from editing one, and only
  * the first needs the old one deleted.
  */
-function providerFor(host: Host): pulumi.dynamic.ResourceProvider<FileArgs, FileState> {
+function providerFor(host: Target): pulumi.dynamic.ResourceProvider<FileArgs, FileState> {
   return {
     async create(args) {
       const wanted = { ...DEFAULTS, ...args };
@@ -85,12 +99,22 @@ function providerFor(host: Host): pulumi.dynamic.ResourceProvider<FileArgs, File
       const actual = await readFile(host, id);
       // gone from the machine entirely: Pulumi drops it from the state and the next up recreates it
       if (!actual) return { id: undefined, props: undefined };
-      return { id, props: { ...state, ...actual } };
+      // reloadSystemd first: it is a behaviour rather than a fact about the file, so the read
+      // cannot supply it and the covering spread has to come from somewhere
+      return { id, props: { reloadSystemd: state?.reloadSystemd ?? false, ...state, ...actual } };
     },
 
     async update(id, _old, args) {
       const wanted = { ...DEFAULTS, ...args };
-      await writeFile(host, wanted);
+      const current = await readFile(host, id);
+      // an update that changes nothing must do nothing. Rewriting identical content is not harmless
+      // here: it moves the mtime, and with reloadSystemd it reloads the daemon for no reason
+      const same = current
+        && current.content === wanted.content
+        && current.mode === wanted.mode
+        && current.owner === wanted.owner
+        && current.group === wanted.group;
+      if (!same) await writeFile(host, wanted);
       return { outs: wanted };
     },
 
@@ -101,8 +125,10 @@ function providerFor(host: Host): pulumi.dynamic.ResourceProvider<FileArgs, File
       if (old.mode !== wanted.mode) changed.push('mode');
       if (old.owner !== wanted.owner) changed.push('owner');
       if (old.group !== wanted.group) changed.push('group');
+      if (old.reloadSystemd !== wanted.reloadSystemd) changed.push('reloadSystemd');
       return {
-        changes: changed.length > 0 || old.path !== wanted.path,
+        changes: providerChanged(old, args)
+          || changed.length > 0 || old.path !== wanted.path,
         // a file at a new path is a new file; editing one in place is not
         replaces: old.path !== wanted.path ? ['path'] : [],
         stables: [],
@@ -111,7 +137,7 @@ function providerFor(host: Host): pulumi.dynamic.ResourceProvider<FileArgs, File
     },
 
     async delete(id) {
-      await must(host, asRoot(`rm -f ${shellQuote(id)}`));
+      await must(host, escalate(host, `rm -f ${shellQuote(id)}`));
     },
   };
 }
@@ -121,7 +147,7 @@ export class ManagedFile extends pulumi.dynamic.Resource {
   declare readonly path: pulumi.Output<string>;
   declare readonly content: pulumi.Output<string>;
 
-  constructor(name: string, host: Host, args: FileArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { mode: DEFAULTS.mode, owner: DEFAULTS.owner, group: DEFAULTS.group, ...args }, opts);
+  constructor(name: string, host: Target, args: FileArgs, opts?: pulumi.CustomResourceOptions) {
+    super(providerFor(host), name, { ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'ManagedFile');
   }
 }

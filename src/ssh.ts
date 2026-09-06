@@ -1,7 +1,49 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const run = promisify(execFile);
+/**
+ * `execFile` as a promise — written out by hand, and importing child_process *inside* the function.
+ *
+ * Both halves of that are forced by the same thing, and it is worth writing down because nothing
+ * about the code looks like it matters. Pulumi serialises a dynamic provider's entire closure into
+ * the state file, so **everything a provider function can reach has to be serialisable**, and the
+ * serialiser walks every captured variable to find out.
+ *
+ * - `promisify(execFile)` fails: on current Node, `promisify` is built on
+ *   `Promise.withResolvers`, which is native code and cannot be captured.
+ * - Importing `execFile` at the top of this file and calling it here fails too, for the same reason
+ *   one level further down — the serialiser follows the captured binding into child_process and
+ *   reaches `ArrayPrototypeSlice` inside `normalizeExecFileArgs`.
+ *
+ * A dynamic `import()` in the body is neither of those. It is syntax rather than a captured
+ * variable, so there is nothing for the serialiser to walk into, and it works unchanged under both
+ * ESM and CommonJS at runtime — which matters because this package is loaded both ways: by Pulumi,
+ * and by anyone running the audit from a plain node script. Node caches the module, so the import
+ * costs nothing after the first call.
+ *
+ * The symptom this prevents is worth recognising: `pulumi preview` failing before it opens a single
+ * connection, with an error naming `bound withResolvers` and nothing at all about ssh.
+ *
+ * Nothing about the contract changes. The rejection carries `stdout` and `stderr` alongside the
+ * error's own `code`, because `ask` reads all three — a command that answers "no" on exit 1 still
+ * has output worth having, and telling that apart from ssh's own 255 is the whole distinction
+ * between an answer and a fault.
+ */
+function run(
+  file: string,
+  args: string[],
+  options: { maxBuffer: number },
+  stdin?: string,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    import('node:child_process').then(({ execFile }) => {
+      const child = execFile(file, args, options, (error, stdout, stderr) => {
+        if (error) reject(Object.assign(error, { stdout, stderr }));
+        else resolve({ stdout, stderr });
+      });
+      // the password goes down ssh's own stdin to `sudo -S`, so it never appears in the command
+      // line and never shows up in `ps` on the machine being managed
+      if (stdin !== undefined) child.stdin?.end(stdin);
+    }, reject);
+  });
+}
 
 /**
  * Running a command on the machine being managed.
@@ -17,6 +59,79 @@ export interface Host {
   user: string;
   /** Seconds before a silent host is called dead, rather than hanging a deployment for ever. */
   timeout?: number;
+  /**
+   * How a command becomes root on this machine. Defaults to `'sudo'`.
+   *
+   * **This exists because the alternative was a lie about what is possible.** With `sudo -n` as the
+   * only option, this provider could never write `/etc/sudoers.d` on a machine that did not already
+   * have passwordless sudo — so it could adopt a configured machine and never bootstrap a fresh
+   * one, which is precisely the case that matters when an SD card has died and the replacement was
+   * just flashed. Authentication and privilege escalation are separate steps, and treating them as
+   * one made a transport decision look like a law.
+   *
+   * - `'sudo'` — `sudo -n`, which never prompts and fails instead. The default, and the right
+   *   answer on a machine that is already set up: a prompt nobody can answer is a deployment that
+   *   hangs for ever, which is the failure `-n` exists to prevent.
+   * - `'none'` — the connection is already root, so nothing is prepended. For `root@host`, which
+   *   means enabling root ssh login: plenty of people would call that worse than the problem, and
+   *   it is offered rather than recommended.
+   * - `{ password }` — `sudo -S`, with the password written to ssh's stdin rather than put on the
+   *   command line, where every user on the machine could read it out of `ps`. Keep it in Pulumi
+   *   config as a secret; it is in the state file either way.
+   */
+  become?: 'sudo' | 'none' | { password: string };
+}
+
+/**
+ * How a command reaches a machine.
+ *
+ * Every resource in this package took a `Host` and therefore assumed ssh. As an interface, the same
+ * `ManagedFile`, `SystemdUnit` and `AptPackage` work against a container, a chroot, a host behind a
+ * bastion, or the machine the program is running on — without one resource changing.
+ *
+ * **It is possible only because the implementations ship inside this package.** A provider's
+ * closure is serialised into the state file and evaluated again, so only data survives that trip: a
+ * consumer can hand a resource `{ address, user }` and cannot hand it an object with methods,
+ * however well typed. Inside the package the methods travel with the closure, which is what makes
+ * this shape work here and not across the boundary.
+ *
+ * The immediate use is not hypothetical. A local transport lets this package's own tests exercise
+ * resources against a temporary directory rather than against fixtures — and every finding that
+ * cost a bug today came through exactly that gap: `sshd -T` printing `without-password`,
+ * `systemctl show` answering in its own order, `stat` saying `644`.
+ */
+export interface Transport {
+  ask(command: string): Promise<Ran>;
+  /** Wrap a command so it runs as root, however that is done here. */
+  escalate(command: string): string;
+  /** For error messages: `chris@192.168.0.47`, `local`, `container:abc123`. */
+  describe(): string;
+}
+
+/** Anything a resource can be pointed at: an ssh host, or a transport of its own. */
+export type Target = Host | Transport;
+
+/** Whether this is a transport rather than the ssh host struct. */
+const isTransport = (target: Target): target is Transport =>
+  typeof (target as Transport).ask === 'function';
+
+/** What to call the machine in an error message. */
+export function describe(target: Target): string {
+  return isTransport(target) ? target.describe() : `${target.user}@${target.address}`;
+}
+
+/**
+ * The ssh transport, which is what a plain `Host` becomes.
+ *
+ * A factory rather than a class: a plain object of module-scope functions serialises into the state
+ * file, and a class instance is a thing the serialiser has to reconstruct rather than a value.
+ */
+export function sshTransport(host: Host): Transport {
+  return {
+    ask: (command) => askOver(host, command),
+    escalate: (command) => escalateOn(host, command),
+    describe: () => `${host.user}@${host.address}`,
+  };
 }
 
 export interface Ran {
@@ -28,6 +143,50 @@ export interface Ran {
 const CONNECT_SECONDS = 10;
 
 /**
+ * Reuse one ssh connection for every command, instead of opening one per question.
+ *
+ * A refresh asks every resource at once, and Pulumi runs them in parallel — so twenty-one resources
+ * open twenty-one connections within a second or two, and sshd's default `MaxStartups 10:30:100`
+ * starts refusing them. The failure arrives as `kex_exchange_identification: read: Connection reset
+ * by peer` on most of the run, which reads as a network fault rather than as a limit being hit, and
+ * the obvious fix — `--parallel 4` — makes every user of this provider slower to work around a
+ * setting on the machine.
+ *
+ * Multiplexing fixes it at the source. The first command opens a master connection and every
+ * command after it travels down the same one, so twenty-one resources cost one handshake rather
+ * than twenty-one. That also makes a refresh substantially faster, since a handshake costs far more
+ * than any of the work this provider asks a machine to do.
+ *
+ * `ControlPersist=60s` keeps the master alive briefly after the last command, which is what lets a
+ * separate `pulumi refresh` and `pulumi up` moments apart share it. The socket lives in /tmp under a
+ * hash of the destination, because a unix socket path has about a hundred characters to work with
+ * and a home directory plus a long hostname can exceed it — an error nobody ever reads correctly.
+ */
+const MULTIPLEXING = [
+  '-o', 'ControlMaster=auto',
+  '-o', 'ControlPath=/tmp/pulumi-homelab-%C',
+  '-o', 'ControlPersist=60s',
+];
+
+/**
+ * The arguments ssh is actually given.
+ *
+ * Its own function so the options that matter can be asserted rather than assumed. Two of the four
+ * are there because of a specific failure: `BatchMode` so a machine that wants a password fails
+ * instead of waiting for one nobody can type, and the multiplexing so a parallel refresh does not
+ * open a connection per resource and trip sshd's startup limit.
+ */
+export function sshArgs(host: Host, command: string): string[] {
+  return [
+    '-o', 'BatchMode=yes',
+    '-o', `ConnectTimeout=${host.timeout ?? CONNECT_SECONDS}`,
+    ...MULTIPLEXING,
+    `${host.user}@${host.address}`,
+    command,
+  ];
+}
+
+/**
  * Run a command and hand back what happened, including a non-zero exit.
  *
  * A failing command is not automatically an error here, and that is deliberate: half of what this
@@ -35,15 +194,11 @@ const CONNECT_SECONDS = 10;
  * the answer "no" arrives as exit code 1. Only the caller knows which failures are answers and
  * which are faults, so the decision belongs to it.
  */
-export async function ask(host: Host, command: string): Promise<Ran> {
-  const args = [
-    '-o', 'BatchMode=yes',
-    '-o', `ConnectTimeout=${host.timeout ?? CONNECT_SECONDS}`,
-    `${host.user}@${host.address}`,
-    command,
-  ];
+async function askOver(host: Host, command: string): Promise<Ran> {
+  const secret = typeof host.become === 'object' ? `${host.become.password}\n` : undefined;
+  const args = sshArgs(host, command);
   try {
-    const { stdout, stderr } = await run('ssh', args, { maxBuffer: 16 * 1024 * 1024 });
+    const { stdout, stderr } = await run('ssh', args, { maxBuffer: 16 * 1024 * 1024 }, secret);
     return { code: 0, out: stdout, err: stderr };
   } catch (thrown) {
     const failure = thrown as { code?: number; stdout?: string; stderr?: string; message?: string };
@@ -57,10 +212,10 @@ export async function ask(host: Host, command: string): Promise<Ran> {
 }
 
 /** Run a command and insist it worked, for the half of the job that is doing rather than asking. */
-export async function must(host: Host, command: string): Promise<string> {
-  const ran = await ask(host, command);
+export async function must(target: Target, command: string): Promise<string> {
+  const ran = await ask(target, command);
   if (ran.code !== 0) {
-    throw new Error(`\`${command}\` failed on ${host.address} (exit ${ran.code}): ${ran.err.trim() || ran.out.trim()}`);
+    throw new Error(`\`${command}\` failed on ${describe(target)} (exit ${ran.code}): ${ran.err.trim() || ran.out.trim()}`);
   }
   return ran.out;
 }
@@ -74,6 +229,24 @@ export async function must(host: Host, command: string): Promise<string> {
  */
 export function asRoot(command: string): string {
   return `sudo -n sh -c ${shellQuote(command)}`;
+}
+
+/**
+ * The same, for a machine that says how it escalates.
+ *
+ * `asRoot` is the no-host form and assumes `sudo -n`, which is right for the common case and wrong
+ * for the case this provider could not previously reach at all. Everything inside this package goes
+ * through here instead, so a `Host` that connects as root or carries a sudo password works
+ * everywhere rather than in the resources somebody remembered to change.
+ */
+function escalateOn(host: Host, command: string): string {
+  if (host.become === 'none') return command;
+  if (typeof host.become === 'object') {
+    // -S reads the password from stdin, which `ask` supplies; -p '' stops sudo writing a prompt
+    // into stderr where it would end up quoted back in an error message
+    return `sudo -S -p '' sh -c ${shellQuote(command)}`;
+  }
+  return asRoot(command);
 }
 
 /**
@@ -97,7 +270,36 @@ export function shellQuote(text: string): string {
  * the file would arrive subtly wrong rather than obviously broken.
  */
 export function heredoc(path: string, content: string): string {
+  return heredocInto(shellQuote(path), content);
+}
+
+/**
+ * The same, for a destination that is a shell expression rather than a literal path.
+ *
+ * `heredoc` quotes what it is given, which is right for a path and wrong for `"$staging"` — a
+ * quoted `$staging` is a file called `$staging`, and the write silently goes somewhere nobody meant.
+ * Anything that writes to a temporary file it made with `mktemp` needs this one, and takes on the
+ * job of quoting the destination itself.
+ */
+export function heredocInto(target: string, content: string): string {
   const edge = 'PULUMI_EOF';
   const body = content.endsWith('\n') ? content : `${content}\n`;
-  return `cat > ${shellQuote(path)} <<'${edge}'\n${body}${edge}`;
+  return `cat > ${target} <<'${edge}'\n${body}${edge}`;
+}
+
+
+/**
+ * Run a command and hand back what happened, whatever the machine is reached through.
+ *
+ * The `Host` struct is accepted directly so that every existing call site keeps working: it is
+ * turned into an ssh transport here rather than at each of the two hundred places that ask a
+ * question.
+ */
+export async function ask(target: Target, command: string): Promise<Ran> {
+  return isTransport(target) ? target.ask(command) : askOver(target, command);
+}
+
+/** Wrap a command so it runs as root, by whatever means this target has. */
+export function escalate(target: Target, command: string): string {
+  return isTransport(target) ? target.escalate(command) : escalateOn(target, command);
 }

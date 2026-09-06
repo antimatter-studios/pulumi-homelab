@@ -22,8 +22,145 @@
  * way is reproducible in the parts you modelled and no further.
  */
 
-export { ask, must, asRoot, shellQuote, heredoc, type Host, type Ran } from './ssh';
-export { ManagedFile, readFile, writeFile, type FileArgs } from './resources/file';
-export { AptPackage, readPackage, type AptPackageArgs } from './resources/apt';
-export { SystemdUnit, readUnit, type SystemdUnitArgs } from './resources/systemd';
-export { User, readUser, type UserArgs } from './resources/user';
+export { ask, must, asRoot, escalate, shellQuote, heredoc, heredocInto, sshArgs, type Host, type Ran } from './ssh.ts';
+export { sshTransport, describe, type Transport, type Target } from './ssh.ts';
+export { localTransport, type LocalOptions } from './local.ts';
+export { disagreeing, type Resolved, type FileOnHost } from './resolved.ts';
+export { normaliseMode } from './mode.ts';
+export { FluxApp, ignoreRules, type FluxAppArgs } from './flux/index.ts';
+export { fluxReady, fluxReason, type FluxCheckArgs } from './flux/ready.ts';
+export { providerChanged, withLegacyAlias } from './upgrade.ts';
+export { mountedAt } from './checks.ts';
+export { ManagedFile, readFile, writeFile, type FileArgs } from './resources/file.ts';
+export { Directory, readDirectory, parseStat, type DirectoryArgs } from './resources/directory.ts';
+export { Symlink, readSymlink, type SymlinkArgs } from './resources/symlink.ts';
+export {
+  FstabEntry,
+  readFstabEntry,
+  fstabLine,
+  findEntry,
+  targetOf,
+  upsertFstab,
+  removeFromFstab,
+  type FstabEntryArgs,
+} from './resources/fstab.ts';
+export { AptPackage, readPackage, type AptPackageArgs } from './resources/apt.ts';
+export {
+  RcloneRemote,
+  readRemote,
+  parseDump,
+  configPairs,
+  type RcloneRemoteArgs,
+} from './resources/rclone.ts';
+export {
+  AptPackages,
+  readPackages,
+  parseInstalled,
+  parseSimulatedRemovals,
+  missingFrom,
+  type AptPackagesArgs,
+} from './resources/packages.ts';
+export { SystemdUnit, readUnit, parseShow, type SystemdUnitArgs } from './resources/systemd.ts';
+export {
+  SystemdInstance,
+  readInstance,
+  escapeInstance,
+  instanceUnit,
+  type SystemdInstanceArgs,
+} from './resources/instance.ts';
+export { User, readUser, groupsToLose, type UserArgs } from './resources/user.ts';
+export {
+  AuthorizedKey,
+  readAuthorizedKey,
+  keyBody,
+  keyComment,
+  authorizedLine,
+  upsertAuthorized,
+  removeAuthorized,
+  type AuthorizedKeyArgs,
+} from './resources/authorizedkey.ts';
+export {
+  SshdConfig,
+  readSshdConfig,
+  parseSshdT,
+  normaliseSshdValue,
+  renderSshd,
+  keywordFor,
+  hasInclude,
+  sshdDropIn,
+  type SshdConfigArgs,
+  type SshdSettings,
+  type SshdMatch,
+} from './resources/sshd.ts';
+export {
+  SshKey,
+  readSshKey,
+  parseFingerprint,
+  hostKeys,
+  type SshKeyArgs,
+} from './resources/sshkey.ts';
+export { Group, readGroup, parseGroupEntry, type GroupArgs } from './resources/group.ts';
+export {
+  SambaShare,
+  SambaUser,
+  readShare,
+  readSambaUser,
+  effectiveShare,
+  shareSection,
+  upsertSection,
+  removeSection,
+  parseSections,
+  parseShareSettings,
+  parseSambaUsers,
+  type SambaShareArgs,
+  type SambaUserArgs,
+} from './resources/samba.ts';
+export {
+  SudoRule,
+  readSudoRule,
+  sudoersFile,
+  sudoersLine,
+  sudoersFileName,
+  type SudoRuleArgs,
+} from './resources/sudo.ts';
+export { Precondition, readPrecondition, checkCommand, type PreconditionArgs } from './resources/precondition.ts';
+export { Swap, readSwap, parseProcSwaps, parseFstabSwap, type SwapArgs } from './resources/swap.ts';
+export {
+  Journald,
+  readJournald,
+  journaldFile,
+  parseEffective,
+  overriddenBy,
+  type JournaldArgs,
+} from './resources/journald.ts';
+export {
+  BootConfig,
+  readBootConfig,
+  parseBootSections,
+  applyToSection,
+  removeFromSection as removeFromBootSection,
+  parseVcgencmd,
+  renderSettings,
+  readOverlays,
+  overlayNameOf,
+  unknownOverlays,
+  BOOT_CANDIDATES,
+  type BootConfigArgs,
+  type BootSettings,
+} from './resources/bootconfig.ts';
+export {
+  KernelCmdline,
+  readCmdline,
+  merge as mergeCmdline,
+  bootedWith,
+  CANDIDATES,
+  type KernelCmdlineArgs,
+} from './resources/cmdline.ts';
+export {
+  audit,
+  type Declared,
+  type AuditPaths,
+  type AuditFindings,
+  type PackageFinding,
+  type UserFinding,
+} from './audit.ts';
