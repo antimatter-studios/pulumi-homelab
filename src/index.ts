@@ -45,6 +45,7 @@ export {
   type FstabEntryArgs,
 } from './resources/fstab.ts';
 export { AptPackage, readPackage, type AptPackageArgs } from './resources/apt.ts';
+export { DebPackage, installScript, type DebPackageArgs } from './resources/deb.ts';
 export {
   RcloneRemote,
   readRemote,
