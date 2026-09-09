@@ -35,14 +35,26 @@ interface AptPackageState {
   version: string;
 }
 
+/**
+ * `installed 1.2.3` → the version, or null for anything else.
+ *
+ * Its own function because the status word is the whole decision and was previously buried in the
+ * read where nothing could test it. dpkg keeps a record of a package it has removed, so a line
+ * coming back is not the same as a package being present — `deinstall` and `config-files` are both
+ * answers meaning "not installed" that arrive looking exactly like an answer meaning it is.
+ */
+export function parseDpkgStatus(out: string): string | null {
+  const [status, version] = out.trim().split(/\s+/);
+  return status === 'installed' ? (version ?? '') : null;
+}
+
 /** What dpkg says about it, or null when it is not installed. */
 export async function readPackage(host: Target, name: string): Promise<string | null> {
   // dpkg-query exits non-zero for a package it has never heard of, which is an answer and not a
   // fault. It also reports packages that are known but removed, hence the status check.
   const asked = await ask(host, `dpkg-query -W -f='\${db:Status-Status} \${Version}' ${shellQuote(name)} 2>/dev/null`);
   if (asked.code !== 0) return null;
-  const [status, version] = asked.out.trim().split(/\s+/);
-  return status === 'installed' ? (version ?? '') : null;
+  return parseDpkgStatus(asked.out);
 }
 
 function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackageArgs, AptPackageState> {

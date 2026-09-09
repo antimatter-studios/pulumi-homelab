@@ -243,7 +243,18 @@ is long enough to be mistaken for a hang.
 ```sh
 pnpm install
 pnpm test          # unit tests, then the package checks under plain node
+pnpm run test:unit # just the unit tests
 ```
+
+CI runs both on Ubuntu, which matters: six tests exercise resources against a real filesystem and
+skip on macOS, because this package reads machines with GNU coreutils and BSD `stat` rejects `-c`.
+Those six only ever run in CI.
+
+The reads are pure functions wherever the answer is a parse, so the thing worth testing is testable
+without a machine — `parseDpkgStatus`, `parseFileStat`, `parseShow`, `parseSshdT`, `parseVcgencmd`,
+`interpretSymlink`, `hostsNames`, `sambaSameValue` and the rest are exported and tested directly.
+That is not tidiness: every bug this package has had was in reading state back, and a parse buried
+inside a function that needs an ssh connection is one nothing can test.
 
 The package checks are separate from the unit tests on purpose, and each has a demonstrated failure
 mode: the package loads through Node's own loader, a provider closure serialises, a serialised

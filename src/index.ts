@@ -31,9 +31,9 @@ export { FluxApp, ignoreRules, type FluxAppArgs } from './flux/index.ts';
 export { fluxReady, fluxReason, type FluxCheckArgs } from './flux/ready.ts';
 export { providerChanged, withLegacyAlias } from './upgrade.ts';
 export { mountedAt } from './checks.ts';
-export { ManagedFile, readFile, writeFile, type FileArgs } from './resources/file.ts';
+export { ManagedFile, readFile, writeFile, parseFileStat, type FileArgs } from './resources/file.ts';
 export { Directory, readDirectory, parseStat, type DirectoryArgs } from './resources/directory.ts';
-export { Symlink, readSymlink, type SymlinkArgs } from './resources/symlink.ts';
+export { Symlink, readSymlink, interpretSymlink, type SymlinkArgs } from './resources/symlink.ts';
 export {
   FstabEntry,
   readFstabEntry,
@@ -44,7 +44,7 @@ export {
   removeFromFstab,
   type FstabEntryArgs,
 } from './resources/fstab.ts';
-export { AptPackage, readPackage, type AptPackageArgs } from './resources/apt.ts';
+export { AptPackage, readPackage, parseDpkgStatus, type AptPackageArgs } from './resources/apt.ts';
 export { DebPackage, installScript, type DebPackageArgs } from './resources/deb.ts';
 export {
   RcloneRemote,
@@ -97,6 +97,7 @@ export {
   SshKey,
   readSshKey,
   parseFingerprint,
+  parseHostKeys,
   hostKeys,
   type SshKeyArgs,
 } from './resources/sshkey.ts';
