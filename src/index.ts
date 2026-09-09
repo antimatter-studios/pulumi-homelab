@@ -61,7 +61,7 @@ export {
   missingFrom,
   type AptPackagesArgs,
 } from './resources/packages.ts';
-export { SystemdUnit, readUnit, parseShow, type SystemdUnitArgs } from './resources/systemd.ts';
+export { SystemdUnit, readUnit, parseShow, actsNeeded, type SystemdUnitArgs } from './resources/systemd.ts';
 export {
   SystemdInstance,
   readInstance,
@@ -69,7 +69,7 @@ export {
   instanceUnit,
   type SystemdInstanceArgs,
 } from './resources/instance.ts';
-export { User, readUser, groupsToLose, type UserArgs } from './resources/user.ts';
+export { User, readUser, groupsToLose, lockoutRefusal, type UserArgs } from './resources/user.ts';
 export {
   AuthorizedKey,
   readAuthorizedKey,
@@ -101,7 +101,7 @@ export {
   hostKeys,
   type SshKeyArgs,
 } from './resources/sshkey.ts';
-export { Group, readGroup, parseGroupEntry, type GroupArgs } from './resources/group.ts';
+export { Group, readGroup, parseGroupEntry, renumberRefusal, type GroupArgs } from './resources/group.ts';
 export {
   Hostname,
   readHostname,
@@ -144,7 +144,7 @@ export {
   type SudoRuleArgs,
 } from './resources/sudo.ts';
 export { Precondition, readPrecondition, checkCommand, type PreconditionArgs } from './resources/precondition.ts';
-export { Swap, readSwap, parseProcSwaps, parseFstabSwap, type SwapArgs } from './resources/swap.ts';
+export { Swap, readSwap, parseProcSwaps, parseFstabSwap, swapAction, type SwapArgs } from './resources/swap.ts';
 export {
   Journald,
   readJournald,

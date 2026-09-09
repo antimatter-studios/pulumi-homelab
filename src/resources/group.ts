@@ -67,6 +67,29 @@ export async function readGroup(host: Target, name: string): Promise<Omit<GroupS
   return found ? { name: found.name, gid: found.gid, members: found.members } : null;
 }
 
+/**
+ * Why a gid change is refused, or null when there is nothing to refuse.
+ *
+ * A message rather than a boolean, because the message is the product: `groupmod -g` renumbers the
+ * group and does **not** chown the files that reference the old number, so every one of them is
+ * orphaned by a command that reports success. Telling somebody that, and telling them what to run
+ * afterwards, is the whole value of stopping.
+ *
+ * Its own function so the refusal can be tested without a machine — a guard nobody has seen fire is
+ * a guard nobody knows the wording of.
+ */
+export function renumberRefusal(
+  args: { name: string; gid?: number; renumber?: boolean },
+  existing: { gid: number } | null,
+): string | null {
+  if (!existing || args.gid === undefined || args.gid === existing.gid) return null;
+  if (args.renumber) return null;
+  return `${args.name} exists with gid ${existing.gid} and the code says ${args.gid}. `
+    + `Renumbering does not chown anything, so every file owned by ${existing.gid} would be orphaned by a `
+    + `command that reports success. Set renumber: true if you mean it, and afterwards run `
+    + `\`find / -xdev -gid ${existing.gid} -exec chgrp ${args.gid} {} +\` on every filesystem that matters.`;
+}
+
 function providerFor(host: Target): pulumi.dynamic.ResourceProvider<GroupArgs, GroupState> {
   const settle = async (args: GroupArgs): Promise<GroupState> => {
     const existing = await readGroup(host, args.name);
@@ -75,14 +98,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<GroupArgs, G
       const gid = args.gid !== undefined ? `-g ${args.gid} ` : '';
       await must(host, escalate(host, `groupadd ${gid}${shellQuote(args.name)}`));
     } else if (args.gid !== undefined && args.gid !== existing.gid) {
-      if (!args.renumber) {
-        throw new Error(
-          `${args.name} exists with gid ${existing.gid} and the code says ${args.gid}. ` +
-          `Renumbering does not chown anything, so every file owned by ${existing.gid} would be orphaned by a ` +
-          `command that reports success. Set renumber: true if you mean it, and afterwards run ` +
-          `\`find / -xdev -gid ${existing.gid} -exec chgrp ${args.gid} {} +\` on every filesystem that matters.`,
-        );
-      }
+      const refusal = renumberRefusal(args, existing);
+      if (refusal) throw new Error(refusal);
       await must(host, escalate(host, `groupmod -g ${args.gid} ${shellQuote(args.name)}`));
     }
 

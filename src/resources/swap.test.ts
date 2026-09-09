@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseFstabSwap, parseProcSwaps } from './swap.ts';
+import { parseFstabSwap, parseProcSwaps, swapAction } from './swap.ts';
 
 /**
  * The whole design of this resource is that what is active now and what will be active after a
@@ -62,5 +62,61 @@ describe('reading what will come back at the next boot', () => {
 
   it('finds a partition as readily as a file', () => {
     expect(parseFstabSwap('UUID=abcd-1234 none swap sw 0 0')).toHaveLength(1);
+  });
+});
+
+/**
+ * An update that changes nothing must do nothing, and on this resource that matters more than most:
+ * the disable path runs `swapoff -a` and rewrites `/etc/fstab`. Doing that on a machine already
+ * exactly as described is a write to the boot configuration for no reason at all.
+ */
+describe('deciding whether anything needs doing', () => {
+  const off = { active: [], fstab: [], dphys: 'masked' };
+  const on = { active: [{ path: '/var/swap', sizeMb: 2048 }], fstab: ['/var/swap none swap sw 0 0'], dphys: 'masked' };
+
+  it('does nothing when swap is already off in both tenses', () => {
+    expect(swapAction(off, { enabled: false, path: '/var/swap' })).toBe('nothing');
+  });
+
+  it('does nothing when swap is already on at the size asked for', () => {
+    expect(swapAction(on, { enabled: true, sizeMb: 2048, path: '/var/swap' })).toBe('nothing');
+  });
+
+  it('disables when something is swapping now', () => {
+    expect(swapAction(on, { enabled: false, path: '/var/swap' })).toBe('disable');
+  });
+
+  it('disables when nothing is swapping now but fstab will bring it back', () => {
+    // off now and configured to return is not off: reading only the running state is what made this
+    // resource report itself correct on the afternoon it ran and drifted every morning after
+    expect(swapAction({ active: [], fstab: ['/var/swap none swap sw 0 0'], dphys: null }, { enabled: false, path: '/var/swap' }))
+      .toBe('disable');
+  });
+
+  it('disables when the unit is merely disabled rather than masked', () => {
+    // an apt upgrade of the package re-enables a disabled unit, so disabled is not off
+    expect(swapAction({ active: [], fstab: [], dphys: 'disabled' }, { enabled: false, path: '/var/swap' }))
+      .toBe('disable');
+  });
+
+  it('does nothing when the machine never had the package at all', () => {
+    expect(swapAction({ active: [], fstab: [], dphys: null }, { enabled: false, path: '/var/swap' })).toBe('nothing');
+  });
+
+  it('enables when the size differs from what is mounted', () => {
+    expect(swapAction(on, { enabled: true, sizeMb: 4096, path: '/var/swap' })).toBe('enable');
+  });
+
+  it('enables when swap is on but nothing will bring it back', () => {
+    expect(swapAction({ ...on, fstab: [] }, { enabled: true, sizeMb: 2048, path: '/var/swap' })).toBe('enable');
+  });
+
+  it('enables when something else is swapping but not the declared file', () => {
+    expect(swapAction({ active: [{ path: '/other', sizeMb: 2048 }], fstab: ['x'], dphys: null },
+      { enabled: true, sizeMb: 2048, path: '/var/swap' })).toBe('enable');
+  });
+
+  it('accepts any size when none was asked for', () => {
+    expect(swapAction(on, { enabled: true, path: '/var/swap' })).toBe('nothing');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseGroupEntry } from './group.ts';
+import { parseGroupEntry, renumberRefusal } from './group.ts';
 
 /**
  * Filesystem permissions do not record group names, they record numbers. A directory owned by
@@ -26,5 +26,43 @@ describe('reading a group out of getent', () => {
     expect(parseGroupEntry('')).toBeNull();
     expect(parseGroupEntry('getent: command not found')).toBeNull();
     expect(parseGroupEntry('storage:x:notanumber:')).toBeNull();
+  });
+});
+
+/**
+ * A guard nobody has seen fire is a guard nobody knows the wording of — and this one cannot be
+ * exercised against a machine without orphaning the files it exists to protect.
+ *
+ * `groupmod -g` renumbers the group and does **not** chown anything, so every file owned by the old
+ * number is orphaned by a command that reports success. Filesystem permissions store numbers, not
+ * names.
+ */
+describe('refusing to renumber a group', () => {
+  it('refuses a gid change, and says what would be orphaned', () => {
+    const refusal = renumberRefusal({ name: 'storage', gid: 1003 }, { gid: 1002 });
+    expect(refusal).toContain('exists with gid 1002 and the code says 1003');
+    expect(refusal).toContain('orphaned');
+  });
+
+  it('says what to run afterwards, because the message is the product', () => {
+    expect(renumberRefusal({ name: 'storage', gid: 1003 }, { gid: 1002 }))
+      .toContain('find / -xdev -gid 1002 -exec chgrp 1003');
+  });
+
+  it('permits it when somebody said they meant it', () => {
+    expect(renumberRefusal({ name: 'storage', gid: 1003, renumber: true }, { gid: 1002 })).toBeNull();
+  });
+
+  it('has nothing to refuse when the gid already matches', () => {
+    expect(renumberRefusal({ name: 'storage', gid: 1002 }, { gid: 1002 })).toBeNull();
+  });
+
+  it('has nothing to refuse when no gid was declared', () => {
+    // a group whose files nothing owns does not need one pinned
+    expect(renumberRefusal({ name: 'storage' }, { gid: 1002 })).toBeNull();
+  });
+
+  it('has nothing to refuse for a group that does not exist yet', () => {
+    expect(renumberRefusal({ name: 'storage', gid: 1002 }, null)).toBeNull();
   });
 });
