@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { effectiveShare, parseSambaUsers, parseSections, removeSection, shareSection, upsertSection } from './samba.ts';
+import {
+  effectiveShare, parseSambaUsers, parseSections, parseShareSettings, removeSection, removeSetting,
+  shareSection, upsertSection, upsertSetting,
+} from './samba.ts';
 
 /**
  * The sample is the real configuration off the Pi, as `testparm -s` prints it: two shares over one
@@ -114,5 +117,55 @@ describe('reading samba accounts', () => {
 
   it('says nothing on a machine with no samba accounts', () => {
     expect(parseSambaUsers('')).toEqual([]);
+  });
+});
+
+/**
+ * `[global]` on a hand-tuned machine is dozens of settings nobody can reproduce from memory, so
+ * declaring the section means owning all of them. Refusing to declare it is right; being unable to
+ * change one key in it is not.
+ */
+describe('editing one setting in a section', () => {
+  it('replaces a key that is already there', () => {
+    const updated = upsertSetting(SMB_CONF, 'global', 'workgroup', 'HOMELAB');
+    expect(parseShareSettings(parseSections(updated).get('global') ?? []).workgroup).toBe('HOMELAB');
+  });
+
+  it('leaves every other setting in the section alone', () => {
+    // the whole reason this resource exists rather than SambaShare owning [global]
+    const updated = upsertSetting(SMB_CONF, 'global', 'netbios name', 'HOMELAB');
+    expect(updated).toContain('server min protocol = SMB2');
+    expect(updated).toContain('   # player needs this');
+    expect(parseSections(updated).has('public')).toBe(true);
+  });
+
+  it('adds a key the section does not have', () => {
+    const updated = upsertSetting(SMB_CONF, 'global', 'netbios name', 'HOMELAB');
+    expect(parseShareSettings(parseSections(updated).get('global') ?? [])['netbios name']).toBe('HOMELAB');
+  });
+
+  it('matches a key however it was spaced or capitalised', () => {
+    // smb.conf keys contain spaces and are written with whatever alignment somebody liked
+    const spaced = '[global]\n   Netbios   Name   =   OLD\n';
+    const updated = upsertSetting(spaced, 'global', 'netbios name', 'NEW');
+    expect(updated).toContain('netbios name = NEW');
+    expect(updated).not.toContain('OLD');
+  });
+
+  it('does not touch a commented-out setting of the same name', () => {
+    const commented = '[global]\n   # netbios name = OLD\n';
+    expect(upsertSetting(commented, 'global', 'netbios name', 'NEW')).toContain('# netbios name = OLD');
+  });
+
+  it('gives the same file whether it runs once or twice', () => {
+    const once = upsertSetting(SMB_CONF, 'global', 'netbios name', 'HOMELAB');
+    expect(upsertSetting(once, 'global', 'netbios name', 'HOMELAB')).toBe(once);
+  });
+
+  it('removes one key and leaves the section standing', () => {
+    const without = removeSetting(SMB_CONF, 'global', 'workgroup');
+    expect(parseSections(without).has('global')).toBe(true);
+    expect(without).toContain('server min protocol = SMB2');
+    expect(without).not.toContain('workgroup');
   });
 });

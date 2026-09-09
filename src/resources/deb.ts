@@ -109,10 +109,17 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<DebPackageAr
     },
 
     async update(id, old, args) {
-      // A changed url or checksum means a different file, so this reinstalls rather than checking
-      // whether the version happens to match. apt handles the downgrade case too, which a
-      // conditional install would not.
-      const version = await install({ ...args, name: id });
+      // A changed url or checksum means a different file, so that reinstalls rather than checking
+      // whether the version happens to match — apt handles the downgrade case, which a conditional
+      // install would not.
+      //
+      // But an update is *also* triggered whenever this package is upgraded, because every diff here
+      // reports a change when the serialised provider differs. Without this check, editing a comment
+      // in pulumi-homelab would re-download and reinstall every DebPackage on every machine. So the
+      // file has to actually differ, or the package has to actually be missing.
+      const sameFile = old.url === args.url && old.sha256 === args.sha256;
+      const present = sameFile ? await readPackage(host, id) : null;
+      const version = present ?? (await install({ ...args, name: id }));
       return { outs: { ...old, ...args, name: id, version } };
     },
 

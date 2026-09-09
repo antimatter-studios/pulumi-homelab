@@ -61,3 +61,33 @@ describe('composing the install', () => {
     expect(installScript(args)).toBe(installScript(args));
   });
 });
+
+/**
+ * The install is not the only thing that has to be conditional.
+ *
+ * Every `diff` in this package reports a change when the serialised provider differs, so an update
+ * happens whenever `pulumi-homelab` itself is edited — a comment included. A resource that
+ * reinstalled unconditionally would re-download a `.deb` on every machine it manages because
+ * somebody fixed a typo, which is the same failure `SystemdUnit` had when it restarted every
+ * service.
+ */
+describe('what an update actually does', () => {
+  it('downloads into a private directory rather than a predictable path', () => {
+    // a fixed name in a world-writable directory is a file another user can swap between the
+    // checksum passing and apt reading it
+    expect(installScript(args)).toContain('mktemp -d');
+    expect(installScript(args)).not.toContain('/tmp/pkg.deb');
+  });
+
+  it('cleans up even when verification fails', () => {
+    // a rejected file left behind is one somebody finds later and trusts
+    expect(installScript(args)).toContain('trap');
+  });
+
+  it('uses apt rather than dpkg, so dependencies are resolved', () => {
+    // dpkg -i on a package with an absent dependency leaves it unpacked but unconfigured, which
+    // breaks the next unrelated apt run and gives no hint why
+    expect(installScript(args)).toContain('apt-get install');
+    expect(installScript(args)).not.toContain('dpkg -i');
+  });
+});

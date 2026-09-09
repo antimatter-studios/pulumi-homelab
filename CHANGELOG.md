@@ -11,7 +11,10 @@ First working version, used to describe a real machine end to end.
 ### Resources
 
 Files and paths — `ManagedFile`, `Directory`, `Symlink`, `FstabEntry`.
-Packages — `AptPackage` for one as a decision, `AptPackages` for a list, with `present` and
+Identity — `Hostname`, which owns the name in both files because a machine whose two names
+disagree fails in ways that mention neither.
+Packages — `AptPackage` for one as a decision, `AptPackages` for a list, `DebPackage` for a
+checksum-verified `.deb` from a URL, with `present` and
 `absent` both describable and removals refused when apt would take anything not named.
 Services — `SystemdUnit`, `SystemdInstance` for template units.
 Accounts and access — `User`, `Group`, `SudoRule`, `AuthorizedKey`, `SshKey`, `SshdConfig`.

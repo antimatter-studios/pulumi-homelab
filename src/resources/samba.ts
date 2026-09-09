@@ -98,6 +98,17 @@ export function parseShareSettings(lines: string[]): Record<string, string> {
   return settings;
 }
 
+/**
+ * A parameter name, in the one form comparisons can use.
+ *
+ * Samba itself ignores whitespace inside a parameter name — `netbios name` and `Netbios   Name` are
+ * the same key — and a file written by hand is aligned with whatever spacing somebody liked.
+ * Comparing the names verbatim means a hand-aligned file keeps its old value and gains a second
+ * line saying something different, with Samba taking whichever it reads last.
+ */
+const sameKey = (a: string, b: string) =>
+  a.trim().toLowerCase().replace(/\s+/g, ' ') === b.trim().toLowerCase().replace(/\s+/g, ' ');
+
 /** One section of `testparm -s` output, as Samba understands it. */
 export function effectiveShare(testparm: string, share: string): Record<string, string> | null {
   const lines = parseSections(testparm).get(share);
@@ -128,6 +139,55 @@ export function upsertSection(text: string, share: string, section: string): str
   let end = start + 1;
   while (end < lines.length && !/^\s*\[.+\]\s*$/.test(lines[end] ?? '')) end += 1;
   return [...lines.slice(0, start), ...section.split('\n'), ...lines.slice(end)].join('\n');
+}
+
+/**
+ * Put one `key = value` into one section, leaving every other line of it alone.
+ *
+ * The third instance of an idiom this package already has twice — `BootConfig` edits one line of
+ * `config.txt`, `Journald` one key of a drop-in. It exists because owning a whole section means
+ * owning every setting in it, and `[global]` on a machine that has been tuned by hand is dozens of
+ * settings nobody can reproduce from memory. Refusing to declare the section is correct; being
+ * unable to change one key in it is not.
+ */
+export function upsertSetting(text: string, share: string, key: string, value: string): string {
+  const lines = text.split('\n');
+  const header = lines.findIndex((line) => line.trim() === `[${share}]`);
+  if (header < 0) {
+    return `${text.replace(/\n+$/, '')}\n\n[${share}]\n   ${key} = ${value}\n`;
+  }
+  let end = header + 1;
+  while (end < lines.length && !/^\s*\[.+\]\s*$/.test(lines[end] ?? '')) end += 1;
+
+  const body = lines.slice(header + 1, end);
+  // matched on the key alone, case-insensitively and ignoring the spaces around it, because smb.conf
+  // keys contain spaces and are written with whatever alignment somebody liked
+  const at = body.findIndex((line) => {
+    const text_ = line.trim();
+    if (text_.length === 0 || text_.startsWith('#') || text_.startsWith(';')) return false;
+    const equals = text_.indexOf('=');
+    return equals > 0 && sameKey(text_.slice(0, equals), key);
+  });
+  const wanted = `   ${key} = ${value}`;
+  if (at >= 0) body[at] = wanted;
+  else body.push(wanted);
+  return [...lines.slice(0, header + 1), ...body, ...lines.slice(end)].join('\n');
+}
+
+/** Take one `key` out of one section, and nothing else. */
+export function removeSetting(text: string, share: string, key: string): string {
+  const lines = text.split('\n');
+  const header = lines.findIndex((line) => line.trim() === `[${share}]`);
+  if (header < 0) return text;
+  let end = header + 1;
+  while (end < lines.length && !/^\s*\[.+\]\s*$/.test(lines[end] ?? '')) end += 1;
+  const body = lines.slice(header + 1, end).filter((line) => {
+    const text_ = line.trim();
+    if (text_.length === 0 || text_.startsWith('#') || text_.startsWith(';')) return true;
+    const equals = text_.indexOf('=');
+    return !(equals > 0 && sameKey(text_.slice(0, equals), key));
+  });
+  return [...lines.slice(0, header + 1), ...body, ...lines.slice(end)].join('\n');
 }
 
 /** Take one section out, and nothing else with it. */
@@ -341,6 +401,154 @@ function userProviderFor(host: Target): pulumi.dynamic.ResourceProvider<{ name: 
       await must(host, escalate(host, `smbpasswd -x ${shellQuote(id)} >/dev/null 2>&1 || true`));
     },
   };
+}
+
+/**
+ * One setting, in one section of `smb.conf`.
+ *
+ * `SambaShare` owns a whole section, which is right for a share you declared and wrong for
+ * `[global]`: on a machine that has been tuned by hand that is dozens of settings nobody can
+ * reproduce from memory, and owning the section means owning all of them. Refusing to declare it is
+ * correct. Being unable to change one key in it is not, so this is the surgical form — the same
+ * idiom as `BootConfig` editing one line of `config.txt`.
+ *
+ * **The reload question has to be answered per key, and `netbios name` is why.** Sharing settings
+ * are re-read by `smbcontrol all reload-config` without dropping a connection, which is what
+ * `SambaShare` does and is right for it. But **NetBIOS name registration happens when nmbd
+ * starts**, not when it re-reads its configuration — so a reload leaves the old name registered,
+ * the command exits zero, and the network goes on answering to a name the code says is gone. That
+ * is a resource reporting success while the thing somebody asked for has not happened.
+ *
+ * Worth knowing for the same key: Samba's `mdns name` defaults to `netbios`, so this one setting
+ * moves what is advertised on `_smb._tcp` as well as the SMB name itself.
+ */
+export interface SambaSettingArgs {
+  /** Which section, in brackets in the file: `global`, not `[global]`. */
+  share: string;
+  /** The key, spelled as `smb.conf` spells it — spaces and all: `netbios name`. */
+  key: string;
+  value: string;
+  /**
+   * How to make Samba notice.
+   *
+   * - `reload` re-reads the configuration without dropping connections. Right for share settings.
+   * - `nmbd` restarts the name daemon as well, which is what `netbios name` needs: a reload leaves
+   *   the previous name registered.
+   * - `all` restarts smbd too, which **drops open connections** — a file transfer, or a film
+   *   somebody is watching. Only for a setting that genuinely needs it.
+   */
+  apply?: 'reload' | 'nmbd' | 'all';
+  config?: string;
+}
+
+interface SambaSettingState {
+  share: string;
+  key: string;
+  value: string;
+  apply: string;
+  config: string;
+  /** What Samba resolved this key to, which is the answer rather than the request. */
+  effective: string;
+}
+
+const APPLY: Record<string, string> = {
+  reload: 'smbcontrol all reload-config >/dev/null 2>&1 || true',
+  nmbd: 'smbcontrol all reload-config >/dev/null 2>&1; systemctl try-restart nmbd 2>/dev/null || true',
+  all: 'systemctl try-restart nmbd 2>/dev/null; systemctl try-restart smbd 2>/dev/null || true',
+};
+
+/** What Samba says this one key resolves to, or null when the section is not there. */
+export async function readSetting(
+  host: Target,
+  share: string,
+  key: string,
+  config = SMB_CONF,
+): Promise<string | null> {
+  const effective = await readShare(host, share, config);
+  if (!effective) return null;
+  // testparm lowercases nothing but pads everything, and a key may be written with any alignment
+  const found = Object.entries(effective).find(([name]) => sameKey(name, key));
+  return found?.[1] ?? null;
+}
+
+function settingProviderFor(host: Target): pulumi.dynamic.ResourceProvider<SambaSettingArgs, SambaSettingState> {
+  const settle = async (args: SambaSettingArgs): Promise<SambaSettingState> => {
+    const config = args.config ?? SMB_CONF;
+    const how = args.apply ?? 'reload';
+    const current = await must(host, escalate(host, `cat ${shellQuote(config)}`));
+    const updated = upsertSetting(current, args.share, args.key, args.value);
+
+    if (updated !== current) {
+      await apply(host, updated, config);
+      await must(host, escalate(host, APPLY[how] ?? APPLY.reload ?? 'true'));
+    }
+
+    const effective = await readSetting(host, args.share, args.key, config);
+    return { share: args.share, key: args.key, value: args.value, apply: how, config, effective: effective ?? '' };
+  };
+
+  return {
+    async create(args) {
+      return { id: `${args.share}#${args.key}`, outs: await settle(args) };
+    },
+
+    async read(id, state) {
+      const [share = '', key = ''] = id.split('#');
+      const config = state?.config ?? SMB_CONF;
+      const effective = await readSetting(host, share, key, config);
+      // the section is gone entirely: there is nothing here to describe any more
+      if (effective === null) return { id: undefined, props: undefined };
+      return {
+        id,
+        props: {
+          value: state?.value ?? effective,
+          apply: state?.apply ?? 'reload',
+          config,
+          ...state,
+          share,
+          key,
+          effective,
+        },
+      };
+    },
+
+    async update(id, _old, args) {
+      const [share = '', key = ''] = id.split('#');
+      return { outs: await settle({ ...args, share, key }) };
+    },
+
+    async diff(_id, old, args) {
+      return {
+        // compared against what Samba resolved, so a hand edit is drift
+        changes: providerChanged(old, args)
+          || old.effective !== args.value
+          || old.value !== args.value
+          || old.apply !== (args.apply ?? 'reload'),
+        replaces: old.share !== args.share || old.key !== args.key ? ['share', 'key'] : [],
+        stables: [],
+        deleteBeforeReplace: true,
+      };
+    },
+
+    async delete(id, state) {
+      const [share = '', key = ''] = id.split('#');
+      const config = state.config ?? SMB_CONF;
+      const current = await must(host, escalate(host, `cat ${shellQuote(config)}`));
+      // the key goes and the section stays: this resource never owned the rest of it
+      await apply(host, removeSetting(current, share, key), config);
+    },
+  };
+}
+
+/** One setting in one section, for a section nobody should own outright. */
+export class SambaSetting extends pulumi.dynamic.Resource {
+  declare readonly key: pulumi.Output<string>;
+  declare readonly effective: pulumi.Output<string>;
+
+  constructor(name: string, host: Target, args: SambaSettingArgs, opts?: pulumi.CustomResourceOptions) {
+    super(settingProviderFor(host), name, { apply: 'reload', config: SMB_CONF, effective: undefined, ...args },
+      withLegacyAlias(opts), 'homelab', 'SambaSetting');
+  }
 }
 
 /** A Samba account, whose existence can be read and whose password cannot. */

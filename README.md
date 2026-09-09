@@ -340,6 +340,26 @@ It reports `effective` from `vcgencmd get_config`, which is the firmware's own a
 plainly that it does not cover overlays, which the device tree consumes rather than keeping as
 config integers.
 
+`Hostname` owns the name in **both** places it is written, as one resource. A machine whose
+`/etc/hostname` and `/etc/hosts` disagree fails in ways that never mention either file: `sudo`
+becomes slow because it resolves the hostname and waits, and daemons bind to the wrong name. Two
+resources would let a deployment leave a machine in exactly that state with both reporting success.
+
+It sets the static name through `hostnamectl` — which writes the file *and* announces the change —
+edits the `127.0.1.1` line in place, and restarts avahi when the name really changed, because
+avahi publishes `<hostname>.local` and the usual reason to rename a machine is that the old name
+should stop answering. A reload can leave the previous name published; the restart is deliberate.
+
+`SambaSetting` is the surgical form of `SambaShare`, and the third instance of an idiom this package
+already had twice. `[global]` on a hand-tuned machine is dozens of settings nobody can reproduce
+from memory, so declaring the section means owning all of them — but being unable to change one key
+in it is not an acceptable alternative.
+
+Its `apply` argument has to be chosen per key, and `netbios name` is why: **NetBIOS registration
+happens when nmbd starts**, not when it re-reads its configuration, so `reload` leaves the old name
+registered while every command exits zero. That is a resource reporting success for something that
+has not happened.
+
 ## Two tenses
 
 `Swap` is the resource that shows why a real `read` is harder than it sounds. `swapoff -a` empties
