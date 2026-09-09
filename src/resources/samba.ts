@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredocInto, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 import { disagreeing } from '../resolved.ts';
 
 /**
@@ -337,7 +337,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
         return answered === undefined || !sambaSameValue(key, value, answered);
       });
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || differs || old.share !== args.share,
         replaces: old.share !== args.share ? ['share'] : [],
         stables: [],
@@ -358,7 +358,7 @@ export class SambaShare extends pulumi.dynamic.Resource {
   declare readonly effective: pulumi.Output<Record<string, string>>;
 
   constructor(name: string, host: Target, args: SambaShareArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { effective: undefined, overridden: undefined, settings: {}, config: SMB_CONF, ...args }, withLegacyAlias(opts), 'homelab', 'SambaShare');
+    super(stamped(providerFor(host)), name, { effective: undefined, overridden: undefined, settings: {}, config: SMB_CONF, ...args }, withLegacyAlias(opts), 'homelab', 'SambaShare');
   }
 }
 
@@ -445,7 +445,7 @@ function userProviderFor(host: Target): pulumi.dynamic.ResourceProvider<{ name: 
       return {
         // a changed password is a change we apply without being able to verify; a changed name is a
         // different account
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.password !== args.password || old.name !== args.name,
         replaces: old.name !== args.name ? ['name'] : [],
         stables: [],
@@ -587,7 +587,7 @@ function settingProviderFor(host: Target): pulumi.dynamic.ResourceProvider<Samba
     async diff(_id, old, args) {
       return {
         // compared against what Samba resolved, so a hand edit is drift
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           // through Samba's vocabulary, not verbatim: `netbios name` comes back uppercased, so a
           // declared `homelab` against an effective `HOMELAB` was drift on every run
           || !sambaSameValue(args.key, args.value, old.effective ?? '')
@@ -615,7 +615,7 @@ export class SambaSetting extends pulumi.dynamic.Resource {
   declare readonly effective: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: SambaSettingArgs, opts?: pulumi.CustomResourceOptions) {
-    super(settingProviderFor(host), name, { apply: 'reload', config: SMB_CONF, effective: undefined, ...args },
+    super(stamped(settingProviderFor(host)), name, { apply: 'reload', config: SMB_CONF, effective: undefined, ...args },
       withLegacyAlias(opts), 'homelab', 'SambaSetting');
   }
 }
@@ -626,7 +626,7 @@ export class SambaUser extends pulumi.dynamic.Resource {
   declare readonly exists: pulumi.Output<boolean>;
 
   constructor(name: string, host: Target, args: SambaUserArgs, opts?: pulumi.CustomResourceOptions) {
-    super(userProviderFor(host), name, { exists: undefined, ...args }, withLegacyAlias({
+    super(stamped(userProviderFor(host)), name, { exists: undefined, ...args }, withLegacyAlias({
       // the password is in the state file whatever happens; marking it means it is at least masked
       // in previews and in the console rather than printed to whoever is watching a deployment
       additionalSecretOutputs: ['password'],

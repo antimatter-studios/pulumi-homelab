@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * The machine's name, in both places it is written.
@@ -256,7 +256,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<HostnameArgs
         // hostnames are case-insensitive, and the hosts line is checked for *naming* the host
         // rather than for holding it in a particular position — taking the last word on the line
         // made a file written `127.0.1.1 host host.domain` report drift on every run for ever
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.effective?.static?.toLowerCase() !== args.name.toLowerCase()
           // whether the line *names* the host, not which name was extracted from it
           || old.effective?.namesHost !== true
@@ -282,7 +282,7 @@ export class Hostname extends pulumi.dynamic.Resource {
   declare readonly effective: pulumi.Output<{ static: string; transient: string; hostsLine: string }>;
 
   constructor(name: string, host: Target, args: HostnameArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, {
+    super(stamped(providerFor(host)), name, {
       domain: DEFAULTS.domain,
       restartAvahi: DEFAULTS.restartAvahi,
       hosts: HOSTS,

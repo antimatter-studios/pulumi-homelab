@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * Whether the machine has swap, and where it comes from.
@@ -264,7 +264,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SwapArgs, Sw
         ? activeNow && old.active.some((swap) => swap.path === path)
         : !activeNow && !comingBack;
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || !satisfied || old.enabled !== args.enabled || old.path !== path
           || (args.enabled && args.sizeMb !== undefined && old.sizeMb !== args.sizeMb),
         replaces: old.path !== path ? ['path'] : [],
@@ -290,7 +290,7 @@ export class Swap extends pulumi.dynamic.Resource {
   declare readonly zram: pulumi.Output<boolean>;
 
   constructor(name: string, host: Target, args: SwapArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, {
+    super(stamped(providerFor(host)), name, {
       active: undefined,
       fstab: undefined,
       dphys: undefined,

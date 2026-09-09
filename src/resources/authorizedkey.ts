@@ -1,7 +1,7 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { normaliseMode } from '../mode.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * One public key, authorised for one account.
@@ -240,7 +240,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AuthorizedKe
     async diff(_id, old, args) {
       const options = args.options ?? [];
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || keyBody(old.key) !== keyBody(args.key)
           || old.options.join(',') !== options.join(',')
           || old.user !== args.user
@@ -272,7 +272,7 @@ export class AuthorizedKey extends pulumi.dynamic.Resource {
   declare readonly comment: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: AuthorizedKeyArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, {
+    super(stamped(providerFor(host)), name, {
       options: [],
       path: undefined,
       mode: undefined,

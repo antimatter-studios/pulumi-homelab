@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A package that should be installed.
@@ -94,7 +94,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackageAr
 
     async diff(_id, old, args) {
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.name !== args.name || old.update !== (args.update ?? false),
         replaces: old.name !== args.name ? ['name'] : [],
         stables: [],
@@ -117,6 +117,6 @@ export class AptPackage extends pulumi.dynamic.Resource {
   declare readonly version: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: AptPackageArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { version: undefined, update: false, ...args }, withLegacyAlias(opts), 'homelab', 'AptPackage');
+    super(stamped(providerFor(host)), name, { version: undefined, update: false, ...args }, withLegacyAlias(opts), 'homelab', 'AptPackage');
   }
 }

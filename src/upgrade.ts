@@ -24,11 +24,91 @@ import * as pulumi from '@pulumi/pulumi';
  * rather than in a surprise: the first deployment after a transport change updates every resource,
  * and for `SystemdUnit` that means every managed service restarts.
  */
+/**
+ * The transport's version, bumped deliberately.
+ *
+ * **This replaces comparing the serialised closure, which could not work.** The first attempt at
+ * this compared `__provider` in state against the program's — and `update` does not persist a new
+ * `__provider`, so once the two differed they differed for ever: the resource updated on every
+ * deployment, the stored value never moved, and only the resources whose state happened to be
+ * written at an older version were affected. Ten of them, on one real stack, writing to the machine
+ * on every run — a Samba reload and an avahi restart among them — while `pulumi up` could never
+ * answer "nothing to do".
+ *
+ * It also fired on edits that changed nothing about behaviour. The closure carries the source text
+ * of everything it captures, so a comment added to a doc block made every resource in every stack
+ * report an update.
+ *
+ * A number is better on both counts. It is data, so it survives serialisation; it is carried in each
+ * resource's own state, so an update persists it and the upgrade completes; and it moves only when
+ * somebody decides it should. **Bump it when a change to the transport must reach resources that
+ * already exist** — a quoting fix, a connection option, a security fix — and leave it alone for
+ * everything else.
+ */
+export const TRANSPORT = 1;
+
+/**
+ * Whether this resource's state was written before the current transport.
+ *
+ * Unstamped state answers **false**: a resource created before this mechanism existed has nothing to
+ * compare against, and guessing would mean updating every resource on every machine once, which is
+ * the failure this replaces. Those resources pick up the stamp the first time anything else about
+ * them genuinely changes.
+ */
+export function transportChanged(old: unknown): boolean {
+  const stamp = (old as { transport?: unknown } | undefined)?.transport;
+  if (typeof stamp !== 'number') return false;
+  return stamp !== TRANSPORT;
+}
+
+/**
+ * Wrap a provider so everything it stores carries the transport's version.
+ *
+ * One place rather than in every `create`, `read` and `update` return, because the stamp is only
+ * useful if it is on *all* of them: a resource that stamps on create and not on update never
+ * completes the upgrade it was meant to enable, which is exactly how the previous mechanism failed.
+ */
+export function stamped<Inputs, Outputs>(
+  provider: pulumi.dynamic.ResourceProvider<Inputs, Outputs>,
+): pulumi.dynamic.ResourceProvider<Inputs, Outputs> {
+  const stamp = (value: unknown): Outputs =>
+    (value === undefined ? value : { ...(value as object), transport: TRANSPORT }) as Outputs;
+
+  return {
+    ...provider,
+    create: async (inputs) => {
+      const made = await provider.create(inputs);
+      return { ...made, outs: stamp(made.outs) };
+    },
+    ...(provider.read
+      ? {
+          read: async (id: string, props?: Outputs) => {
+            const found = await provider.read!(id, props);
+            return found.props === undefined ? found : { ...found, props: stamp(found.props) };
+          },
+        }
+      : {}),
+    ...(provider.update
+      ? {
+          update: async (id: string, olds: Outputs, news: Inputs) => {
+            const done = await provider.update!(id, olds, news);
+            return { ...done, outs: stamp(done.outs) };
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Kept so a consumer's own dynamic resources can ask the same question, and deprecated.
+ *
+ * @deprecated Compare `transportChanged(old)` instead. This compared the serialised closure, which
+ * an update does not re-persist, so a resource whose stored text differed reported an update for
+ * ever without the difference ever being resolved.
+ */
 export function providerChanged(old: unknown, args: unknown): boolean {
   const before = (old as { __provider?: unknown } | undefined)?.__provider;
   const after = (args as { __provider?: unknown } | undefined)?.__provider;
-  // only when both are known: a missing value means the framework did not hand it over, and forcing
-  // an update on that guess would restart every service on the machine for no reason at all
   if (typeof before !== 'string' || typeof after !== 'string') return false;
   return before !== after;
 }

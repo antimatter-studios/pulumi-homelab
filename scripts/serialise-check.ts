@@ -234,8 +234,14 @@ const forgotten: string[] = [];
     if (!entry.endsWith('.ts') || entry.endsWith('.test.ts')) continue;
     const source = await readFile(join(directory, entry), 'utf8');
     const diffs = (source.match(/async diff\(/g) ?? []).length;
-    const checks = (source.match(/providerChanged\(old, args\)/g) ?? []).length;
-    if (diffs > checks) forgotten.push(`${entry} has ${diffs} diff(s) and ${checks} provider check(s)`);
+    const checks = (source.match(/transportChanged\(old\)/g) ?? []).length;
+    const classes = (source.match(/super\(stamped\(/g) ?? []).length;
+    const providers = (source.match(/super\((?:provider|userProvider|settingProvider)For\(host\)/g) ?? []).length;
+    if (diffs > checks) forgotten.push(`${entry} has ${diffs} diff(s) and ${checks} transport check(s)`);
+    // a diff that asks the question while the provider never stamps it can never be satisfied, which
+    // is the perpetual-update failure this mechanism replaced
+    if (providers > 0) forgotten.push(`${entry} hands ${providers} unstamped provider(s) to super()`);
+    if (checks > 0 && classes === 0) forgotten.push(`${entry} checks the transport but stamps nothing`);
   }
 }
 if (forgotten.length > 0) {

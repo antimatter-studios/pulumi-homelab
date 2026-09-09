@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * An rclone remote — a named backend in rclone's config file.
@@ -183,7 +183,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<RcloneRemote
       const settings = args.settings ?? {};
       const secrets = args.secrets ?? {};
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.type !== args.type
           || old.remote !== args.remote
           || old.config !== (args.config ?? DEFAULTS.config)
@@ -210,7 +210,7 @@ export class RcloneRemote extends pulumi.dynamic.Resource {
   declare readonly type: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: RcloneRemoteArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { settings: {}, secrets: {}, config: DEFAULTS.config, ...args }, withLegacyAlias({
+    super(stamped(providerFor(host)), name, { settings: {}, secrets: {}, config: DEFAULTS.config, ...args }, withLegacyAlias({
       // the plaintext is in the state file because there is nowhere else for it to be if drift is
       // to be detected; marking it at least keeps it out of a preview somebody is watching
       additionalSecretOutputs: ['secrets'],

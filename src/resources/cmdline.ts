@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * The parameters the machine boots with.
@@ -140,7 +140,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<KernelCmdlin
       // reporting it as a change every time would train everybody to ignore the diff
       const wanted = merge(old.cmdline, args.flags);
       return {
-        changes: providerChanged(old, args) || wanted !== old.cmdline,
+        changes: transportChanged(old) || wanted !== old.cmdline,
         replaces: [],
         stables: ['path'],
         deleteBeforeReplace: false,
@@ -161,7 +161,7 @@ export class KernelCmdline extends pulumi.dynamic.Resource {
   declare readonly cmdline: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: KernelCmdlineArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { path: undefined, cmdline: undefined, ...args }, withLegacyAlias(opts), 'homelab', 'KernelCmdline');
+    super(stamped(providerFor(host)), name, { path: undefined, cmdline: undefined, ...args }, withLegacyAlias(opts), 'homelab', 'KernelCmdline');
   }
 }
 

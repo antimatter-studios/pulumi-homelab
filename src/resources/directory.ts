@@ -1,7 +1,7 @@
 import * as pulumi from '@pulumi/pulumi';
 import { normaliseMode } from '../mode.ts';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A directory that should exist, with its mode and ownership.
@@ -116,7 +116,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<DirectoryArg
     async diff(_id, old, args) {
       const wanted = { ...DEFAULTS, ...args };
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.mode !== wanted.mode
           || old.owner !== wanted.owner
           || old.group !== wanted.group
@@ -143,6 +143,6 @@ export class Directory extends pulumi.dynamic.Resource {
   declare readonly mode: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: DirectoryArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'Directory');
+    super(stamped(providerFor(host)), name, { ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'Directory');
   }
 }

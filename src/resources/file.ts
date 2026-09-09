@@ -1,7 +1,7 @@
 import * as pulumi from '@pulumi/pulumi';
 import { normaliseMode } from '../mode.ts';
 import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A file on the managed machine, with its content, owner and mode.
@@ -135,7 +135,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<FileArgs, Fi
       if (old.group !== wanted.group) changed.push('group');
       if (old.reloadSystemd !== wanted.reloadSystemd) changed.push('reloadSystemd');
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || changed.length > 0 || old.path !== wanted.path,
         // a file at a new path is a new file; editing one in place is not
         replaces: old.path !== wanted.path ? ['path'] : [],
@@ -156,6 +156,6 @@ export class ManagedFile extends pulumi.dynamic.Resource {
   declare readonly content: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: FileArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'ManagedFile');
+    super(stamped(providerFor(host)), name, { ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'ManagedFile');
   }
 }

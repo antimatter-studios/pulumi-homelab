@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { asRoot, escalate, ask, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A condition the machine has to satisfy before anything downstream is allowed to run.
@@ -115,7 +115,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<Precondition
     async diff(_id, old, args) {
       const wanted = { ...DEFAULTS, ...args };
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.check !== wanted.check || old.message !== wanted.message || old.root !== wanted.root,
         // a different question is a different precondition, and has to be asked before whatever
         // depends on it is touched rather than after
@@ -137,6 +137,6 @@ export class Precondition extends pulumi.dynamic.Resource {
   declare readonly check: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: PreconditionArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'Precondition');
+    super(stamped(providerFor(host)), name, { ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'Precondition');
   }
 }

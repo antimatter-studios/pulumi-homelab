@@ -676,15 +676,26 @@ Pulumi serialises a dynamic provider's whole closure — the transport, the quot
 method — into the state file, and `read`, `diff` and `update` all run **the stored closure rather
 than the current source**. A resource created last month is still running last month's `ssh.ts`.
 
-Every `diff` here therefore reports a change when the serialised provider differs, which means the
-first deployment after upgrading this package **updates every resource**. For `SystemdUnit` that
-restarts every managed service. That is deliberate: the alternative, measured on a real stack after
-connection multiplexing was added, was four resources on the new transport and eighteen still on the
-old one — silently, with no way to tell from the outside and no way for them to recover, since
-`--replace` would fix the transport by purging packages and deleting unit files.
+So each resource carries a **transport version** in its own state, and a `diff` reports a change
+when that number is older than the package's. Bumping it is a deliberate act, done when a change to
+the transport must reach resources that already exist — a quoting fix, a connection option, a
+security fix — and left alone for everything else.
 
-So a `pulumi up` after a version bump is worth previewing rather than waving through — though it
-should be uneventful, because of the rule below.
+**The first attempt at this compared the serialised closure, and it could not work.** `update` does
+not re-persist `__provider`, so once the stored text differed from the program's it differed for
+ever: the resource reported an update on every deployment, the stored value never moved, and only
+the resources whose state happened to be written at an older version were affected. On one real
+stack that was ten of them, writing to the machine on every run — a Samba reload and an avahi
+restart among them — while `pulumi up` could never answer "nothing to do", which is the answer you
+want before doing anything risky.
+
+It was also wrong in the other direction: the closure carries the source text of everything it
+captures, so a comment added to a doc block made every resource in every stack report an update.
+
+A number is data, it is carried in the resource's own state so an update persists it and the upgrade
+completes, and it moves only when somebody decides it should. State written before the mechanism
+existed reports **no** change — guessing there would mean updating every resource on every machine
+once, which is the failure being replaced.
 
 ### An update that changes nothing does nothing
 

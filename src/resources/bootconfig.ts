@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 import { disagreeing } from '../resolved.ts';
 
 /**
@@ -449,7 +449,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<BootConfigAr
       const settings = renderSettings(args.settings ?? {}, args.unchecked ?? {});
       const overlays = args.overlays ?? [];
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.section !== section
           || JSON.stringify(old.settings) !== JSON.stringify(settings)
           || old.overlays.join('\n') !== overlays.join('\n'),
@@ -479,7 +479,7 @@ export class BootConfig extends pulumi.dynamic.Resource {
   declare readonly effective: pulumi.Output<Record<string, string>>;
 
   constructor(name: string, host: Target, args: BootConfigArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, {
+    super(stamped(providerFor(host)), name, {
       section: DEFAULT_SECTION,
       settings: {},
       unchecked: {},
