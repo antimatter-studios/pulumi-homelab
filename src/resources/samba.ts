@@ -134,9 +134,19 @@ const sameKey = (a: string, b: string) =>
  * compared case-insensitively. Everything else is compared exactly, because a path differing only in
  * case is a different path.
  */
-const YES = new Set(['yes', 'true', '1']);
-const NO = new Set(['no', 'false', '0']);
-const CASE_FOLDED = new Set(['netbios name', 'workgroup', 'server string', 'realm']);
+// Arrays rather than Sets, and this is not a style choice. A module-scope constant is *captured* by
+// the provider closure, and a `Set` does not survive being serialised into the state file: it comes
+// back as a plain `{}`. The identifier still resolves, `has` is still found on Object's prototype
+// chain, and it throws only when called — `Method Set.prototype.has called on incompatible receiver`,
+// from inside a diff, aborting every preview partway through. Which looked like flakiness, because
+// the run died at a different point each time and reported a different count of unchanged resources.
+//
+// A Set looks like data and is not: its usefulness is entirely in its prototype, and only data
+// crosses into a provider. A Set built *inside* a function is fine — it is constructed fresh when
+// the revived code runs — and this package has several of those. It is the captured ones that lie.
+const YES = ['yes', 'true', '1'];
+const NO = ['no', 'false', '0'];
+const CASE_FOLDED = ['netbios name', 'workgroup', 'server string', 'realm'];
 
 export function sambaSameValue(key: string, declared: string, effective: string): boolean {
   const a = declared.trim();
@@ -144,9 +154,9 @@ export function sambaSameValue(key: string, declared: string, effective: string)
   if (a === b) return true;
   const lowerA = a.toLowerCase();
   const lowerB = b.toLowerCase();
-  if (YES.has(lowerA) && YES.has(lowerB)) return true;
-  if (NO.has(lowerA) && NO.has(lowerB)) return true;
-  const folded = [...CASE_FOLDED].some((name) => sameKey(name, key));
+  if (YES.includes(lowerA) && YES.includes(lowerB)) return true;
+  if (NO.includes(lowerA) && NO.includes(lowerB)) return true;
+  const folded = CASE_FOLDED.some((name) => sameKey(name, key));
   return folded && lowerA === lowerB;
 }
 

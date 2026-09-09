@@ -61,7 +61,20 @@ interface HostnameState {
    * resource exists is that those disagreeing is a real state with confusing symptoms, so all
    * three are read rather than one being assumed from another.
    */
-  effective: { static: string; transient: string; hostsLine: string };
+  effective: {
+    static: string;
+    transient: string;
+    hostsLine: string;
+    /**
+     * Whether the `127.0.1.1` line names this host at all.
+     *
+     * The question the diff needs answered, and not the same as "what is the short name on that
+     * line". A line may carry an alias shorter than the hostname, or the qualified name in either
+     * position, and extracting one name from it to compare made a correct machine report drift on
+     * every single run.
+     */
+    namesHost: boolean;
+  };
 }
 
 const HOSTS = '/etc/hosts';
@@ -180,7 +193,12 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<HostnameArgs
     }
 
     const found = await readHostname(host, hosts);
-    const effective = { static: found.static, transient: found.transient, hostsLine: found.hostsLine };
+    const effective = {
+      static: found.static,
+      transient: found.transient,
+      hostsLine: found.hostsLine,
+      namesHost: hostsNamesHost(found.hostsFile, args.name),
+    };
     if (effective.static !== args.name) {
       throw new Error(
         `set the hostname to ${args.name} on ${describe(host)} but it reports ${effective.static || 'nothing'}`,
@@ -188,7 +206,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<HostnameArgs
     }
     // and the other half, which is the whole reason the two live in one resource: a static name
     // that is right while the hosts line names something else is the state with confusing symptoms
-    if (!hostsNamesHost(found.hostsFile, args.name)) {
+    if (!effective.namesHost) {
       throw new Error(
         `set the hostname to ${args.name} on ${describe(host)} but ${hosts} does not name it on the ` +
         `${LOOPBACK} line — the two disagreeing is what makes sudo slow and daemons bind wrong`,
@@ -204,7 +222,13 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<HostnameArgs
 
     async read(id, state) {
       const found = await readHostname(host, id);
-      const effective = { static: found.static, transient: found.transient, hostsLine: found.hostsLine };
+      const named = state?.name ?? found.static;
+      const effective = {
+        static: found.static,
+        transient: found.transient,
+        hostsLine: found.hostsLine,
+        namesHost: hostsNamesHost(found.hostsFile, named),
+      };
       // there is always a hostname, so this never reports the resource gone — a machine called
       // something else is drift rather than a resource that has stopped existing
       return {
@@ -234,7 +258,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<HostnameArgs
         // made a file written `127.0.1.1 host host.domain` report drift on every run for ever
         changes: providerChanged(old, args)
           || old.effective?.static?.toLowerCase() !== args.name.toLowerCase()
-          || (old.effective?.hostsLine ?? '').toLowerCase() !== args.name.toLowerCase()
+          // whether the line *names* the host, not which name was extracted from it
+          || old.effective?.namesHost !== true
           || old.name !== args.name
           || old.domain !== domain,
         replaces: [],

@@ -274,5 +274,56 @@ if (untyped.length > 0) {
   console.log('  ok   every resource declares a type and carries the legacy alias');
 }
 
-console.log(failed ? 'package checks: FAILED' : 'package checks: 8 passed');
+/**
+ * No module-scope `Set`, `Map`, `Date` or `RegExp` anywhere a provider closure can capture it.
+ *
+ * The other half of the serialisation problem, and the one the checks above cannot see. They catch a
+ * closure that **fails to serialise** — something that throws at write time. This is the opposite:
+ * a value that serialises *successfully into the wrong thing* and fails much later, when it is
+ * called.
+ *
+ * A `Set` comes back from the state file as a plain `{}`. The identifier still resolves, `has` is
+ * still found on Object's prototype chain, and it throws only on the call —
+ * `Method Set.prototype.has called on incompatible receiver` — from inside a `diff`, aborting every
+ * preview partway. That looked like flakiness rather than a deterministic crash, because the run
+ * died at a different point each time and reported a different count of unchanged resources.
+ *
+ * The distinction that matters is **scope, not type**: one built inside a function is constructed
+ * fresh when the revived code runs, and this package has several of those quite legitimately. Only
+ * a captured one lies. So this looks at column zero, the same crude and sufficient stand-in for
+ * scope the shadow scan uses.
+ *
+ * A Set looks like data and is not — its usefulness is entirely in its prototype, and only data
+ * crosses into a provider.
+ */
+const prototypal: string[] = [];
+{
+  const { readdir, readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  for (const directory of ['../src/', '../src/resources/', '../src/flux/']) {
+    const where = new URL(directory, import.meta.url).pathname;
+    for (const entry of await readdir(where)) {
+      if (!entry.endsWith('.ts') || entry.endsWith('.test.ts')) continue;
+      const source = await readFile(join(where, entry), 'utf8');
+      source.split('\n').forEach((line, at) => {
+        const found = line.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*new (Set|Map|Date|RegExp)\b/);
+        if (found) {
+          prototypal.push(`${entry}:${at + 1} captures a ${found[2]} in '${found[1]}' at module scope`);
+        }
+      });
+    }
+  }
+}
+if (prototypal.length > 0) {
+  failed = true;
+  console.error(
+    `  FAIL a provider closure would capture something whose behaviour lives in its prototype:\n` +
+    `    ${prototypal.join('\n    ')}\n` +
+    `    These serialise into a plain object and throw when called. Use an array, or build it inside the function.`,
+  );
+} else {
+  console.log('  ok   nothing prototypal is captured at module scope');
+}
+
+console.log(failed ? 'package checks: FAILED' : 'package checks: 9 passed');
 process.exit(failed ? 1 : 0);
