@@ -73,12 +73,20 @@ alphabet as the write**, so comparing them verbatim is drift on every refresh fo
 | `guest ok = yes` | `testparm` says `Yes` |
 | `netbios name = homelab` | `testparm` says `HOMELAB` |
 | a password | `rclone obscure` never returns the same string twice |
+| `netbios name = homelab` | `testparm -s` says **nothing at all** — it prints only what differs from the default, and Samba derives that default from the hostname |
 
 Each one cost a resource that reported an update on every deployment, which is worse than noise: an
 update that always runs is a write to the machine that always runs, and `pulumi up` can never answer
 "nothing to do" — the answer you want before doing something risky. One of them trained somebody to
 stop reading those lines, and a genuine conflict between two resources over one path went unnoticed
 for hours.
+
+The last row is the sharpest, because the machine is right and declines to answer. A resource that
+**successfully** makes a setting match the default becomes permanently unable to observe that it did
+— so the absence is not a gap to work around, it is Samba saying "this is the default", and `-v` is
+how to ask what the default is. And when it does answer, it answers `HOMELAB`, because the NetBIOS
+protocol is uppercase: the case-folding was already written and could not fire on a value that was
+not in the output at all.
 
 Asserting the first and reading the second is the only combination that tells the truth, which is
 the one rule again applied to the check rather than to the resource. And the reason it keeps being

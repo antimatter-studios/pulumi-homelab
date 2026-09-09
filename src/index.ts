@@ -117,6 +117,8 @@ export {
   SambaSetting,
   SambaUser,
   readSetting,
+  narrowTo,
+  testparmCommand,
   sambaSameValue,
   upsertSetting,
   removeSetting,
