@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * One line in `/etc/fstab`, keyed on the mount point.
@@ -240,7 +240,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<FstabEntryAr
         // the line is compared against the file rather than against the last arguments, so a hand
         // edit shows up; `mounted` is reported and never reconciled, because mounting is the
         // operator's act
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.line !== fstabLine(wanted) || old.target !== wanted.target,
         replaces: old.target !== wanted.target ? ['target'] : [],
         stables: [],
@@ -264,6 +264,6 @@ export class FstabEntry extends pulumi.dynamic.Resource {
   declare readonly mounted: pulumi.Output<string | null>;
 
   constructor(name: string, host: Target, args: FstabEntryArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { ...DEFAULTS, file: FSTAB, line: undefined, mounted: undefined, ...args }, withLegacyAlias(opts), 'homelab', 'FstabEntry');
+    super(stamped(providerFor(host)), name, { ...DEFAULTS, file: FSTAB, line: undefined, mounted: undefined, ...args }, withLegacyAlias(opts), 'homelab', 'FstabEntry');
   }
 }

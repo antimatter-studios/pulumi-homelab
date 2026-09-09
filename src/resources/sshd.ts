@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredocInto, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 import { disagreeing } from '../resolved.ts';
 
 /**
@@ -319,7 +319,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SshdConfigAr
       const settings = renderSshd(args.settings ?? {}, args.unchecked ?? {});
       const match = args.match ?? {};
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || JSON.stringify(old.settings) !== JSON.stringify(settings)
           || JSON.stringify(old.match) !== JSON.stringify(match)
           || old.file !== (args.file ?? old.file),
@@ -344,7 +344,7 @@ export class SshdConfig extends pulumi.dynamic.Resource {
   declare readonly effective: pulumi.Output<Record<string, string>>;
 
   constructor(name: string, host: Target, args: SshdConfigArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, {
+    super(stamped(providerFor(host)), name, {
       settings: {},
       unchecked: {},
       match: {},

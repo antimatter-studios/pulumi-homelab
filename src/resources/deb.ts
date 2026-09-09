@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 import { readPackage } from './apt.ts';
 
 /**
@@ -125,7 +125,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<DebPackageAr
 
     async diff(_id, old, args) {
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.name !== args.name
           || old.url !== args.url
           || old.sha256 !== args.sha256,
@@ -153,6 +153,6 @@ export class DebPackage extends pulumi.dynamic.Resource {
   declare readonly version: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: DebPackageArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { ...args, version: undefined }, withLegacyAlias(opts), 'homelab', 'DebPackage');
+    super(stamped(providerFor(host)), name, { ...args, version: undefined }, withLegacyAlias(opts), 'homelab', 'DebPackage');
   }
 }

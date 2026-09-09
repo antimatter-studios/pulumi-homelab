@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * How much of the journal the machine keeps, and where.
@@ -222,7 +222,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<JournaldArgs
         // only our own file is compared. `effective` and `overridden` are what the machine decided
         // and are reported rather than reconciled — rewriting our drop-in to win an argument with a
         // file that sorts after it would lose the same argument again on the next run
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.content !== content || old.file !== file,
         replaces: old.file !== file ? ['file'] : [],
         stables: [],
@@ -251,7 +251,7 @@ export class Journald extends pulumi.dynamic.Resource {
   declare readonly journalDir: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: JournaldArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, {
+    super(stamped(providerFor(host)), name, {
       effective: undefined,
       overridden: undefined,
       persistent: undefined,

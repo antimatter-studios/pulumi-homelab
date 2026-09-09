@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A group, and — the actual point — its gid.
@@ -110,7 +110,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<GroupArgs, G
 
     async diff(_id, old, args) {
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.name !== args.name || (args.gid !== undefined && old.gid !== args.gid),
         replaces: old.name !== args.name ? ['name'] : [],
         stables: [],
@@ -133,6 +133,6 @@ export class Group extends pulumi.dynamic.Resource {
   declare readonly members: pulumi.Output<string[]>;
 
   constructor(name: string, host: Target, args: GroupArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { gid: undefined, members: undefined, renumber: false, ...args }, withLegacyAlias(opts), 'homelab', 'Group');
+    super(stamped(providerFor(host)), name, { gid: undefined, members: undefined, renumber: false, ...args }, withLegacyAlias(opts), 'homelab', 'Group');
   }
 }

@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * An instance of a systemd template unit — `avahi-alias@photos.example.local`.
@@ -178,7 +178,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SystemdInsta
     async diff(_id, old, args) {
       const unit = instanceUnit(args.template, args.instance, args.suffix ?? DEFAULTS.suffix);
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.unit !== unit
           || old.enabled !== (args.enabled ?? DEFAULTS.enabled)
           || old.started !== (args.started ?? DEFAULTS.started),
@@ -205,6 +205,6 @@ export class SystemdInstance extends pulumi.dynamic.Resource {
   declare readonly started: pulumi.Output<boolean>;
 
   constructor(name: string, host: Target, args: SystemdInstanceArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { unit: undefined, ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'SystemdInstance');
+    super(stamped(providerFor(host)), name, { unit: undefined, ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'SystemdInstance');
   }
 }

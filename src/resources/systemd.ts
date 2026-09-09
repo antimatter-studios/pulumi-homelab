@@ -1,7 +1,7 @@
 import * as pulumi from '@pulumi/pulumi';
 import { normaliseMode } from '../mode.ts';
 import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A systemd service: its unit file, and whether it is enabled and running.
@@ -217,7 +217,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SystemdUnitA
         || old.started !== wanted.started
         || old.mode !== wanted.mode;
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || changed || old.name !== wanted.name,
         // a renamed service is a different service: the old unit has to be stopped and removed
         // rather than left running under a name nothing describes any more
@@ -266,6 +266,6 @@ export class SystemdUnit extends pulumi.dynamic.Resource {
   declare readonly mode: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: SystemdUnitArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, { ...DEFAULTS, directory: UNITS, ...args }, withLegacyAlias(opts), 'homelab', 'SystemdUnit');
+    super(stamped(providerFor(host)), name, { ...DEFAULTS, directory: UNITS, ...args }, withLegacyAlias(opts), 'homelab', 'SystemdUnit');
   }
 }

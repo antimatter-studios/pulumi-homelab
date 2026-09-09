@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * The packages a machine should have beyond what the image came with.
@@ -234,7 +234,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackagesA
         // drift in either direction counts: something declared present that is missing, and
         // something declared absent that is back. A name dropped from `present` is still a change to
         // the declaration, so the state stops claiming a package it no longer describes
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || (old.missing?.length ?? 0) > 0
           || (old.lingering?.length ?? 0) > 0
           || (old.present ?? old.names ?? []).join(',') !== next.present.join(',')
@@ -262,7 +262,7 @@ export class AptPackages extends pulumi.dynamic.Resource {
   declare readonly lingering: pulumi.Output<string[]>;
 
   constructor(name: string, host: Target, args: AptPackagesArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, {
+    super(stamped(providerFor(host)), name, {
       installed: undefined,
       missing: undefined,
       lingering: undefined,

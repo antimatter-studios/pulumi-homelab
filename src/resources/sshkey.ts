@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A key pair generated on the machine, whose public half is an output.
@@ -135,7 +135,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SshKeyArgs, 
     async diff(_id, old, args) {
       const type = args.type ?? DEFAULTS.type;
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.path !== args.path
           || old.type !== type
           || old.allowDelete !== (args.allowDelete ?? DEFAULTS.allowDelete),
@@ -167,7 +167,7 @@ export class SshKey extends pulumi.dynamic.Resource {
   declare readonly fingerprint: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: SshKeyArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, {
+    super(stamped(providerFor(host)), name, {
       type: DEFAULTS.type,
       comment: name,
       allowDelete: DEFAULTS.allowDelete,

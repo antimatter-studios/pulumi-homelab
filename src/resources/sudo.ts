@@ -1,7 +1,7 @@
 import * as pulumi from '@pulumi/pulumi';
 import { normaliseMode } from '../mode.ts';
 import { escalate, ask, heredocInto, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A sudo privilege, as a file in `/etc/sudoers.d`.
@@ -174,7 +174,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SudoRuleArgs
       const content = sudoersFile(args);
       const file = args.file ?? old.file;
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.content !== content || old.mode !== MODE || old.owner !== 'root' || old.file !== file,
         // a rule in a different file is a different rule, and leaving the old file behind would
         // leave a privilege granted that nothing describes any more
@@ -205,6 +205,6 @@ export class SudoRule extends pulumi.dynamic.Resource {
   constructor(name: string, host: Target, args: SudoRuleArgs, opts?: pulumi.CustomResourceOptions) {
     // the resource's own name is the obvious file name, and is checked rather than trusted: a
     // Pulumi name with a dot in it is perfectly legal and would produce a rule sudo silently ignores
-    super(providerFor(host), name, { directory: DIRECTORY, ...args, file: sudoersFileName(args.file ?? name) }, withLegacyAlias(opts), 'homelab', 'SudoRule');
+    super(stamped(providerFor(host)), name, { directory: DIRECTORY, ...args, file: sudoersFileName(args.file ?? name) }, withLegacyAlias(opts), 'homelab', 'SudoRule');
   }
 }

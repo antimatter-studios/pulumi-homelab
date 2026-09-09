@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A system account for something that runs.
@@ -180,7 +180,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<UserArgs, Us
         || (args.home !== undefined && old.home !== args.home)
         || old.groups.join(',') !== groups.join(',');
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || changed || old.name !== args.name,
         replaces: old.name !== args.name ? ['name'] : [],
         stables: [],
@@ -202,7 +202,7 @@ export class User extends pulumi.dynamic.Resource {
   declare readonly home: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: UserArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, {
+    super(stamped(providerFor(host)), name, {
       home: undefined,
       groups: [],
       createHome: true,

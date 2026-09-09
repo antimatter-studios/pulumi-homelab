@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
-import { providerChanged, withLegacyAlias } from '../upgrade.ts';
+import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
 /**
  * A symbolic link, and a `read` that can tell four things apart.
@@ -113,7 +113,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SymlinkArgs,
 
     async diff(_id, old, args) {
       return {
-        changes: providerChanged(old, args)
+        changes: transportChanged(old)
           || old.target !== args.target || old.path !== args.path,
         replaces: old.path !== args.path ? ['path'] : [],
         stables: [],
@@ -135,6 +135,6 @@ export class Symlink extends pulumi.dynamic.Resource {
   declare readonly target: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: SymlinkArgs, opts?: pulumi.CustomResourceOptions) {
-    super(providerFor(host), name, args, withLegacyAlias(opts), 'homelab', 'Symlink');
+    super(stamped(providerFor(host)), name, args, withLegacyAlias(opts), 'homelab', 'Symlink');
   }
 }
