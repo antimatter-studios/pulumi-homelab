@@ -80,6 +80,7 @@ interface HostnameState {
 const HOSTS = '/etc/hosts';
 const LOOPBACK = '127.0.1.1';
 const DEFAULTS = { restartAvahi: true, domain: '' };
+const MARK = '#pulumi-homelab#';
 
 /**
  * Every name the `127.0.1.1` line assigns, or an empty list when the file has no such line.
@@ -140,6 +141,24 @@ export function setHostsName(text: string, name: string, domain = ''): string {
   return [...lines.slice(0, insertAt), wanted, ...lines.slice(insertAt)].join('\n');
 }
 
+/**
+ * The three answers, out of one reply.
+ *
+ * Its own function because the previous version of this was three lines inside the read and got the
+ * splitting wrong in a way no test could see: it used **one marker twice** and then destructured two
+ * parts out of the three that `split` produces, so the hosts file was silently always the empty
+ * string. Every machine then failed the check that the `127.0.1.1` line names the host — on a
+ * machine where the line was perfectly correct — and, because that check throws, the whole
+ * deployment aborted rather than merely reporting drift.
+ *
+ * Distinct markers now, so each split finds exactly one and there is nothing to miscount.
+ */
+export function parseHostnameOutput(out: string): { static: string; transient: string; hostsFile: string } {
+  const [fixed = '', rest = ''] = out.split(`${MARK}now\n`);
+  const [now = '', file = ''] = rest.split(`${MARK}hosts\n`);
+  return { static: fixed.trim(), transient: now.trim(), hostsFile: file };
+}
+
 /** What the machine currently calls itself, in all three places. */
 export async function readHostname(
   host: Target,
@@ -149,18 +168,14 @@ export async function readHostname(
     // --static and plain `hostname` are different questions: DHCP can set a transient name that
     // outlives nothing and explains a machine answering to something nobody configured
     `hostnamectl --static 2>/dev/null || cat /etc/hostname 2>/dev/null || true; ` +
-    `echo '#pulumi-homelab#'; hostname 2>/dev/null || true; ` +
-    `echo '#pulumi-homelab#'; cat ${shellQuote(hosts)} 2>/dev/null || true`,
+    `echo ${shellQuote(`${MARK}now`)}; hostname 2>/dev/null || true; ` +
+    `echo ${shellQuote(`${MARK}hosts`)}; cat ${shellQuote(hosts)} 2>/dev/null || true`,
   ));
   if (asked.code !== 0) throw new Error(`could not read the hostname on ${describe(host)}: ${asked.err.trim()}`);
-  const [fixed = '', rest = ''] = asked.out.split('#pulumi-homelab#\n');
-  const [now = '', file = ''] = rest.split('#pulumi-homelab#\n');
+  const found = parseHostnameOutput(asked.out);
   return {
-    static: fixed.trim(),
-    transient: now.trim(),
-    hostsLine: hostsName(file) ?? '',
-    // whether the line names this host at all, which is the question the diff needs answered
-    hostsFile: file,
+    ...found,
+    hostsLine: hostsName(found.hostsFile) ?? '',
   };
 }
 

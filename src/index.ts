@@ -108,6 +108,7 @@ export {
   hostsName,
   hostsNames,
   hostsNamesHost,
+  parseHostnameOutput,
   setHostsName,
   type HostnameArgs,
 } from './resources/hostname.ts';
