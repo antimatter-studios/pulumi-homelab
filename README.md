@@ -258,11 +258,30 @@ CI runs both on Ubuntu, which matters: six tests exercise resources against a re
 skip on macOS, because this package reads machines with GNU coreutils and BSD `stat` rejects `-c`.
 Those six only ever run in CI.
 
-The reads are pure functions wherever the answer is a parse, so the thing worth testing is testable
-without a machine — `parseDpkgStatus`, `parseFileStat`, `parseShow`, `parseSshdT`, `parseVcgencmd`,
-`interpretSymlink`, `hostsNames`, `sambaSameValue` and the rest are exported and tested directly.
-That is not tidiness: every bug this package has had was in reading state back, and a parse buried
-inside a function that needs an ssh connection is one nothing can test.
+### Where the pure/effectful line is
+
+A provider with no side effects would be a provider that does nothing, so the rule is not "no side
+effects" — it is that **every decision lives in a pure function and the effectful layer only
+sequences them**. Around seventy exported functions carry the decisions: every parse
+(`parseDpkgStatus`, `parseShow`, `parseSshdT`, `parseVcgencmd`, `parseHostKeys`), every comparison
+(`sambaSameValue`, `disagreeing`, `transportChanged`), every edit (`upsertFstab`, `applyToSection`,
+`setHostsName`), every command (`testparmCommand`, `installScript`, `bootedWith`), and every
+decision about what to do (`actsNeeded`, `swapAction`, `interpretSymlink`, `lockoutRefusal`,
+`renumberRefusal`).
+
+That is not tidiness. Every bug this package has had was in reading state back or in deciding what
+to do about it, and both were previously buried inside functions that need a machine. Two specific
+lessons paid for the rest:
+
+- **A test that re-implements the decision proves only that two copies agree.** `SystemdUnit`'s
+  "which of these three acts are needed" was restated in its test file; it is now imported.
+- **A test whose input is captured output cannot notice the question changing.** Reverting
+  `testparm -sv` to `-s` broke no test, because the fixtures *are* `-v` output. The command is a
+  function now, and the flag is asserted.
+
+Both refusals that cannot be exercised on a machine without taking that machine away —
+`lockoutRefusal` and `renumberRefusal` — are pure and tested for their exact wording, because a
+guard nobody has seen fire is a guard nobody knows the wording of.
 
 The package checks are separate from the unit tests on purpose, and each has a demonstrated failure
 mode: the package loads through Node's own loader, a provider closure serialises, a serialised
@@ -723,12 +742,14 @@ started with, which is the classic "why has my edit not taken effect" afternoon.
 
 ## Changelog
 
-### 0.1.0 — unreleased
+Recent releases. Full history, and the release notes a tag ships with, live in
+[CHANGELOG.md](CHANGELOG.md).
 
-First working version. Nineteen resources, a machine audit, and a transport that
-multiplexes its ssh connections.
+### v0.1.0
 
-Full history in [CHANGELOG.md](CHANGELOG.md).
+First working version — twenty-three resources, a machine audit, a transport that survives being
+serialised into the state file, and eight bugs found by pointing it at real hardware that no fixture
+could have caught.
 
 ## Status
 

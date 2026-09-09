@@ -141,11 +141,24 @@ export async function readUnit(host: Target, name: string, directory = UNITS): P
  * for, a cluster dropping and a media player stopping a film somebody was watching, because somebody
  * fixed a typo.
  *
- * So each of the three acts is conditional on its own difference. The one that is not obvious is
- * the restart: a changed unit file needs one even when the service was already running, because
+ * So each of the three acts is conditional on its own difference, decided by `actsNeeded` — which is
+ * exported and tested directly, because a test that re-implements the decision proves only that two
+ * copies of it agree. The one that is not obvious is the restart: a changed unit file needs one even when the service was already running, because
  * systemd would otherwise go on running the old command — which is the classic "why has my edit not
  * taken effect" afternoon.
  */
+export function actsNeeded(
+  current: Pick<SystemdUnitState, 'unit' | 'mode' | 'enabled' | 'started'> | null,
+  wanted: Pick<SystemdUnitState, 'unit' | 'mode' | 'enabled' | 'started'>,
+): { rewrite: boolean; relabel: boolean; bounce: boolean } {
+  const rewrite = current === null || current.unit !== wanted.unit || current.mode !== wanted.mode;
+  const relabel = current === null || current.enabled !== wanted.enabled;
+  // a rewritten unit has to be restarted even when it was already running, or the process keeps
+  // executing the definition it was started with
+  const bounce = rewrite || current === null || current.started !== wanted.started;
+  return { rewrite, relabel, bounce };
+}
+
 async function apply(
   host: Target,
   args: Omit<SystemdUnitState, 'unitFileState'>,
@@ -154,11 +167,7 @@ async function apply(
   const file = pathOf(args.name, args.directory);
   const unit = shellQuote(args.name);
 
-  const rewrite = current === null || current.unit !== args.unit || current.mode !== args.mode;
-  const relabel = current === null || current.enabled !== args.enabled;
-  // a rewritten unit has to be restarted even when it was already running, or the process keeps
-  // executing the definition it was started with
-  const bounce = rewrite || current === null || current.started !== args.started;
+  const { rewrite, relabel, bounce } = actsNeeded(current, args);
   if (!rewrite && !relabel && !bounce) return;
 
   const steps = [

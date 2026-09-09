@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseShow } from './systemd.ts';
+import { actsNeeded, parseShow } from './systemd.ts';
 
 /**
  * The bug this exists to prevent was found on a real machine and could not have been found on a
@@ -53,23 +53,16 @@ describe('reading systemctl show', () => {
 /**
  * An update that changes nothing must do nothing to the machine.
  *
- * Every `diff` in this package reports a change when the serialised provider differs, so the first
- * deployment after any edit here — including a comment, since the closure carries the source text
- * of what it captures — updates every resource. If `apply` restarted unconditionally, that would
- * mean every managed service restarting because somebody fixed a typo: k3s dropping its cluster and
- * the media player stopping a film.
+ * Every `diff` in this package reports a change when the transport version moves, and an update also
+ * happens whenever anything else about a resource changes — so an `apply` that restarted
+ * unconditionally would mean managed services restarting for reasons unrelated to them: a cluster
+ * dropping and a media player stopping a film somebody was watching.
  *
- * `apply` is not exported, so what is asserted here is the decision it makes, in the same form.
+ * This imports the real decision rather than restating it. The previous version of this file
+ * contained its own copy of `actsNeeded`, which proved only that two implementations of the same
+ * idea agreed with each other — the same weakness as testing a parse against a fixture that was
+ * captured from the code being tested.
  */
-function actsNeeded(
-  current: { unit: string; mode: string; enabled: boolean; started: boolean } | null,
-  wanted: { unit: string; mode: string; enabled: boolean; started: boolean },
-): { rewrite: boolean; relabel: boolean; bounce: boolean } {
-  const rewrite = current === null || current.unit !== wanted.unit || current.mode !== wanted.mode;
-  const relabel = current === null || current.enabled !== wanted.enabled;
-  return { rewrite, relabel, bounce: rewrite || current === null || current.started !== wanted.started };
-}
-
 describe('doing only what is different', () => {
   const running = { unit: '[Unit]\nDescription=x\n', mode: '0644', enabled: true, started: true };
 

@@ -147,6 +147,35 @@ export async function readSwap(
   };
 }
 
+/**
+ * What needs doing, given what the machine says and what was asked for.
+ *
+ * Its own function because an update that changes nothing must do nothing, and on this resource
+ * that matters more than most: the disable path runs `swapoff -a` and rewrites `/etc/fstab`. Doing
+ * that on a machine already exactly as described is a write to the boot configuration for no
+ * reason.
+ *
+ * Both tenses decide it. Swap that is off now but configured to return at the next boot is not off,
+ * and swap that is on now with nothing in fstab will be gone after a reboot — so `alreadyOff`
+ * requires the unit to be masked or absent as well, because a merely-disabled `dphys-swapfile` is
+ * re-enabled by an `apt upgrade` of the package.
+ */
+export function swapAction(
+  before: { active: { path: string; sizeMb: number }[]; fstab: string[]; dphys: string | null },
+  wanted: { enabled: boolean; sizeMb?: number; path: string },
+): 'enable' | 'disable' | 'nothing' {
+  const alreadyOff = before.active.length === 0
+    && before.fstab.length === 0
+    && (before.dphys === null || before.dphys === 'masked');
+  const alreadyOn = before.active.some((swap) => swap.path === wanted.path)
+    && before.fstab.length > 0
+    && (wanted.sizeMb === undefined
+      || before.active.some((swap) => swap.path === wanted.path && swap.sizeMb === wanted.sizeMb));
+
+  if (wanted.enabled) return alreadyOn ? 'nothing' : 'enable';
+  return alreadyOff ? 'nothing' : 'disable';
+}
+
 /** Turn all of it off, in both tenses. */
 async function disable(host: Target, state: Pick<SwapState, 'dphys'>, unit = DPHYS, fstab = FSTAB): Promise<void> {
   const steps = [
@@ -208,19 +237,11 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SwapArgs, Sw
     const unit = args.unit ?? DPHYS;
     const fstab = args.fstab ?? FSTAB;
     const before = await readSwap(host, path, unit, fstab);
-    // an update that changes nothing must do nothing. Without this, a deployment caused only by
-    // this package being upgraded runs `swapoff -a` and rewrites /etc/fstab on a machine that was
-    // already exactly as the code describes it
-    const alreadyOff = before.active.length === 0 && before.fstab.length === 0
-      && (before.dphys === null || before.dphys === 'masked');
-    const alreadyOn = before.active.some((swap) => swap.path === path)
-      && before.fstab.length > 0
-      && (args.sizeMb === undefined || before.active.some((swap) => swap.path === path && swap.sizeMb === args.sizeMb));
-
-    if (args.enabled && !alreadyOn) {
+    const action = swapAction(before, { enabled: args.enabled, sizeMb: args.sizeMb, path });
+    if (action === 'enable') {
       if (args.sizeMb === undefined) throw new Error('swap that is enabled needs a sizeMb');
       await enable(host, path, args.sizeMb, before.dphys, unit, fstab);
-    } else if (!args.enabled && !alreadyOff) {
+    } else if (action === 'disable') {
       await disable(host, before, unit, fstab);
     }
     const after = await readSwap(host, path, unit, fstab);

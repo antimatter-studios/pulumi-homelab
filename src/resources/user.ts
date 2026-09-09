@@ -99,6 +99,37 @@ export async function readUser(host: Target, name: string): Promise<Omit<UserSta
   };
 }
 
+/**
+ * Why a change to an account is refused, or null when there is nothing to refuse.
+ *
+ * Both cases are ones where the command succeeds, the resource reports success, and the machine is
+ * then unreachable — so there is no later run in which to notice. Which is exactly why they are
+ * extracted: a guard whose wording nobody has read is a guard nobody can rely on, and neither of
+ * these can be exercised against a machine without taking that machine away.
+ *
+ * `connectsAs` is null for a transport that is not an ssh login: there is no login to remove, and
+ * asking a container or a chroot for one would be inventing a fact.
+ */
+export function lockoutRefusal(
+  args: { name: string; shell: string; groups: string[]; allowGroupRemoval: boolean },
+  connectsAs: string | null,
+  actual: { groups: string[] } | null,
+  noLoginShells: string[] = NO_LOGIN,
+): string | null {
+  if (args.name === connectsAs && noLoginShells.includes(args.shell)) {
+    return `${args.name} is the account this provider connects as, and the code gives it ${args.shell}. `
+      + `That would take away the login being used to apply it. Give it a real shell, or manage a different account.`;
+  }
+  const losing = actual ? groupsToLose(actual.groups, args.groups) : [];
+  if (losing.length > 0 && !args.allowGroupRemoval) {
+    return `${args.name} is in ${losing.join(', ')}, which the code does not mention. `
+      + `\`groups\` is the whole list rather than additions to it, so applying this would remove ${losing.length} `
+      + `membership${losing.length === 1 ? '' : 's'}${losing.includes('sudo') ? ', including sudo' : ''}. `
+      + `Add them to the list, or set allowGroupRemoval: true if losing them is what you meant.`;
+  }
+  return null;
+}
+
 function providerFor(host: Target): pulumi.dynamic.ResourceProvider<UserArgs, UserState> {
   /**
    * Refuse the two changes that cannot be undone over the connection making them.
