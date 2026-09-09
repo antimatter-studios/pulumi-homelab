@@ -187,19 +187,25 @@ export class SshKey extends pulumi.dynamic.Resource {
  * reinstalled presents new ones, and that is a thing to be told about loudly rather than to
  * discover from a client that refuses to connect.
  */
+export function parseHostKeys(out: string): Record<string, string> {
+  const found: Record<string, string> = {};
+  for (const line of out.split('\n')) {
+    const [file = '', ...rest] = line.trim().split(/\s+/);
+    if (file.length === 0) continue;
+    const type = file.replace(/^.*ssh_host_/, '').replace(/_key\.pub$/, '');
+    // `<path> 256 SHA256:… comment (ED25519)` — the fingerprint is the second word of ssh-keygen's
+    // own output, which starts after the path this loop printed
+    const fingerprint = rest[1] ?? '';
+    if (fingerprint.length > 0) found[type] = fingerprint;
+  }
+  return found;
+}
+
 export async function hostKeys(host: Target): Promise<Record<string, string>> {
   const asked = await ask(host, escalate(host,
     `for pub in /etc/ssh/ssh_host_*_key.pub; do ` +
     `test -f "$pub" || continue; printf '%s ' "$pub"; ssh-keygen -lf "$pub" 2>/dev/null || echo; done`,
   ));
   if (asked.code !== 0) return {};
-  const found: Record<string, string> = {};
-  for (const line of asked.out.split('\n')) {
-    const [file = '', ...rest] = line.trim().split(/\s+/);
-    if (file.length === 0) continue;
-    const type = file.replace(/^.*ssh_host_/, '').replace(/_key\.pub$/, '');
-    const fingerprint = rest[1] ?? '';
-    if (fingerprint.length > 0) found[type] = fingerprint;
-  }
-  return found;
+  return parseHostKeys(asked.out);
 }

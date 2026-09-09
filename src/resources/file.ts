@@ -47,6 +47,17 @@ interface FileState extends FileArgs {
 
 const DEFAULTS = { mode: '0644', owner: 'root', group: 'root', reloadSystemd: false } as const;
 
+/**
+ * `644 root root` → the three answers, with the mode in the shape the code writes it in.
+ *
+ * Extracted for the same reason `Directory` extracted its own: reading state back is where this
+ * package's bugs have been, and a parse buried in a read is one nothing can test.
+ */
+export function parseFileStat(out: string): { mode: string; owner: string; group: string } {
+  const [mode = '', owner = '', group = ''] = out.trim().split(/\s+/);
+  return { mode: normaliseMode(mode), owner, group };
+}
+
 /** What the machine says is there now, or null where there is no such file. */
 export async function readFile(host: Target, path: string): Promise<Omit<FileState, 'reloadSystemd'> | null> {
   // one round trip for all four questions: an ssh handshake costs far more than the work
@@ -58,12 +69,9 @@ export async function readFile(host: Target, path: string): Promise<Omit<FileSta
   if (asked.code !== 0) throw new Error(`could not read ${path}: ${asked.err.trim()}`);
 
   const split = asked.out.indexOf('\n');
-  const [mode = '', owner = '', group = ''] = asked.out.slice(0, split).trim().split(/\s+/);
   return {
     path,
-    mode: normaliseMode(mode),
-    owner,
-    group,
+    ...parseFileStat(asked.out.slice(0, split)),
     content: asked.out.slice(split + 1),
   };
 }

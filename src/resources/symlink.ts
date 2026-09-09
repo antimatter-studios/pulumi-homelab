@@ -32,6 +32,22 @@ interface SymlinkState {
 }
 
 /**
+ * What an answer from the machine means, as a value rather than as control flow.
+ *
+ * The four states are the substance of this resource, and they were previously expressed only as
+ * `if` statements inside a function that needs a machine — so the one thing worth testing could not
+ * be. `9` is nothing there, `8` is something real in the way, `0` is a link and its target.
+ */
+export function interpretSymlink(
+  code: number,
+  out: string,
+): { state: 'link'; target: string } | { state: 'absent' } | { state: 'occupied'; kind: string } {
+  if (code === 9) return { state: 'absent' };
+  if (code === 8) return { state: 'occupied', kind: out.trim() || 'something else' };
+  return { state: 'link', target: out };
+}
+
+/**
  * What is at that path: the link's target, or null where there is nothing.
  *
  * Throws where something real is in the way, because that is a machine in a state the code did not
@@ -46,15 +62,18 @@ export async function readSymlink(host: Target, path: string): Promise<SymlinkSt
     `if [ -e ${quoted} ] || [ -L ${quoted} ]; then stat -c '%F' ${quoted}; exit 8; fi; ` +
     `exit 9`,
   ));
-  if (asked.code === 9) return null;
-  if (asked.code === 8) {
+  if (asked.code !== 0 && asked.code !== 8 && asked.code !== 9) {
+    throw new Error(`could not read ${path}: ${asked.err.trim()}`);
+  }
+  const found = interpretSymlink(asked.code, asked.out);
+  if (found.state === 'absent') return null;
+  if (found.state === 'occupied') {
     throw new Error(
-      `${path} on ${describe(host)} is a ${asked.out.trim() || 'something else'}, not a symlink. ` +
+      `${path} on ${describe(host)} is a ${found.kind}, not a symlink. ` +
       `Refusing to replace it: whatever is in there is data this resource did not put there.`,
     );
   }
-  if (asked.code !== 0) throw new Error(`could not read ${path}: ${asked.err.trim()}`);
-  return { path, target: asked.out };
+  return { path, target: found.target };
 }
 
 function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SymlinkArgs, SymlinkState> {

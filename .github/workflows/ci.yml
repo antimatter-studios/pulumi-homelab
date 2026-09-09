@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A pull request that is superseded is not worth finishing.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Ubuntu on purpose rather than for convenience. This package reads machines with GNU coreutils
+    # — `stat -c`, `dpkg-query`, `systemctl` — and six tests that exercise resources against a real
+    # filesystem skip on macOS because BSD `stat` rejects `-c`. Here they run, which is the only
+    # place they do.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22 is the oldest release with `--experimental-strip-types`, which the package checks use
+          # to load this package the way Pulumi does.
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        # --frozen-lockfile so a drifted lockfile fails here rather than resolving to something
+        # nobody tested.
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Unit tests
+        run: pnpm run test:unit
+
+      - name: Package checks
+        # Deliberately separate from the unit tests: these run under plain node because vitest's
+        # module transform rewrites imports into captured variables, which is exactly the shape
+        # Pulumi's serialiser rejects — so a vitest version of these checks fails on correct code.
+        run: pnpm run check:serialise
+
+  ci:
+    # One always-run job for branch protection to require, so the jobs above can be renamed, split
+    # into a matrix or made conditional without ever stranding a merge on a check that never reports.
+    name: CI
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Result
+        run: |
+          case '${{ needs.test.result }}' in
+            success|skipped) echo 'ok' ;;
+            *) echo 'test job did not pass' >&2; exit 1 ;;
+          esac
