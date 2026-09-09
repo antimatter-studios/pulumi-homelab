@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hostsName, hostsNames, hostsNamesHost, setHostsName } from './hostname.ts';
+import { hostsName, hostsNames, hostsNamesHost, parseHostnameOutput, setHostsName } from './hostname.ts';
 
 /**
  * A machine whose two names disagree fails in ways that never mention either file: `sudo` becomes
@@ -120,5 +120,56 @@ describe('reading the name whichever order it was written in', () => {
 
   it('is not fooled by a name that merely starts the same way', () => {
     expect(hostsNamesHost('127.0.1.1\thomelab-old\n', 'homelab')).toBe(false);
+  });
+});
+
+/**
+ * The bug that took a stack from "cannot report itself clean" to "cannot finish".
+ *
+ * The read used **one marker twice** and then destructured two parts out of the three that `split`
+ * produces — so the hosts file was silently always the empty string, on every machine. The check
+ * that the `127.0.1.1` line names the host then failed on a machine where the line was perfectly
+ * correct, and because that check throws rather than reporting drift, the whole deployment aborted
+ * partway.
+ *
+ * The reply below is the real one, tab-separated, because that is what Debian's own installer
+ * writes — and the tab was the first thing suspected and was never the problem.
+ */
+const REPLY = [
+  'homelab',
+  '#pulumi-homelab#now',
+  'homelab',
+  '#pulumi-homelab#hosts',
+  '127.0.0.1\tlocalhost',
+  '127.0.1.1\thomelab',
+  '',
+].join('\n');
+
+describe('splitting one reply into three answers', () => {
+  it('reads all three, and the third is not empty', () => {
+    const found = parseHostnameOutput(REPLY);
+    expect(found.static).toBe('homelab');
+    expect(found.transient).toBe('homelab');
+    expect(found.hostsFile).toContain('127.0.1.1\thomelab');
+  });
+
+  it('finds the host on a tab-separated line, which is what Debian writes', () => {
+    expect(hostsNamesHost(parseHostnameOutput(REPLY).hostsFile, 'homelab')).toBe(true);
+  });
+
+  it('does not lose the hosts file to a marker appearing twice', () => {
+    // the whole bug: `split` divides at every occurrence, so one marker used twice yields three
+    // parts, and taking two of them drops the last silently
+    expect(parseHostnameOutput(REPLY).hostsFile.length).toBeGreaterThan(0);
+  });
+
+  it('reads a static and transient name that differ, which DHCP can cause', () => {
+    const reply = ['homelab', '#pulumi-homelab#now', 'dhcp-given', '#pulumi-homelab#hosts', ''].join('\n');
+    const found = parseHostnameOutput(reply);
+    expect([found.static, found.transient]).toEqual(['homelab', 'dhcp-given']);
+  });
+
+  it('answers empty rather than throwing when the machine said nothing', () => {
+    expect(parseHostnameOutput('')).toEqual({ static: '', transient: '', hostsFile: '' });
   });
 });
