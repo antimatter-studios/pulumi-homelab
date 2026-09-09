@@ -101,12 +101,21 @@ export {
   type SshKeyArgs,
 } from './resources/sshkey.ts';
 export { Group, readGroup, parseGroupEntry, type GroupArgs } from './resources/group.ts';
-export { Hostname, readHostname, hostsName, setHostsName, type HostnameArgs } from './resources/hostname.ts';
+export {
+  Hostname,
+  readHostname,
+  hostsName,
+  hostsNames,
+  hostsNamesHost,
+  setHostsName,
+  type HostnameArgs,
+} from './resources/hostname.ts';
 export {
   SambaShare,
   SambaSetting,
   SambaUser,
   readSetting,
+  sambaSameValue,
   upsertSetting,
   removeSetting,
   readShare,

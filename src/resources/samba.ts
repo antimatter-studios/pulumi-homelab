@@ -109,6 +109,47 @@ export function parseShareSettings(lines: string[]): Record<string, string> {
 const sameKey = (a: string, b: string) =>
   a.trim().toLowerCase().replace(/\s+/g, ' ') === b.trim().toLowerCase().replace(/\s+/g, ' ');
 
+/**
+ * Whether a declared value and the one Samba reports are the same value.
+ *
+ * **This is why `SambaShare` reported an update on every deployment for ever.** `testparm` does not
+ * echo what the file says — it prints Samba's own resolution of it, and Samba's vocabulary is not
+ * the file's:
+ *
+ * ```
+ * smb.conf:      guest ok = yes        read only = no
+ * testparm -s:   guest ok = Yes        read only = No
+ * ```
+ *
+ * Compared verbatim those differ on every run, so the resource updated on every run — reloading
+ * Samba each time, for ever, on a machine nobody had touched. The evidence was in this package's own
+ * test fixture, which held both spellings side by side and never compared them.
+ *
+ * That is the fourth instance of one bug: `stat` answering `644` where the code says `0644`, `sshd
+ * -T` printing `without-password` for `prohibit-password`, `rclone obscure` never returning the same
+ * string twice. **The read is accurate and is not in the same alphabet as the write.**
+ *
+ * Booleans are compared as booleans, because Samba accepts several spellings of each and means one
+ * thing by them. Names Samba case-folds — NetBIOS names and workgroups are always uppercased — are
+ * compared case-insensitively. Everything else is compared exactly, because a path differing only in
+ * case is a different path.
+ */
+const YES = new Set(['yes', 'true', '1']);
+const NO = new Set(['no', 'false', '0']);
+const CASE_FOLDED = new Set(['netbios name', 'workgroup', 'server string', 'realm']);
+
+export function sambaSameValue(key: string, declared: string, effective: string): boolean {
+  const a = declared.trim();
+  const b = effective.trim();
+  if (a === b) return true;
+  const lowerA = a.toLowerCase();
+  const lowerB = b.toLowerCase();
+  if (YES.has(lowerA) && YES.has(lowerB)) return true;
+  if (NO.has(lowerA) && NO.has(lowerB)) return true;
+  const folded = [...CASE_FOLDED].some((name) => sameKey(name, key));
+  return folded && lowerA === lowerB;
+}
+
 /** One section of `testparm -s` output, as Samba understands it. */
 export function effectiveShare(testparm: string, share: string): Record<string, string> | null {
   const lines = parseSections(testparm).get(share);
@@ -241,7 +282,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
     if (!effective) throw new Error(`wrote the [${args.share}] section but samba does not report it`);
     return {
       share: args.share, path: args.path, settings, config, effective,
-      overridden: disagreeing({ path: args.path, ...settings }, effective),
+      overridden: overriddenIn({ path: args.path, ...settings }, effective),
     };
   };
 
@@ -265,7 +306,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
           // what Samba says the path is, which is the answer that matters when they disagree
           path: effective.path ?? state?.path ?? '',
           effective,
-          overridden: disagreeing(state?.settings ?? {}, effective),
+          overridden: overriddenIn(state?.settings ?? {}, effective),
         },
       };
     },
@@ -279,7 +320,12 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
       // compared against what Samba reports rather than against the last arguments: a share edited
       // by hand is drift, and testparm is the only thing that knows what the edit actually meant
       const wanted = { path: args.path, ...settings };
-      const differs = Object.entries(wanted).some(([key, value]) => old.effective?.[key] !== value);
+      // compared through Samba's own vocabulary rather than verbatim: `yes` and `Yes` are one value,
+      // and comparing them as strings is an update on every deployment for ever
+      const differs = Object.entries(wanted).some(([key, value]) => {
+        const answered = Object.entries(old.effective ?? {}).find(([name]) => sameKey(name, key))?.[1];
+        return answered === undefined || !sambaSameValue(key, value, answered);
+      });
       return {
         changes: providerChanged(old, args)
           || differs || old.share !== args.share,
@@ -471,6 +517,17 @@ export async function readSetting(
   return found?.[1] ?? null;
 }
 
+/** `disagreeing`, but through Samba's vocabulary rather than by string equality. */
+function overriddenIn(declared: Record<string, string>, effective: Record<string, string>): string[] {
+  return Object.entries(declared)
+    .filter(([key, value]) => {
+      const answered = Object.entries(effective).find(([name]) => sameKey(name, key))?.[1];
+      return answered !== undefined && !sambaSameValue(key, value, answered);
+    })
+    .map(([key]) => key)
+    .sort();
+}
+
 function settingProviderFor(host: Target): pulumi.dynamic.ResourceProvider<SambaSettingArgs, SambaSettingState> {
   const settle = async (args: SambaSettingArgs): Promise<SambaSettingState> => {
     const config = args.config ?? SMB_CONF;
@@ -521,7 +578,9 @@ function settingProviderFor(host: Target): pulumi.dynamic.ResourceProvider<Samba
       return {
         // compared against what Samba resolved, so a hand edit is drift
         changes: providerChanged(old, args)
-          || old.effective !== args.value
+          // through Samba's vocabulary, not verbatim: `netbios name` comes back uppercased, so a
+          // declared `homelab` against an effective `HOMELAB` was drift on every run
+          || !sambaSameValue(args.key, args.value, old.effective ?? '')
           || old.value !== args.value
           || old.apply !== (args.apply ?? 'reload'),
         replaces: old.share !== args.share || old.key !== args.key ? ['share', 'key'] : [],

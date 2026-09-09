@@ -63,6 +63,23 @@ usually different objects**:
 | `swapoff`, an action | `/proc/swaps`, a state |
 | `uname -m`, which has three possible answers on one machine | `dpkg --print-architecture`, the userland's, which has one — see below |
 
+And the same bug from the other side, four times now — **the read is accurate and is not in the same
+alphabet as the write**, so comparing them verbatim is drift on every refresh for ever:
+
+| What the code writes | What the machine answers |
+|---|---|
+| `0644` | `stat` says `644` |
+| `PermitRootLogin prohibit-password` | `sshd -T` says `without-password` |
+| `guest ok = yes` | `testparm` says `Yes` |
+| `netbios name = homelab` | `testparm` says `HOMELAB` |
+| a password | `rclone obscure` never returns the same string twice |
+
+Each one cost a resource that reported an update on every deployment, which is worse than noise: an
+update that always runs is a write to the machine that always runs, and `pulumi up` can never answer
+"nothing to do" — the answer you want before doing something risky. One of them trained somebody to
+stop reading those lines, and a genuine conflict between two resources over one path went unnoticed
+for hours.
+
 Asserting the first and reading the second is the only combination that tells the truth, which is
 the one rule again applied to the check rather than to the resource. And the reason it keeps being
 missed is that **the cheap question is usually right** — which is exactly what makes the exception
@@ -167,39 +184,73 @@ calls it.
 
 ## Using it
 
-**A note on install time.** `@pulumi/kubernetes` is a dependency because `FluxApp` is in here, and
-it is a large one: 22MB of SDK, plus a `postinstall` that downloads a 178MB resource plugin into
-`~/.pulumi/plugins`. On a cold store that install has taken close to three minutes; where the plugin
-is already cached it is seconds, which is why two people can report wildly different numbers for the
-same command. It is install
-time and not runtime — Pulumi runs a program through Node rather than bundling it, so a module
-nobody imports is never loaded — but it is long enough to be mistaken for a hang, which is the only
-reason it is worth mentioning here.
+Not on npm yet. Add it as a source dependency:
 
-**Consumers need one compiler option.** This ships sources rather than built output, so a `link:`
-or `file:` dependency means *your* compiler reads these files under *your* options. Relative imports
-here carry their `.ts` extension — which is what lets plain `node --experimental-strip-types` load
-the package with no build step, and is how `audit()` runs from a two-line script rather than only
-inside a Pulumi program. Set this, or you get `TS5097` pointing at files in this repo from a
-typecheck of yours:
+```json
+{ "dependencies": { "pulumi-homelab": "file:../pulumi-homelab" } }
+```
+
+```ts
+import { AptPackage, SystemdUnit, Precondition, type Host } from 'pulumi-homelab';
+
+const host: Host = { address: '198.51.100.10', user: 'admin' };
+
+const node = new AptPackage('nodejs', host, { name: 'nodejs', update: true });
+
+new SystemdUnit('app', host, {
+  name: 'app',
+  unit: `[Unit]
+Description=the thing this machine is for
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/node /opt/app/server.mjs
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+`,
+}, { dependsOn: [node] });
+```
+
+**Always run with `--refresh`.** A bare `pulumi up` compares your code against Pulumi's *memory* of
+the machine rather than the machine itself, which is the one way to make all of this pointless.
+
+### Two things a consumer has to know
+
+**One compiler option.** This ships sources rather than built output, so a `file:` or `link:`
+dependency means *your* compiler reads these files under *your* options. Relative imports here carry
+their `.ts` extension — which is what lets plain `node --experimental-strip-types` load the package
+with no build step, and is how `audit()` runs from a two-line script rather than only inside a
+Pulumi program. Without this you get `TS5097` pointing at files in this repo from a typecheck of
+your own:
 
 ```json
 { "compilerOptions": { "allowImportingTsExtensions": true } }
 ```
 
-Nothing here emits, so it costs a consumer nothing but the line.
+Nothing here emits, so it costs nothing but the line.
 
+**Install takes a few minutes the first time.** `@pulumi/kubernetes` is a dependency because
+`FluxApp` is in here: 22MB of SDK plus a `postinstall` that fetches a 178MB resource plugin into
+`~/.pulumi/plugins`. Where that plugin is already cached it is seconds, which is why two people
+report wildly different times for the same command. It is install time and not runtime — Pulumi runs
+a program through Node rather than bundling it, so a module nobody imports is never loaded — but it
+is long enough to be mistaken for a hang.
 
-```ts
-import { AptPackage, SystemdUnit, type Host } from 'pulumi-homelab';
+### Running the tests
 
-const host: Host = { address: '198.51.100.10', user: 'admin' };
-
-const node = new AptPackage('nodejs', host, { name: 'nodejs', update: true });
+```sh
+pnpm install
+pnpm test          # unit tests, then the package checks under plain node
 ```
 
-Always run with `--refresh`. A bare `pulumi up` compares your code against Pulumi's *memory* of the
-machine rather than the machine itself, which is the one way to make all of this pointless.
+The package checks are separate from the unit tests on purpose, and each has a demonstrated failure
+mode: the package loads through Node's own loader, a provider closure serialises, a serialised
+provider still works when read back, an unserialisable closure is still rejected, no provider local
+shadows a global or a module binding, every `diff` notices a provider upgrade, and every resource
+declares a type and carries its legacy alias. Several exist because the thing they check went wrong
+once.
 
 ## The resources
 
@@ -275,6 +326,8 @@ exist — and every command exits zero.
 | **`Journald`** | `settings` `file?` | `systemd-analyze cat-config` |
 | **`KernelCmdline`** | `flags` `path?` | the boot partition's `cmdline.txt` |
 | **`SambaShare`** | `share` `path` `settings?` | `testparm -s` |
+| **`SambaSetting`** | `share` `key` `value` `apply?` | `testparm -s`, for one key |
+| **`Hostname`** | `name` `domain?` `restartAvahi?` | `hostnamectl` and the `127.0.1.1` line |
 | **`SambaUser`** | `name` `password` | `pdbedit -L` — existence only |
 | **`RcloneRemote`** | `remote` `type` `settings?` `secrets?` `config?` | `rclone config dump`, credentials revealed |
 

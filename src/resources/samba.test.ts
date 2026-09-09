@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   effectiveShare, parseSambaUsers, parseSections, parseShareSettings, removeSection, removeSetting,
-  shareSection, upsertSection, upsertSetting,
+  sambaSameValue, shareSection, upsertSection, upsertSetting,
 } from './samba.ts';
 
 /**
@@ -167,5 +167,60 @@ describe('editing one setting in a section', () => {
     expect(parseSections(without).has('global')).toBe(true);
     expect(without).toContain('server min protocol = SMB2');
     expect(without).not.toContain('workgroup');
+  });
+});
+
+/**
+ * The bug that made `SambaShare` report an update on every deployment, for ever, on a machine
+ * nobody had touched — and the evidence for it was in the two fixtures at the top of this file the
+ * whole time, side by side, never compared.
+ *
+ * ```
+ * smb.conf:      guest ok = yes        read only = no
+ * testparm -s:   guest ok = Yes        read only = No
+ * ```
+ *
+ * `testparm` does not echo the file; it prints Samba's own resolution of it, and Samba's vocabulary
+ * is not the file's. That is the fourth instance of one bug in this package: `stat` answering `644`
+ * where the code writes `0644`, `sshd -T` printing `without-password` for `prohibit-password`,
+ * `rclone obscure` never returning the same string twice. The read is accurate and is not in the
+ * same alphabet as the write.
+ *
+ * The cost was not the noise. An update that runs every deployment is a write to the machine every
+ * deployment — a Samba reload each time — and `pulumi up` can never answer "nothing to do", which
+ * is the answer you want before doing something risky. Worse, somebody stopped reading those lines,
+ * and a genuine conflict between two resources over one path went unnoticed for hours.
+ */
+describe('comparing a declared value with the one Samba reports', () => {
+  it('accepts the capitalisation testparm prints', () => {
+    expect(sambaSameValue('guest ok', 'yes', 'Yes')).toBe(true);
+    expect(sambaSameValue('read only', 'no', 'No')).toBe(true);
+  });
+
+  it('accepts every spelling of a boolean Samba accepts', () => {
+    for (const [declared, effective] of [['yes', 'true'], ['1', 'Yes'], ['no', 'false'], ['0', 'No']]) {
+      expect(sambaSameValue('guest ok', declared ?? '', effective ?? ''), `${declared}/${effective}`).toBe(true);
+    }
+  });
+
+  it('still reports a real difference', () => {
+    expect(sambaSameValue('guest ok', 'yes', 'No')).toBe(false);
+    expect(sambaSameValue('valid users', 'alice', 'bob')).toBe(false);
+  });
+
+  it('accepts the uppercasing Samba applies to a netbios name', () => {
+    // Samba always uppercases these, so a declared `homelab` against an effective `HOMELAB` was
+    // drift on every run — the same bug, arriving through a different key
+    expect(sambaSameValue('netbios name', 'homelab', 'HOMELAB')).toBe(true);
+    expect(sambaSameValue('workgroup', 'WORKGROUP', 'workgroup')).toBe(true);
+  });
+
+  it('compares a path exactly, because case matters in one', () => {
+    // the narrow cost of the fix above: a path is not case-folded, so /Mnt and /mnt stay different
+    expect(sambaSameValue('path', '/mnt/data', '/Mnt/Data')).toBe(false);
+  });
+
+  it('is unmoved by whitespace around a value', () => {
+    expect(sambaSameValue('path', '/mnt/data', '  /mnt/data  ')).toBe(true);
   });
 });

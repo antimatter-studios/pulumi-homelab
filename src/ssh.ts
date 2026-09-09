@@ -104,7 +104,7 @@ export interface Transport {
   ask(command: string): Promise<Ran>;
   /** Wrap a command so it runs as root, however that is done here. */
   escalate(command: string): string;
-  /** For error messages: `chris@192.168.0.47`, `local`, `container:abc123`. */
+  /** For error messages: `admin@198.51.100.10`, `local`, `container:abc123`. */
   describe(): string;
 }
 

@@ -88,11 +88,11 @@ describe('taking a key out', () => {
 });
 
 /**
- * A real authorized_keys file has more than one owner. On one machine, `chris` carries a laptop's
- * ed25519 key and an RSA key commented `root@id_rsa` — the far end of a reverse tunnel, put there
- * by somebody else entirely. Neither owner knows about the other's key, which is why this is a
- * resource per key rather than a list on `User`: a declared list would have to be the whole truth,
- * and declaring one would silently remove the other.
+ * A real authorized_keys file has more than one owner. An account can carry a person's laptop key
+ * beside one placed there so the far end of a reverse tunnel can reach back in — neither owner
+ * aware of the other's. That is why this is a resource per key rather than a list on `User`: a
+ * declared list would have to be the whole truth, and declaring one would silently remove the
+ * other.
  */
 describe('telling one key from another', () => {
   it('reports the comment, which is the only human-readable part', () => {

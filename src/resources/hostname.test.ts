@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hostsName, setHostsName } from './hostname.ts';
+import { hostsName, hostsNames, hostsNamesHost, setHostsName } from './hostname.ts';
 
 /**
  * A machine whose two names disagree fails in ways that never mention either file: `sudo` becomes
@@ -66,5 +66,59 @@ describe('writing the name into /etc/hosts', () => {
   it('gives the same file whether it runs once or twice', () => {
     const once = setHostsName(REAL, 'homelab', 'lan');
     expect(setHostsName(once, 'homelab', 'lan')).toBe(once);
+  });
+});
+
+/**
+ * The bug this file did not catch the first time.
+ *
+ * `Hostname` reported an update on every deployment, on a machine that was correct, because the
+ * short name was read as *the last word* on the line. Which position holds it is a convention, not
+ * a rule: Debian's installer writes `127.0.1.1 host.domain host`, and plenty of machines have it
+ * the other way round. On one of those, every run reported drift for ever — and a resource that
+ * always reports a change trains people to stop reading the report, which is how a real conflict
+ * elsewhere went unnoticed for hours.
+ */
+describe('reading the name whichever order it was written in', () => {
+  it('finds the short name when the qualified one comes first', () => {
+    expect(hostsName('127.0.1.1\thomelab.lan homelab\n')).toBe('homelab');
+  });
+
+  it('finds it when the qualified one comes second', () => {
+    // the case that reported drift for ever
+    expect(hostsName('127.0.1.1\thomelab homelab.lan\n')).toBe('homelab');
+  });
+
+  it('finds it when there is only one name', () => {
+    expect(hostsName('127.0.1.1\thomelab\n')).toBe('homelab');
+  });
+
+  it('lists every name on the line', () => {
+    expect(hostsNames('127.0.1.1\thomelab homelab.lan alias\n')).toEqual(['homelab', 'homelab.lan', 'alias']);
+  });
+
+  it('answers whether the line names the host, in any position', () => {
+    for (const line of [
+      '127.0.1.1\thomelab\n',
+      '127.0.1.1\thomelab.lan homelab\n',
+      '127.0.1.1\thomelab homelab.lan\n',
+      '127.0.1.1\tHomelab\n',
+    ]) {
+      expect(hostsNamesHost(line, 'homelab'), line).toBe(true);
+    }
+  });
+
+  it('is case-insensitive, because hostnames are', () => {
+    // treating `Homelab` and `homelab` as two names is drift nobody can fix by editing the file
+    expect(hostsNamesHost('127.0.1.1\tHOMELAB\n', 'homelab')).toBe(true);
+  });
+
+  it('does not accept a line that names something else', () => {
+    expect(hostsNamesHost('127.0.1.1\toldname\n', 'homelab')).toBe(false);
+    expect(hostsNamesHost('127.0.0.1\thomelab\n', 'homelab')).toBe(false);
+  });
+
+  it('is not fooled by a name that merely starts the same way', () => {
+    expect(hostsNamesHost('127.0.1.1\thomelab-old\n', 'homelab')).toBe(false);
   });
 });

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { installScript } from './deb.ts';
 
 const args = {
-  name: 'x1200',
-  url: 'https://github.com/antimatter-studios/geekworm-x1200-ups-cli/releases/download/v0.1.0/x1200_0.1.0_linux_arm64.deb',
+  name: 'widget-cli',
+  url: 'https://github.com/example/widget-cli/releases/download/v0.1.0/widget-cli_0.1.0_arm64.deb',
   sha256: 'a'.repeat(64),
 };
 

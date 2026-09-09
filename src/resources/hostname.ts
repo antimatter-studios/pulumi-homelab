@@ -68,16 +68,43 @@ const HOSTS = '/etc/hosts';
 const LOOPBACK = '127.0.1.1';
 const DEFAULTS = { restartAvahi: true, domain: '' };
 
-/** The name a `127.0.1.1` line assigns, or null when the file has no such line. */
-export function hostsName(text: string): string | null {
+/**
+ * Every name the `127.0.1.1` line assigns, or an empty list when the file has no such line.
+ *
+ * All of them rather than one, because **which position holds the short name is a convention, not a
+ * rule**. Debian's installer writes `127.0.1.1 host.domain host`, and plenty of machines have
+ * `127.0.1.1 host` or the two the other way round. Taking the last word made a file written in the
+ * other order report drift on every single run, on a machine that was correct.
+ */
+export function hostsNames(text: string): string[] {
   for (const line of text.split('\n')) {
     const words = line.trim().split(/\s+/);
     if (words[0] !== LOOPBACK) continue;
-    // the *last* name on the line is the short one by Debian's convention, and the first after the
-    // address is the qualified one; the short name is what `hostname` has to agree with
-    return words[words.length - 1] ?? null;
+    return words.slice(1);
   }
-  return null;
+  return [];
+}
+
+/**
+ * Whether that line names this host.
+ *
+ * Case-insensitively, because hostnames are: `Homelab` and `homelab` are one name to every resolver
+ * that will read this, and treating them as two is drift nobody can fix by editing the file.
+ */
+export function hostsNamesHost(text: string, name: string): boolean {
+  const wanted = name.trim().toLowerCase();
+  return hostsNames(text).some((each) => {
+    const found = each.toLowerCase();
+    // the qualified form counts: `homelab.lan` names the host `homelab`
+    return found === wanted || found.startsWith(`${wanted}.`);
+  });
+}
+
+/** The short name a `127.0.1.1` line assigns, for reporting. */
+export function hostsName(text: string): string | null {
+  const names = hostsNames(text);
+  // the shortest is the unqualified one, whichever order they were written in
+  return names.length === 0 ? null : [...names].sort((a, b) => a.length - b.length)[0] ?? null;
 }
 
 /**
@@ -104,7 +131,7 @@ export function setHostsName(text: string, name: string, domain = ''): string {
 export async function readHostname(
   host: Target,
   hosts = HOSTS,
-): Promise<{ static: string; transient: string; hostsLine: string }> {
+): Promise<{ static: string; transient: string; hostsLine: string; hostsFile: string }> {
   const asked = await ask(host, escalate(host,
     // --static and plain `hostname` are different questions: DHCP can set a transient name that
     // outlives nothing and explains a machine answering to something nobody configured
@@ -115,7 +142,13 @@ export async function readHostname(
   if (asked.code !== 0) throw new Error(`could not read the hostname on ${describe(host)}: ${asked.err.trim()}`);
   const [fixed = '', rest = ''] = asked.out.split('#pulumi-homelab#\n');
   const [now = '', file = ''] = rest.split('#pulumi-homelab#\n');
-  return { static: fixed.trim(), transient: now.trim(), hostsLine: hostsName(file) ?? '' };
+  return {
+    static: fixed.trim(),
+    transient: now.trim(),
+    hostsLine: hostsName(file) ?? '',
+    // whether the line names this host at all, which is the question the diff needs answered
+    hostsFile: file,
+  };
 }
 
 function providerFor(host: Target): pulumi.dynamic.ResourceProvider<HostnameArgs, HostnameState> {
@@ -146,10 +179,19 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<HostnameArgs
       }
     }
 
-    const effective = await readHostname(host, hosts);
+    const found = await readHostname(host, hosts);
+    const effective = { static: found.static, transient: found.transient, hostsLine: found.hostsLine };
     if (effective.static !== args.name) {
       throw new Error(
         `set the hostname to ${args.name} on ${describe(host)} but it reports ${effective.static || 'nothing'}`,
+      );
+    }
+    // and the other half, which is the whole reason the two live in one resource: a static name
+    // that is right while the hosts line names something else is the state with confusing symptoms
+    if (!hostsNamesHost(found.hostsFile, args.name)) {
+      throw new Error(
+        `set the hostname to ${args.name} on ${describe(host)} but ${hosts} does not name it on the ` +
+        `${LOOPBACK} line — the two disagreeing is what makes sudo slow and daemons bind wrong`,
       );
     }
     return { name: args.name, domain, restartAvahi, hosts, effective };
@@ -161,7 +203,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<HostnameArgs
     },
 
     async read(id, state) {
-      const effective = await readHostname(host, id);
+      const found = await readHostname(host, id);
+      const effective = { static: found.static, transient: found.transient, hostsLine: found.hostsLine };
       // there is always a hostname, so this never reports the resource gone — a machine called
       // something else is drift rather than a resource that has stopped existing
       return {
@@ -186,9 +229,12 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<HostnameArgs
       return {
         // compared against what the machine says rather than against the last arguments, and
         // against both halves: the two files disagreeing is the state this resource exists to stop
+        // hostnames are case-insensitive, and the hosts line is checked for *naming* the host
+        // rather than for holding it in a particular position — taking the last word on the line
+        // made a file written `127.0.1.1 host host.domain` report drift on every run for ever
         changes: providerChanged(old, args)
-          || old.effective?.static !== args.name
-          || old.effective?.hostsLine !== args.name
+          || old.effective?.static?.toLowerCase() !== args.name.toLowerCase()
+          || (old.effective?.hostsLine ?? '').toLowerCase() !== args.name.toLowerCase()
           || old.name !== args.name
           || old.domain !== domain,
         replaces: [],
