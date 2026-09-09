@@ -251,10 +251,26 @@ export function removeSection(text: string, share: string): string {
   return [...lines.slice(0, start), ...lines.slice(end)].join('\n');
 }
 
-/** What Samba makes of the configuration right now. */
+/**
+ * What Samba makes of the configuration right now.
+ *
+ * **`-sv`, not `-s`, and the difference is a bug that took five applies to find.** `testparm -s`
+ * prints only what differs from Samba's defaults — so a setting whose declared value *equals* its
+ * default is omitted entirely. Not reported wrongly: absent. The comparison against the declared
+ * value can then never succeed, and the resource updates for ever.
+ *
+ * Which is easiest to see with `netbios name`, because Samba derives its default from the hostname:
+ * declaring `netbios name = homelab` on a machine called `homelab` sets it to exactly its own
+ * default, and testparm stops printing it. **A resource that successfully makes a setting match the
+ * default becomes permanently unable to observe that it did.**
+ *
+ * So the absence is not a hole to be worked around — it is Samba saying "this is the default", and
+ * `-v` is how to ask what the default is. It prints every parameter, which is a few hundred lines
+ * over a connection that already sends whole files, and callers keep only the keys they asked
+ * about so nothing bloats the state file.
+ */
 export async function readShare(host: Target, share: string, config = SMB_CONF): Promise<Record<string, string> | null> {
-  // -s suppresses the prompt; stderr carries testparm's commentary and is not the answer
-  const asked = await ask(host, escalate(host, `testparm -s ${shellQuote(config)} 2>/dev/null`));
+  const asked = await ask(host, escalate(host, testparmCommand(config)));
   if (asked.code !== 0) throw new Error(`samba's own configuration does not parse: ${asked.err.trim()}`);
   return effectiveShare(asked.out, share);
 }
@@ -288,11 +304,16 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
     // only when the file would actually differ: an update caused by this package being upgraded
     // should not rewrite smb.conf and reload smbd on every machine
     if (updated !== current) await apply(host, updated, config);
-    const effective = await readShare(host, args.share, config);
-    if (!effective) throw new Error(`wrote the [${args.share}] section but samba does not report it`);
+    const resolved = await readShare(host, args.share, config);
+    if (!resolved) throw new Error(`wrote the [${args.share}] section but samba does not report it`);
+    const wanted = { path: args.path, ...settings };
     return {
-      share: args.share, path: args.path, settings, config, effective,
-      overridden: overriddenIn({ path: args.path, ...settings }, effective),
+      share: args.share,
+      path: args.path,
+      settings,
+      config,
+      effective: narrowTo(resolved, Object.keys(wanted)),
+      overridden: overriddenIn(wanted, resolved),
     };
   };
 
@@ -303,8 +324,10 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
 
     async read(id, state) {
       const config = state?.config ?? SMB_CONF;
-      const effective = await readShare(host, id, config);
-      if (!effective) return { id: undefined, props: undefined };
+      const resolved = await readShare(host, id, config);
+      if (!resolved) return { id: undefined, props: undefined };
+      const asked = { path: state?.path ?? '', ...(state?.settings ?? {}) };
+      const effective = narrowTo(resolved, Object.keys(asked));
       return {
         id,
         props: {
@@ -314,9 +337,9 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
           ...state,
           share: id,
           // what Samba says the path is, which is the answer that matters when they disagree
-          path: effective.path ?? state?.path ?? '',
+          path: resolved.path ?? state?.path ?? '',
           effective,
-          overridden: overriddenIn(state?.settings ?? {}, effective),
+          overridden: overriddenIn(state?.settings ?? {}, resolved),
         },
       };
     },
@@ -525,6 +548,34 @@ export async function readSetting(
   // testparm lowercases nothing but pads everything, and a key may be written with any alignment
   const found = Object.entries(effective).find(([name]) => sameKey(name, key));
   return found?.[1] ?? null;
+}
+
+/**
+ * The command that asks Samba what it resolved.
+ *
+ * Its own function because **the flag is the bug**. `-s` suppresses the prompt and prints only what
+ * differs from the defaults; `-v` is what makes a setting equal to its default visible at all. A
+ * test against a fixture cannot notice that flag being wrong — the fixture is whatever output was
+ * pasted into it — so the flag is pinned here instead, where a test can read it.
+ */
+export function testparmCommand(config = SMB_CONF): string {
+  return `testparm -sv ${shellQuote(config)} 2>/dev/null`;
+}
+
+/**
+ * Only the keys somebody asked about.
+ *
+ * `testparm -v` answers with every parameter Samba has, which is what makes a default visible and
+ * would also put a few hundred keys into the state file — noise in every diff, for values nobody
+ * declared. What is worth storing is Samba's answer to the questions this resource asked.
+ */
+export function narrowTo(effective: Record<string, string>, keys: string[]): Record<string, string> {
+  const kept: Record<string, string> = {};
+  for (const key of keys) {
+    const found = Object.entries(effective).find(([name]) => sameKey(name, key));
+    if (found) kept[found[0]] = found[1];
+  }
+  return kept;
 }
 
 /** `disagreeing`, but through Samba's vocabulary rather than by string equality. */

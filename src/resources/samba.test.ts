@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   effectiveShare, parseSambaUsers, parseSections, parseShareSettings, removeSection, removeSetting,
-  sambaSameValue, shareSection, upsertSection, upsertSetting,
+  narrowTo, sambaSameValue, shareSection, testparmCommand, upsertSection, upsertSetting,
 } from './samba.ts';
 
 /**
@@ -222,5 +222,100 @@ describe('comparing a declared value with the one Samba reports', () => {
 
   it('is unmoved by whitespace around a value', () => {
     expect(sambaSameValue('path', '/mnt/data', '  /mnt/data  ')).toBe(true);
+  });
+});
+
+/**
+ * The fifth cause, and the one that is easiest to miss because the machine is right and says
+ * nothing at all.
+ *
+ * `testparm -s` prints only what differs from Samba's defaults, so a setting whose declared value
+ * *equals* its default is **omitted entirely** — not reported wrongly, absent. The comparison can
+ * then never succeed, and the resource updates for ever.
+ *
+ * `netbios name` shows it most clearly, because Samba derives that default from the hostname:
+ * declaring `netbios name = homelab` on a machine called `homelab` sets it to exactly its own
+ * default. A resource that successfully makes a setting match the default becomes permanently unable
+ * to observe that it did.
+ *
+ * `-v` is how to ask what the default is — and it answers `HOMELAB`, uppercased, because the NetBIOS
+ * protocol is. Which the case-folding was already written for, and could not fire on a value that
+ * was not in the output at all.
+ */
+const TESTPARM_V = `[global]
+	netbios name = HOMELAB
+	workgroup = WORKGROUP
+	server string = Samba
+	log level = 0
+	max log size = 1000
+	deadtime = 10080
+
+[public]
+	path = /mnt/data
+	guest ok = Yes
+	read only = Yes
+	browseable = Yes
+	create mask = 0744
+`;
+
+describe('a setting that equals its own default', () => {
+  it('is visible in the -v output where -s omitted it', () => {
+    expect(effectiveShare(TESTPARM_V, 'global')?.['netbios name']).toBe('HOMELAB');
+  });
+
+  it('compares equal to the declared value, case-folded', () => {
+    // the machinery was already here; it could not fire on a value that was absent
+    const effective = effectiveShare(TESTPARM_V, 'global') ?? {};
+    expect(sambaSameValue('netbios name', 'homelab', effective['netbios name'] ?? '')).toBe(true);
+  });
+
+  it('keeps only the keys somebody asked about', () => {
+    // -v answers with every parameter Samba has: storing that would put hundreds of keys nobody
+    // declared into the state file, and noise into every diff
+    const effective = effectiveShare(TESTPARM_V, 'public') ?? {};
+    expect(narrowTo(effective, ['path', 'guest ok'])).toEqual({ path: '/mnt/data', 'guest ok': 'Yes' });
+  });
+
+  it('matches a key however it was spaced or capitalised when narrowing', () => {
+    const effective = effectiveShare(TESTPARM_V, 'global') ?? {};
+    expect(narrowTo(effective, ['Netbios   Name'])).toEqual({ 'netbios name': 'HOMELAB' });
+  });
+
+  it('leaves out a key Samba does not report at all', () => {
+    // absence after -v means Samba has no such parameter, which is a misspelling rather than a
+    // default — and reporting it as drift nobody can resolve is the failure being fixed
+    expect(narrowTo(effectiveShare(TESTPARM_V, 'global') ?? {}, ['not a real parameter'])).toEqual({});
+  });
+
+  it('reports no disagreement for a declared value that resolved to its default', () => {
+    const effective = effectiveShare(TESTPARM_V, 'public') ?? {};
+    expect(sambaSameValue('guest ok', 'yes', effective['guest ok'] ?? '')).toBe(true);
+    expect(sambaSameValue('read only', 'yes', effective['read only'] ?? '')).toBe(true);
+  });
+});
+
+/**
+ * The flag is the bug, and a fixture cannot catch it.
+ *
+ * Reverting `-sv` to `-s` broke nothing in the tests above, because their fixture *is* `-v` output —
+ * whatever was pasted in stays parseable either way. So the flag is asserted directly, which is the
+ * only place the mistake is visible.
+ */
+describe('asking testparm the right question', () => {
+  it('includes defaults, which is what makes a setting equal to its default visible', () => {
+    expect(testparmCommand('/etc/samba/smb.conf')).toContain('-sv');
+  });
+
+  it('suppresses the prompt, or testparm waits for a keypress nobody can give it', () => {
+    expect(testparmCommand()).toMatch(/testparm -s?v?s?/);
+    expect(testparmCommand()).toContain('-s');
+  });
+
+  it('quotes the path, which may be anywhere', () => {
+    expect(testparmCommand("/etc/it's/smb.conf")).toContain("'\\''");
+  });
+
+  it('sends testparm’s commentary to nowhere, since it is not the answer', () => {
+    expect(testparmCommand()).toContain('2>/dev/null');
   });
 });
