@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { asRoot, escalate, heredoc, shellQuote, sshArgs } from './ssh.ts';
+import { asRoot, describe as describeTarget, escalate, heredoc, shellQuote, sshArgs } from './ssh.ts';
 
 /**
  * Everything sent to the machine goes through quoting: file contents, unit definitions, package
@@ -120,9 +120,13 @@ describe('not opening a connection per question', () => {
   });
 
   it('keeps the control socket short, since a unix path has about a hundred characters', () => {
-    // a home directory plus a long hostname can exceed it, and the error nobody reads correctly
-    const path = sshArgs(host, 'true').find((arg) => arg.startsWith('ControlPath='));
-    expect(path).toBe('ControlPath=/tmp/pulumi-homelab-%C');
+    // a home directory plus a long hostname can exceed it, and the error nobody reads correctly.
+    // The route is hashed in rather than spelled out for the same reason — see the socket-keying
+    // tests below for why the route has to be in there at all
+    const path = sshArgs(host, 'true').find((arg) => arg.startsWith('ControlPath=')) ?? '';
+    expect(path.startsWith('ControlPath=/tmp/pulumi-homelab-')).toBe(true);
+    expect(path.endsWith('-%C')).toBe(true);
+    expect(path.length).toBeLessThan(60);
   });
 
   it('still refuses to wait for a password nobody can type', () => {
@@ -137,5 +141,88 @@ describe('not opening a connection per question', () => {
 
   it('takes the timeout from the host, so a slow link can say so', () => {
     expect(sshArgs({ ...host, timeout: 30 }, 'true')).toContain('ConnectTimeout=30');
+  });
+});
+
+/**
+ * The same machine is not always reachable the same way. On a LAN it is a direct connection; from
+ * elsewhere the only route may be a tunnel on a bastion — same machine, same stack, different
+ * route. Without this the second case is unexpressible and Pulumi cannot run at all.
+ */
+describe('reaching a machine that is not directly reachable', () => {
+  const direct = { address: '198.51.100.10', user: 'admin' };
+  const jumped = { address: '127.0.0.1', user: 'admin', port: 2222, proxyJump: 'root@203.0.113.5:10022' };
+
+  it('says nothing about a port when it is the usual one', () => {
+    expect(sshArgs(direct, 'true')).not.toContain('-p');
+  });
+
+  it('passes a port through when there is one', () => {
+    const args = sshArgs(jumped, 'true');
+    expect(args[args.indexOf('-p') + 1]).toBe('2222');
+  });
+
+  it('passes the jump through as ProxyJump, which checks known_hosts for each hop', () => {
+    // ProxyCommand piping through netcat would silently drop host verification for the far end,
+    // which is the property this transport exists to inherit
+    expect(sshArgs(jumped, 'true')).toContain('ProxyJump=root@203.0.113.5:10022');
+  });
+
+  it('puts every option before the destination', () => {
+    // ssh reads options in order and does not apply one that comes after the host name
+    const args = sshArgs(jumped, 'true');
+    expect(args.indexOf('ProxyJump=root@203.0.113.5:10022')).toBeLessThan(args.indexOf('admin@127.0.0.1'));
+    expect(args.indexOf('-p')).toBeLessThan(args.indexOf('admin@127.0.0.1'));
+  });
+
+  it('still puts the command last', () => {
+    const args = sshArgs(jumped, 'systemctl show x');
+    expect(args[args.length - 1]).toBe('systemctl show x');
+    expect(args[args.length - 2]).toBe('admin@127.0.0.1');
+  });
+});
+
+/**
+ * `%C` is ssh's own hash of the local host, the remote host, the port and the user — and **not the
+ * ProxyJump**. So one address reachable two ways would share a control socket: the second
+ * connection silently reuses the first one's route, and a deployment aimed at a tunnel goes wherever
+ * the master happened to be established. Whichever route was tried first wins for the next sixty
+ * seconds, which looks exactly like a network fault.
+ */
+describe('keying the control socket on the route, not just the destination', () => {
+  const path = (host: Parameters<typeof sshArgs>[0]) =>
+    sshArgs(host, 'true').find((arg) => arg.startsWith('ControlPath=')) ?? '';
+
+  it('gives a direct connection and a jumped one different sockets', () => {
+    const same = { address: '198.51.100.10', user: 'admin' };
+    expect(path(same)).not.toBe(path({ ...same, proxyJump: 'root@203.0.113.5' }));
+  });
+
+  it('gives two different jumps different sockets', () => {
+    const same = { address: '127.0.0.1', user: 'admin', port: 2222 };
+    expect(path({ ...same, proxyJump: 'root@203.0.113.5' }))
+      .not.toBe(path({ ...same, proxyJump: 'root@203.0.113.6' }));
+  });
+
+  it('gives the same route the same socket every time, or multiplexing buys nothing', () => {
+    const host = { address: '127.0.0.1', user: 'admin', port: 2222, proxyJump: 'root@203.0.113.5' };
+    expect(path(host)).toBe(path({ ...host }));
+  });
+
+  it('keeps the socket path short, since a unix path has about a hundred characters', () => {
+    expect(path({ address: '127.0.0.1', user: 'admin', proxyJump: 'root@203.0.113.5:10022' }).length)
+      .toBeLessThan(60);
+  });
+});
+
+describe('naming a machine in an error', () => {
+  it('names the route, because the same machine reached two ways fails differently', () => {
+    // "cannot reach admin@127.0.0.1:2222" without the jump names a destination nobody recognises
+    expect(describeTarget({ address: '127.0.0.1', user: 'admin', port: 2222, proxyJump: 'root@203.0.113.5' }))
+      .toBe('admin@127.0.0.1:2222 via root@203.0.113.5');
+  });
+
+  it('stays short for the ordinary case', () => {
+    expect(describeTarget({ address: '198.51.100.10', user: 'admin' })).toBe('admin@198.51.100.10');
   });
 });

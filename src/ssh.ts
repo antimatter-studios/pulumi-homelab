@@ -57,6 +57,20 @@ export interface Host {
   /** Where it is. An address rather than a name, because mDNS is the first thing to stop working. */
   address: string;
   user: string;
+  /** Which port, when it is not 22 — a tunnel's local end rarely is. */
+  port?: number;
+  /**
+   * A host to reach this one *through*: `-o ProxyJump=…`.
+   *
+   * `user@jump-host:port`, or several separated by commas for more than one hop. For a machine that
+   * is only reachable from somewhere else — behind a reverse tunnel, on a private subnet, through a
+   * bastion — which is the same machine and the same stack by a different route.
+   *
+   * `ProxyJump` rather than `ProxyCommand` because ssh already knows how to chain hops and checks
+   * `known_hosts` for *each* one, which is the property this transport exists to inherit: a
+   * `ProxyCommand` piping through netcat would silently drop host verification for the far end.
+   */
+  proxyJump?: string;
   /** Seconds before a silent host is called dead, rather than hanging a deployment for ever. */
   timeout?: number;
   /**
@@ -117,7 +131,11 @@ const isTransport = (target: Target): target is Transport =>
 
 /** What to call the machine in an error message. */
 export function describe(target: Target): string {
-  return isTransport(target) ? target.describe() : `${target.user}@${target.address}`;
+  if (isTransport(target)) return target.describe();
+  // the route matters in an error message: the same machine reached two ways fails differently, and
+  // "cannot reach admin@127.0.0.1:2222" without the jump names a destination nobody recognises
+  const where = target.port !== undefined ? `${target.user}@${target.address}:${target.port}` : `${target.user}@${target.address}`;
+  return target.proxyJump !== undefined ? `${where} via ${target.proxyJump}` : where;
 }
 
 /**
@@ -130,7 +148,7 @@ export function sshTransport(host: Host): Transport {
   return {
     ask: (command) => askOver(host, command),
     escalate: (command) => escalateOn(host, command),
-    describe: () => `${host.user}@${host.address}`,
+    describe: () => describe(host),
   };
 }
 
@@ -162,9 +180,32 @@ const CONNECT_SECONDS = 10;
  * hash of the destination, because a unix socket path has about a hundred characters to work with
  * and a home directory plus a long hostname can exceed it — an error nobody ever reads correctly.
  */
-const MULTIPLEXING = [
+/**
+ * The control socket's name, which has to distinguish routes and not only destinations.
+ *
+ * `%C` is ssh's own hash of the local host, the remote host, the port and the user — and **not the
+ * ProxyJump**. So one address reachable two ways, directly and through a bastion, would share a
+ * socket: the second connection silently reuses the first one's route, and a deployment aimed at a
+ * tunnel goes wherever the master happened to be established. Whichever route was tried first wins
+ * for the next sixty seconds, which is the kind of failure that looks like a network fault.
+ *
+ * So the jump is hashed into the name as well. Short, because a unix socket path has about a
+ * hundred characters and `/tmp` plus a hash is the only thing that reliably fits.
+ */
+function controlPath(host: Host): string {
+  const route = host.proxyJump ?? 'direct';
+  // a small deterministic hash: the same route must always give the same socket, or multiplexing
+  // buys nothing at all
+  let hash = 0;
+  for (let at = 0; at < route.length; at += 1) {
+    hash = (hash * 31 + route.charCodeAt(at)) | 0;
+  }
+  return `/tmp/pulumi-homelab-${(hash >>> 0).toString(36)}-%C`;
+}
+
+const multiplexing = (host: Host): string[] => [
   '-o', 'ControlMaster=auto',
-  '-o', 'ControlPath=/tmp/pulumi-homelab-%C',
+  '-o', `ControlPath=${controlPath(host)}`,
   '-o', 'ControlPersist=60s',
 ];
 
@@ -180,7 +221,11 @@ export function sshArgs(host: Host, command: string): string[] {
   return [
     '-o', 'BatchMode=yes',
     '-o', `ConnectTimeout=${host.timeout ?? CONNECT_SECONDS}`,
-    ...MULTIPLEXING,
+    // before the destination, because ssh reads options in order and a later one does not override
+    // an earlier: an option after the host name is not applied to that connection at all
+    ...(host.port !== undefined ? ['-p', String(host.port)] : []),
+    ...(host.proxyJump !== undefined ? ['-o', `ProxyJump=${host.proxyJump}`] : []),
+    ...multiplexing(host),
     `${host.user}@${host.address}`,
     command,
   ];
