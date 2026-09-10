@@ -1,2 +1,11 @@
 node_modules/
 Pulumi.*.yaml
+
+# github-guard's hooks live in .git/hooks — outside the working tree, so no branch can rewrite the
+# hook that runs next. Git resolves a hook path when it runs the hook, which for a checkout is
+# *after* the tree has been replaced: an in-tree hooks directory reached through core.hooksPath lets
+# any branch you check out run its own pre-commit as you, with your credentials and your gh token.
+# `required-checks` is the exception and stays tracked: it is data, not code, and the guard reads it
+# from the default branch on the server rather than from the checkout.
+.githooks/*
+!.githooks/required-checks
