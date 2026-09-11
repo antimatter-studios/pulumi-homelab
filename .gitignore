@@ -8,4 +8,4 @@ Pulumi.*.yaml
 # `required-checks` is the exception and stays tracked: it is data, not code, and the guard reads it
 # from the default branch on the server rather than from the checkout.
 .githooks/*
-!.githooks/required-checks
+!.github-guard/required-checks
