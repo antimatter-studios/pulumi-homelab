@@ -196,10 +196,13 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<RcloneRemote
       };
     },
 
-    async delete(id) {
+    async delete(id, state) {
+      // --config from state: without it rclone edits whichever config the *escalated* account has,
+      // so a remote written to an explicit path is left behind and a different file is edited
+      const where = `--config ${shellQuote(state.config ?? DEFAULTS.config)}`;
       // the remote goes; nothing it ever pointed at is touched, and nothing mounted from it is
       // unmounted — a mount is a systemd unit's business, and it will fail loudly on its own
-      await must(host, escalate(host, `rclone config delete ${shellQuote(id)} 2>/dev/null || true`));
+      await must(host, escalate(host, `rclone ${where} config delete ${shellQuote(id)} 2>/dev/null || true`));
     },
   };
 }

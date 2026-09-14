@@ -11,7 +11,31 @@ breaking changes live.
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **`Archive`** — software installed once from a checksum-verified tarball or zip and thereafter
+  left alone. It asks whether the thing is installed and nothing else: no version is declared,
+  stored as a pin, or compared, because software that ships its own updater would otherwise sit in
+  permanent drift the moment it updated itself. It fetches when the install is absent, or when the
+  url or checksum in your program change. The read has three rungs — the directory exists, `binary`
+  is executable, `healthCommand` exits zero — and only the last tells a working install from a
+  half-unpacked tree or a binary built for the wrong architecture. `version` is reported for
+  `pulumi stack` and is never compared; failing to obtain it is not an error. The unpack goes to a
+  staging directory and is moved into place with `link` repointed last, so a failed fetch cannot
+  replace a working install with a broken one.
+- **`GitCheckout`** — a repository at a commit, read back with `git rev-parse HEAD`. A tag or a
+  branch is refused rather than resolved, with a message naming the `git ls-remote` that turns one
+  into a sha: rev-parse answers with a sha, so a sha is the only declaration that can be compared
+  against it, and resolving a ref each run would mean deciding whether a changed answer is an
+  upgrade or a moved tag. An abbreviated commit matches the full answer, so a short sha is not
+  permanent drift. Checkouts are detached, and a tree already at the commit costs no fetch.
+
+### Fixed
+
+- **Seven `delete` methods read their layout path from state rather than from the module default.**
+  A resource created with a non-default `directory`, `file` or `config` was deleted from the
+  default path, which left the real file behind and reported success. The package checks now refuse
+  a `delete` that reaches for a layout constant while its state carries the declared one.
 
 ## v0.1.0
 

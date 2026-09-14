@@ -47,6 +47,40 @@ export {
 export { AptPackage, readPackage, parseDpkgStatus, type AptPackageArgs } from './resources/apt.ts';
 export { DebPackage, installScript, type DebPackageArgs } from './resources/deb.ts';
 export {
+  Archive,
+  readArchive,
+  formatOf,
+  extractCommand,
+  // deb.ts already exports an `installScript`, and the two compose different things: apt against a
+  // downloaded file, and an unpack into a staging directory. Named apart rather than shadowed.
+  installScript as archiveInstallScript,
+  probeCommand,
+  parseProbe,
+  parseVersion,
+  substitute,
+  whereOf,
+  binaryPath,
+  sourceChanged,
+  installNeeded,
+  resolveArgs,
+  type ArchiveArgs,
+  type ArchiveFormat,
+  type ArchiveSource,
+} from './resources/archive.ts';
+export {
+  GitCheckout,
+  readCheckout,
+  looksLikeCommit,
+  commitRefusal,
+  sameCommit,
+  checkoutAct,
+  checkoutCommand,
+  checkoutChanged,
+  parseCheckout,
+  type GitCheckoutArgs,
+  type CheckoutAct,
+} from './resources/git.ts';
+export {
   RcloneRemote,
   readRemote,
   parseDump,

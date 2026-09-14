@@ -368,9 +368,10 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
       };
     },
 
-    async delete(id) {
-      const current = await must(host, escalate(host, `cat ${shellQuote(SMB_CONF)}`));
-      await apply(host, removeSection(current, id));
+    async delete(id, state) {
+      const config = state.config ?? SMB_CONF;
+      const current = await must(host, escalate(host, `cat ${shellQuote(config)}`));
+      await apply(host, removeSection(current, id), config);
     },
   };
 }

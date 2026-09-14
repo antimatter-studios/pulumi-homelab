@@ -325,6 +325,48 @@ which is *never matched on*; that is what lets `audit()` find orphans.
 |---|---|---|
 | **`AptPackage`** | `name` `update?` | `dpkg-query` |
 | **`AptPackages`** | `present?` `absent?` `update?` | `dpkg-query`, whole list in one round trip |
+| **`DebPackage`** | `name` `url` `sha256` `version?` | `dpkg-query` |
+
+### Software that is not packaged
+
+| | Arguments | Reads from |
+|---|---|---|
+| **`Archive`** | `name` `url` `sha256` `prefix` `link?` `binary?` `healthCommand?` `versionCommand?` `strip?` `format?` | `test -d`, `test -x`, and running the thing |
+| **`GitCheckout`** | `url` `path` `commit` | `git rev-parse HEAD` |
+
+**`Archive` asks one question: is it installed.** It fetches only when the answer is no, or when
+the url or checksum in your program change — and it has no concept of a version at all. That is
+`AptPackage`'s shape and it is deliberate: software that ships its own updater would otherwise be in
+permanent drift the moment it did its job, and every self-update would read as damage. The rule of
+thumb is **pin what is expensive to get wrong; install and forget what maintains itself.** A cluster
+or anything holding data should be pinned to a version and asserted — with `Precondition`, which
+exists for exactly that — so it upgrades at a moment somebody chose.
+
+The checksum is required and is not about versions: HTTPS authenticates the server, not the
+artefact, and a release asset can be replaced in place under a url that never changes. The read has
+three rungs, and each one answers a question the one below it cannot: the directory is there,
+`binary` is executable, and `healthCommand` exits zero. Only the last distinguishes a working
+install from a half-unpacked tree or a binary built for the wrong architecture — which is what a
+corrupted download looks like from the outside, and all three of those pass a path test.
+
+`installScript` unpacks to a staging directory and moves it into place, then repoints `link` last,
+so a failed fetch cannot replace a working install with a broken one and a rollback is repointing a
+symlink rather than fetching anything.
+
+**`GitCheckout` takes a commit and refuses a tag or a branch.** `git rev-parse HEAD` answers with a
+sha, so a sha is the only declaration that can be compared against it. Taking a ref instead would
+mean resolving it on every run and then deciding whether a changed answer is an upgrade or somebody
+moving a tag underneath you — a question with no good answer, avoided by never asking it. The cost
+is yours to pay: nobody reads release notes in sha form, so put the sha in the declaration and the
+tag beside it in a comment. `git ls-remote <url> v1.2.3` turns one into the other.
+
+Neither of them builds anything. A clone at a fixed commit is declarative — the read has a real
+answer and a rebuild reproduces it — and running a build or an installer afterwards is not: what
+lands on disk is unverifiable, differs on a different day, and on slow hardware takes hours to
+produce something nobody can check. **A resource that cloned a repository and ran its setup script
+would be a command with no readable state**, which is the thing this package exists to avoid. If a
+build step is unavoidable, run it once, put the result somewhere durable with a checksum, and
+install that with `Archive` — which turns an unrepeatable afternoon into a verified download.
 
 ### Services
 
