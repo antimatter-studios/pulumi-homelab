@@ -24,6 +24,16 @@ import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
  * `2775` is correct the day it is written and quietly wrong the first time somebody edits the mode
  * without knowing why there were four digits — and the bit most often lost that way is the one
  * holding a shared area together. Written as flags they say what they are.
+ *
+ * **There is no `setuid` field, and its absence is deliberate.** `S_ISUID` has no defined meaning on
+ * a directory on Linux — it is FreeBSD that gives it one — so the bit sets cleanly, reads back
+ * cleanly, and changes nothing about how the directory behaves. Measured on a Raspberry Pi: a file
+ * created by another user inside a `4777` directory owned by `chris` came out owned by `nobody`,
+ * while the same test on a `2777` directory did inherit the group. A field for it would be worse
+ * than inert, because the comparison would see no drift and the resource would report success for a
+ * declaration with no effect — the shape of thing this package exists not to be. A directory that
+ * already carries the bit can still be adopted and verified faithfully by writing `mode: '4755'`,
+ * which describes what is actually there without advertising it as something to reach for.
  */
 export interface DirectoryArgs {
   path: string;
@@ -53,8 +63,6 @@ export interface DirectoryArgs {
    * of this.
    */
   sticky?: boolean;
-  /** Run as the owner. Almost never what a directory wants, and here for completeness. */
-  setuid?: boolean;
 }
 
 interface DirectoryState extends DirectoryArgs {
@@ -74,9 +82,11 @@ const DEFAULTS = { mode: '0755', owner: 'root', group: 'root' } as const;
  * back all have to be the same string. Resolving it at each use is how two of them end up differing
  * by a leading zero and every refresh reports drift on a directory nobody touched.
  */
-export function resolveMode(args: { mode?: string; setuid?: boolean; setgid?: boolean; sticky?: boolean }): string {
+export function resolveMode(args: { mode?: string; setgid?: boolean; sticky?: boolean }): string {
   const mode = args.mode ?? DEFAULTS.mode;
-  const flags: Partial<SpecialBits> = { setuid: args.setuid, setgid: args.setgid, sticky: args.sticky };
+  // no setuid: it means nothing on a Linux directory, so there is no field to fold in. A four-digit
+  // mode carrying the bit still passes through withSpecialBits untouched
+  const flags: Partial<SpecialBits> = { setgid: args.setgid, sticky: args.sticky };
   const bad = modeRefusal(mode) ?? specialBitsRefusal(mode, flags);
   if (bad !== null) throw new Error(bad);
   return withSpecialBits(mode, flags);
@@ -196,7 +206,7 @@ export class Directory extends pulumi.dynamic.Resource {
 
   constructor(name: string, host: Target, args: DirectoryArgs, opts?: pulumi.CustomResourceOptions) {
     super(stamped(providerFor(host)), name, {
-      setuid: undefined, setgid: undefined, sticky: undefined,
+      setgid: undefined, sticky: undefined,
       ...DEFAULTS, ...args,
     }, withLegacyAlias(opts), 'homelab', 'Directory');
   }

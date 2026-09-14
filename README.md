@@ -301,7 +301,7 @@ Pulumi once did.
 | | Arguments | Reads from |
 |---|---|---|
 | **`ManagedFile`** | `path` `content` `mode?` `owner?` `group?` `reloadSystemd?` | `stat` and `cat` |
-| **`Directory`** | `path` `mode?` `owner?` `group?` `setgid?` `sticky?` `setuid?` | `stat` |
+| **`Directory`** | `path` `mode?` `owner?` `group?` `setgid?` `sticky?` | `stat` |
 | **`Symlink`** | `path` `target` | `readlink`, then `stat` |
 | **`FstabEntry`** | `source` `target` `type` `options?` `dump?` `pass?` `mount?` | the line in `/etc/fstab`, plus `findmnt` |
 
@@ -317,6 +317,14 @@ ACL: write permission on a directory is what permits deleting the entries in it,
 write there can otherwise remove work it cannot even read into. It is why `/tmp` has had it since
 before any of this. Writing a non-zero leading digit *and* a flag is refused rather than resolved,
 because that is two answers to one question.
+
+There is deliberately **no `setuid` field**. `S_ISUID` has no defined meaning on a directory on
+Linux — that is FreeBSD — so the bit sets cleanly, reads back cleanly, and changes nothing. Measured
+on a Pi: a file created by another user inside a `4777` directory owned by `chris` came out owned by
+`nobody`, while the same test on `2777` did inherit the group. A field for it would be worse than
+inert, because the comparison would see no drift and the resource would report success for a
+declaration with no effect. A directory that already carries the bit is still adopted and verified
+faithfully with `mode: '4755'`.
 
 `Symlink` tells four states apart: a link pointing where the code says, a link pointing
 elsewhere, **something real at that path**, and nothing. The third throws rather than

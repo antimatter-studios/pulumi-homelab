@@ -20,7 +20,14 @@ export function normaliseMode(raw: string): string {
 
 /** The three bits the high digit of a mode carries, which are not permissions at all. */
 export interface SpecialBits {
-  /** Run as the file's owner. Almost never what a directory wants. */
+  /**
+   * Run as the file's owner.
+   *
+   * Real on an executable and **meaningless on a directory on Linux**, where `S_ISUID` has no
+   * defined behaviour at all. It is read and preserved here because a mode string can carry it and
+   * a resource adopting such a path has to describe what is actually there — not because setting it
+   * on a directory does anything.
+   */
   setuid: boolean;
   /**
    * On a directory: new entries inherit the directory's group rather than their creator's.

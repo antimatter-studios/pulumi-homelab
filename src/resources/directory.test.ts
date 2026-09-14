@@ -61,6 +61,18 @@ describe('settling a mode and the bits beside it', () => {
     expect(() => resolveMode({ mode: '789' })).toThrow();
   });
 
+  it('carries a setuid bit through a four-digit mode, which is how such a directory is adopted', () => {
+    // there is no setuid field, because the bit does nothing on a Linux directory and a flag for it
+    // would apply, verify, and report success for a declaration with no effect. The bit does exist
+    // though, so a directory already carrying one has to be describable and readable back as it is
+    expect(resolveMode({ mode: '4755' })).toBe('4755');
+    expect(resolveMode({ mode: '4755' })).toBe(parseStat('directory|4755|root|root').mode);
+  });
+
+  it('leaves a setuid bit alone when a flag beside it sets another', () => {
+    expect(() => resolveMode({ mode: '4755', sticky: true })).toThrow(/one or the other/);
+  });
+
   it('is the same answer every time, so nothing here can look like a change', () => {
     expect(resolveMode({ mode: '775', setgid: true })).toBe(resolveMode({ mode: '775', setgid: true }));
   });
