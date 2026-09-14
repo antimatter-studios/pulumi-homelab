@@ -653,6 +653,22 @@ unlike rclone's obscured passwords there is nothing to compare it against, so it
 in a state file. `delete` refuses without `allowDelete`, because a key may be trusted somewhere this
 stack has never heard of.
 
+**`SshKey` takes `owner` and `group`, and the two halves are not treated alike.** `ssh-keygen` runs
+under escalation, so without an owner the pair lands root-owned and the service account it was made
+for cannot read its own private key. The mode is not safe to leave to `ssh-keygen` either: it
+creates `0600`, but **a default ACL on the parent directory is inherited by the new file** and can
+widen what lands — `-rw-r--r--+` is what one ACL-managed pool produced — and ssh then refuses the
+key. The failure arrives at use time as an authentication that does not work, with nothing wrong at
+the path to look at, and neither the public key nor the fingerprint can see it. So both modes are
+asserted and read back: `0600` private, `0644` public, because the public half is the one somebody
+has to copy somewhere. Neither is an argument, because every other value produces a key ssh will
+not use.
+
+Asserting `0600` is also what *disarms* an inherited ACL rather than merely narrowing the mode:
+`chmod` recomputes the mask from the group bits, and a group bit of zero suppresses every inherited
+named entry to `#effective:---`. The entries stay listed and grant nothing — the same mechanism a
+`0700` directory uses to confine what is inside it.
+
 `AuthorizedKey` matches on the **key body**, never the comment — people rename laptops, and a
 resource keyed on the line would add a duplicate of a key already present. It sets and reads back
 both the mode and the owner: sshd refuses a key file that is group-writable *or* owned by somebody

@@ -70,6 +70,17 @@ breaking changes live.
   A resource created with a non-default `directory`, `file` or `config` was deleted from the
   default path, which left the real file behind and reported success. The package checks now refuse
   a `delete` that reaches for a layout constant while its state carries the declared one.
+- **`SshKey` takes `owner` and `group`, and asserts the mode on both halves.** `ssh-keygen` runs
+  under escalation, so the pair landed root-owned and a service account could not read its own
+  private key. The mode was not safe to leave to `ssh-keygen` either: it creates `0600`, but a
+  default ACL on the parent directory is inherited by the new file and can widen what lands, and ssh
+  then refuses the key — at use time, as an authentication that fails, with nothing wrong at the
+  path to look at and neither the public key nor the fingerprint able to see it. Both modes are now
+  set and read back, `0600` private and `0644` public, and neither is an argument because every
+  other value produces a key ssh will not use. Ownership defaults to root, so nothing declared
+  before this changes. Asserting `0600` also disarms an inherited ACL rather than merely narrowing
+  the mode: `chmod` recomputes the mask from the group bits, and a group bit of zero suppresses
+  every inherited named entry to `#effective:---`.
 
 ## v0.1.0
 
