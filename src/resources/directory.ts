@@ -1,5 +1,5 @@
 import * as pulumi from '@pulumi/pulumi';
-import { normaliseMode } from '../mode.ts';
+import { modeRefusal, normaliseMode, specialBitsRefusal, withSpecialBits, type SpecialBits } from '../mode.ts';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
@@ -19,23 +19,78 @@ import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
  *   directory with something in it is a machine saying that the code's picture of it is incomplete,
  *   and failing loudly is worth more than a tidy teardown that takes data with it. The parents made
  *   on the way up are left alone, because this resource never claimed them.
+ *
+ * **`setgid` and `sticky` are fields rather than a digit somebody has to remember to prepend.**
+ * `2775` is correct the day it is written and quietly wrong the first time somebody edits the mode
+ * without knowing why there were four digits — and the bit most often lost that way is the one
+ * holding a shared area together. Written as flags they say what they are.
+ *
+ * **There is no `setuid` field, and its absence is deliberate.** `S_ISUID` has no defined meaning on
+ * a directory on Linux — it is FreeBSD that gives it one — so the bit sets cleanly, reads back
+ * cleanly, and changes nothing about how the directory behaves. Measured on a Raspberry Pi: a file
+ * created by another user inside a `4777` directory owned by `chris` came out owned by `nobody`,
+ * while the same test on a `2777` directory did inherit the group. A field for it would be worse
+ * than inert, because the comparison would see no drift and the resource would report success for a
+ * declaration with no effect — the shape of thing this package exists not to be. A directory that
+ * already carries the bit can still be adopted and verified faithfully by writing `mode: '4755'`,
+ * which describes what is actually there without advertising it as something to reach for.
  */
 export interface DirectoryArgs {
   path: string;
-  /** Octal, as it is written everywhere else: '0755'. */
+  /**
+   * Octal, as it is written everywhere else: '0755'.
+   *
+   * Four digits are accepted and mean what they always have. Mixing a non-zero leading digit with
+   * the flags below is refused rather than resolved, because that is two answers to one question.
+   */
   mode?: string;
   owner?: string;
   group?: string;
+  /**
+   * New entries inherit this directory's group rather than their creator's.
+   *
+   * What makes a shared area shared: without it, a file somebody writes here belongs to their own
+   * group and nobody else on the team can touch it.
+   */
+  setgid?: boolean;
+  /**
+   * Only an entry's owner may remove it.
+   *
+   * **The bit that belongs beside any write grant on a shared directory**, whether that grant is a
+   * group or a `PosixAcl` entry. Write permission on a directory is what permits deleting the
+   * entries *in* it, so an account given write here can otherwise remove other people's work —
+   * including directories it cannot even read into. This is why `/tmp` has had it since before any
+   * of this.
+   */
+  sticky?: boolean;
 }
 
 interface DirectoryState extends DirectoryArgs {
   path: string;
+  /** The four-digit mode, special bits and all — the shape `stat` answers in. */
   mode: string;
   owner: string;
   group: string;
 }
 
 const DEFAULTS = { mode: '0755', owner: 'root', group: 'root' } as const;
+
+/**
+ * The mode a declaration settles to, flags folded into the leading digit.
+ *
+ * One place, because the mode that is written, the mode that is compared, and the mode that is read
+ * back all have to be the same string. Resolving it at each use is how two of them end up differing
+ * by a leading zero and every refresh reports drift on a directory nobody touched.
+ */
+export function resolveMode(args: { mode?: string; setgid?: boolean; sticky?: boolean }): string {
+  const mode = args.mode ?? DEFAULTS.mode;
+  // no setuid: it means nothing on a Linux directory, so there is no field to fold in. A four-digit
+  // mode carrying the bit still passes through withSpecialBits untouched
+  const flags: Partial<SpecialBits> = { setgid: args.setgid, sticky: args.sticky };
+  const bad = modeRefusal(mode) ?? specialBitsRefusal(mode, flags);
+  if (bad !== null) throw new Error(bad);
+  return withSpecialBits(mode, flags);
+}
 
 /**
  * What the machine says is at that path, or null where there is nothing.
@@ -89,8 +144,15 @@ async function apply(host: Target, args: DirectoryState): Promise<void> {
 
 function providerFor(host: Target): pulumi.dynamic.ResourceProvider<DirectoryArgs, DirectoryState> {
   return {
+    async check(_olds, news) {
+      const bad = modeRefusal(news.mode ?? DEFAULTS.mode)
+        ?? specialBitsRefusal(news.mode ?? DEFAULTS.mode, news);
+      // the declaration is wrong rather than the machine, so it is worth saying at preview
+      return { inputs: news, failures: bad === null ? [] : [{ property: 'mode', reason: bad }] };
+    },
+
     async create(args) {
-      const wanted = { ...DEFAULTS, ...args };
+      const wanted = { ...DEFAULTS, ...args, mode: resolveMode(args) };
       await apply(host, wanted);
       return { id: args.path, outs: wanted };
     },
@@ -103,7 +165,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<DirectoryArg
     },
 
     async update(id, _old, args) {
-      const wanted = { ...DEFAULTS, ...args, path: id };
+      const wanted = { ...DEFAULTS, ...args, path: id, mode: resolveMode(args) };
       const current = await readDirectory(host, id);
       const same = current
         && current.mode === wanted.mode
@@ -114,7 +176,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<DirectoryArg
     },
 
     async diff(_id, old, args) {
-      const wanted = { ...DEFAULTS, ...args };
+      const wanted = { ...DEFAULTS, ...args, mode: resolveMode(args) };
       return {
         changes: transportChanged(old)
           || old.mode !== wanted.mode
@@ -143,6 +205,9 @@ export class Directory extends pulumi.dynamic.Resource {
   declare readonly mode: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: DirectoryArgs, opts?: pulumi.CustomResourceOptions) {
-    super(stamped(providerFor(host)), name, { ...DEFAULTS, ...args }, withLegacyAlias(opts), 'homelab', 'Directory');
+    super(stamped(providerFor(host)), name, {
+      setgid: undefined, sticky: undefined,
+      ...DEFAULTS, ...args,
+    }, withLegacyAlias(opts), 'homelab', 'Directory');
   }
 }

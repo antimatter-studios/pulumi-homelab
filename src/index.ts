@@ -26,13 +26,20 @@ export { ask, must, asRoot, escalate, shellQuote, heredoc, heredocInto, sshArgs,
 export { sshTransport, describe, type Transport, type Target } from './ssh.ts';
 export { localTransport, type LocalOptions } from './local.ts';
 export { disagreeing, type Resolved, type FileOnHost } from './resolved.ts';
-export { normaliseMode } from './mode.ts';
+export {
+  normaliseMode,
+  modeRefusal,
+  specialBitsOf,
+  specialBitsRefusal,
+  withSpecialBits,
+  type SpecialBits,
+} from './mode.ts';
 export { FluxApp, ignoreRules, type FluxAppArgs } from './flux/index.ts';
 export { fluxReady, fluxReason, type FluxCheckArgs } from './flux/ready.ts';
 export { providerChanged, withLegacyAlias } from './upgrade.ts';
 export { mountedAt } from './checks.ts';
 export { ManagedFile, readFile, writeFile, parseFileStat, type FileArgs } from './resources/file.ts';
-export { Directory, readDirectory, parseStat, type DirectoryArgs } from './resources/directory.ts';
+export { Directory, readDirectory, parseStat, resolveMode, type DirectoryArgs } from './resources/directory.ts';
 export { Symlink, readSymlink, interpretSymlink, type SymlinkArgs } from './resources/symlink.ts';
 export {
   FstabEntry,
@@ -178,6 +185,29 @@ export {
   type SudoRuleArgs,
 } from './resources/sudo.ts';
 export { Precondition, readPrecondition, checkCommand, type PreconditionArgs } from './resources/precondition.ts';
+export {
+  PosixAcl,
+  readAcl,
+  parseGetfacl,
+  normalisePerms,
+  entryRefusal,
+  entryKey,
+  entrySatisfied,
+  formatEntry,
+  formatRemoval,
+  // fstab.ts already exports a `findEntry` for the line describing a mount point. Named apart
+  // rather than shadowed.
+  findEntry as findAclEntry,
+  unsatisfied,
+  abandoned,
+  setfaclCommand,
+  resolveEntries,
+  type PosixAclArgs,
+  type AclEntryArgs,
+  type AclEntry,
+  type AclEntryType,
+  type AclScope,
+} from './resources/acl.ts';
 export { Swap, readSwap, parseProcSwaps, parseFstabSwap, swapAction, type SwapArgs } from './resources/swap.ts';
 export {
   Journald,

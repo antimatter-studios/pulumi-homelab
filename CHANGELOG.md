@@ -29,6 +29,32 @@ breaking changes live.
   against it, and resolving a ref each run would mean deciding whether a changed answer is an
   upgrade or a moved tag. An abbreviated commit matches the full answer, so a short sha is not
   permanent drift. Checkouts are detached, and a tree already at the commit costs no fetch.
+- **`PosixAcl`** — ACL entries on a path, read back with `getfacl -pc` and compared on **effective**
+  permissions rather than nominal ones, so a `chmod` that recomputed the mask and quietly suppressed
+  a named entry reads as drift instead of as a mystery. Access entries and default entries are two
+  arguments rather than a flag, because declaring one and meaning both is the mistake people
+  actually make. It owns the entries it names and leaves the rest of the ACL alone — `setfacl -b`
+  and `--set` appear nowhere. Base entries are refused as access entries, where they are the mode
+  bits under another name and would fight `Directory`, and allowed as defaults, where no mode sets
+  them; a `mask` is refused in both, since setfacl computes it. There is deliberately no `recursive`
+  argument: applying an ACL across files that already exist cannot be read back without walking the
+  tree on every refresh.
+
+### Changed
+
+- **`Directory` takes `setgid` and `sticky` as fields** rather than leaving them to a leading digit
+  on `mode`. `2775` is correct the day it is written and quietly wrong the first time
+  somebody edits the mode without knowing why there were four digits, and the bit that goes is the
+  one holding a shared area together. `sticky` belongs beside any write grant on a shared directory,
+  group or ACL: write permission on a directory is what permits deleting the entries in it. A
+  four-digit `mode` still means what it always did; writing a non-zero leading digit *and* a flag is
+  refused at preview rather than resolved by a precedence nobody would remember. `mode` is now also
+  checked for being three or four octal digits, so a symbolic mode fails at the declaration rather
+  than applying cleanly and reading back as permanent drift. There is deliberately no `setuid`
+  field: `S_ISUID` has no defined meaning on a directory on Linux, so it would set cleanly, read
+  back cleanly, and change nothing — a declaration the resource would report success for and which
+  has no effect. A directory already carrying the bit is still adopted faithfully with `mode:
+  '4755'`.
 
 ### Fixed
 
