@@ -236,13 +236,17 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SystemdUnitA
       };
     },
 
-    async delete(id) {
+    async delete(id, state) {
       const unit = shellQuote(id);
+      // the directory comes from state, not from the default: a unit declared into somewhere other
+      // than /etc/systemd/system was being disabled correctly and then having the *default* path
+      // removed — deleting nothing, or something else that happened to share the name
+      const file = pathOf(id, state.directory ?? UNITS);
       // `|| true` on the stop: a unit that is already dead is not a failure to delete, and a
       // deployment that cannot tidy up after a service that crashed is worse than useless
       await must(host, escalate(host,
         `systemctl disable --now ${unit} || true; ` +
-        `rm -f ${shellQuote(pathOf(id))} && systemctl daemon-reload`,
+        `rm -f ${shellQuote(file)} && systemctl daemon-reload`,
       ));
     },
   };

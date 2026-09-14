@@ -248,11 +248,12 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<FstabEntryAr
       };
     },
 
-    async delete(id) {
+    async delete(id, state) {
       // the line goes; nothing is unmounted. Forgetting to describe a mount is not the same as
       // wanting it gone from a machine that is using it
-      const current = await must(host, escalate(host, `cat ${shellQuote(FSTAB)}`));
-      await must(host, escalate(host, heredoc(FSTAB, removeFromFstab(current, id))));
+      const file = state.file ?? FSTAB;
+      const current = await must(host, escalate(host, `cat ${shellQuote(file)}`));
+      await must(host, escalate(host, heredoc(file, removeFromFstab(current, id))));
     },
   };
 }

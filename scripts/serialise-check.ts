@@ -331,5 +331,48 @@ if (prototypal.length > 0) {
   console.log('  ok   nothing prototypal is captured at module scope');
 }
 
-console.log(failed ? 'package checks: FAILED' : 'package checks: 9 passed');
+/**
+ * A `delete` must take the state when its file has a layout default to get wrong.
+ *
+ * Four resources rebuilt a path inside `delete` from the module default while the real one sat in
+ * state: `SystemdUnit`, `Journald`, `SudoRule` and `RcloneRemote`. A unit declared into a directory
+ * other than `/etc/systemd/system` was disabled correctly and then had the *default* path removed —
+ * deleting nothing, or something else that happened to share the name. The rclone one is worse: it
+ * edited whichever config the escalated account has, leaving the declared remote in place and
+ * changing a different file.
+ *
+ * Every one of them was invisible because the default is right for almost every caller, which is
+ * what makes it worth a check rather than care. The rule: a file that defines a layout default at
+ * all must not have a `delete` that ignores state — the dynamic provider hands it over as the second
+ * argument, so there is no reason to reconstruct anything.
+ */
+const forgetful: string[] = [];
+{
+  const { readdir, readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const directory = new URL('../src/resources/', import.meta.url).pathname;
+  for (const entry of await readdir(directory)) {
+    if (!entry.endsWith('.ts') || entry.endsWith('.test.ts')) continue;
+    const source = await readFile(join(directory, entry), 'utf8');
+    // the delete's own body is what matters: a file may hold a layout default that its delete has
+    // no business touching, and flagging that would be a check nobody can satisfy honestly
+    const body = source.match(/async delete\(id\)\s*\{([\s\S]*?)\n {4}\}/)?.[1];
+    if (body === undefined) continue;
+    const reaches = body.match(/\b(DIRECTORY|CONFIG|SMB_CONF|FSTAB|UNITS|PERSISTENT|DPHYS|pathOf\(id\))\b/);
+    if (reaches) {
+      forgetful.push(`${entry} deletes using ${reaches[1]} while state carries the declared one`);
+    }
+  }
+}
+if (forgetful.length > 0) {
+  failed = true;
+  console.error(
+    `  FAIL a delete would use the default path instead of the declared one:\n    ${forgetful.join('\n    ')}\n` +
+    `    Take the state: \`async delete(id, state)\`, and read the path from it.`,
+  );
+} else {
+  console.log('  ok   every delete with a layout default reads it from state');
+}
+
+console.log(failed ? 'package checks: FAILED' : 'package checks: 10 passed');
 process.exit(failed ? 1 : 0);

@@ -184,8 +184,10 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SudoRuleArgs
       };
     },
 
-    async delete(id) {
-      await must(host, escalate(host, `rm -f ${shellQuote(pathOf(id))}`));
+    async delete(id, state) {
+      // from state, not the default: a rule declared into another drop-in directory would otherwise
+      // be left granting privilege while the wrong path is removed
+      await must(host, escalate(host, `rm -f ${shellQuote(pathOf(id, state.directory ?? DIRECTORY))}`));
     },
   };
 }

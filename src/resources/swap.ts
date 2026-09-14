@@ -294,12 +294,13 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SwapArgs, Sw
       };
     },
 
-    async delete(id) {
+    async delete(id, state) {
       // deleting the resource means this program stops describing swap, not that the machine should
       // lose the swap it is using. The file stays and so does the fstab line; unmasking the package
       // is the one thing worth undoing, since masking it was this resource's doing and would
       // otherwise outlive the code that explains it
-      await must(host, escalate(host, `systemctl unmask ${DPHYS} 2>/dev/null || true; test -n ${shellQuote(id)}`));
+      const unit = shellQuote(state.unit ?? DPHYS);
+      await must(host, escalate(host, `systemctl unmask ${unit} 2>/dev/null || true; test -n ${shellQuote(id)}`));
     },
   };
 }

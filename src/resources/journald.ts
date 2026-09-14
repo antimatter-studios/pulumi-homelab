@@ -230,10 +230,13 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<JournaldArgs
       };
     },
 
-    async delete(id) {
+    async delete(id, state) {
+      // the directory comes from state rather than the default, or a drop-in declared elsewhere is
+      // left in place while the default path is removed instead
+      const file = pathOf(id, state.directory ?? DIRECTORY);
       // the drop-in goes; the journal directory and its contents stay, because deleting logs is not
       // a decision a deployment gets to make
-      await must(host, escalate(host, `rm -f ${shellQuote(pathOf(id))} && systemctl restart systemd-journald`));
+      await must(host, escalate(host, `rm -f ${shellQuote(file)} && systemctl restart systemd-journald`));
     },
   };
 }
