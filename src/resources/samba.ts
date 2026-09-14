@@ -4,13 +4,32 @@ import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 import { disagreeing } from '../resolved.ts';
 
 /**
- * Samba shares and users, read back through Samba's own understanding of its configuration.
+ * Samba shares and users, read back from the file, with `testparm` asked whether it parses.
  *
- * `testparm -s` is the `read` here, and it is a better one than reading `smb.conf` would be: it
- * prints the **effective** configuration as smbd resolves it — defaults applied, includes followed,
- * syntax validated. So a share somebody added by hand appears, a value that is subtly wrong appears
- * as what Samba actually made of it rather than what the file says, and a configuration that will
- * not parse fails at read time instead of at restart time on a machine nobody is watching.
+ * **The two jobs are separate, and giving both to `testparm` was a bug.** It prints the effective
+ * configuration as smbd resolves it, which sounds like the better read and is not one at all,
+ * because it does not answer in the alphabet the declaration is written in. Measured against two
+ * real shares of twenty-five settings each, it reported thirteen, for four independent reasons:
+ *
+ * - **a share setting that matches `[global]` is not repeated**, so it is simply absent;
+ * - **a value equal to Samba's default is omitted**, which `-v` fixes and nothing else does;
+ * - **spellings are normalised** — `2775` comes back `02775`, `no` comes back `No`;
+ * - **synonyms are collapsed** — `writeable = yes` *is* `read only = no`, and only the canonical
+ *   one is printed, so the declared one never matches anything.
+ *
+ * Closing that gap semantically would mean carrying Samba's synonym table, its per-version default
+ * table, and enough of its resolution order to tell "absent because it matches `[global]`" from
+ * "absent because it is the default" — a reimplementation of Samba's configuration semantics
+ * inside a Pulumi resource, wrong in a new way every time Samba changed.
+ *
+ * So the read is the **section in the file**, which is what this resource wrote and round-trips
+ * exactly, and `testparm` answers the question only it can: does what is on the machine parse.
+ * That is a real question — a broken `smb.conf` does not break the share it is in, it stops smbd
+ * reloading, and the symptom is a share that quietly does not exist.
+ *
+ * What is genuinely given up is "is this setting in force", since a share setting can be overridden
+ * above it. That is a question about Samba's resolution order rather than about whether the machine
+ * matches the declaration, and the resource that answered it would have to model everything above.
  *
  * **Sections are edited in place; the file is never regenerated.** Samba has no `conf.d` that globs
  * — `include =` takes no wildcards — so the choice is between one resource owning the whole
@@ -54,10 +73,16 @@ interface SambaShareState {
   path: string;
   settings: Record<string, string>;
   config: string;
-  /** What Samba itself reports for this section, defaults resolved. */
-  effective: Record<string, string>;
-  /** Declared settings Samba resolved to something else. Reported, never reconciled. */
-  overridden: string[];
+  /** The section as the file says it, which is the read and the thing compared. */
+  actual: Record<string, string>;
+  /**
+   * Whether Samba can parse the configuration on the machine.
+   *
+   * The job `testparm` is kept for, and the one only it can do. A configuration that will not parse
+   * does not break the share it is in — it stops smbd reloading, so the share quietly does not
+   * exist, and nothing about the file itself looks wrong.
+   */
+  parses: boolean;
 }
 
 const SMB_CONF = '/etc/samba/smb.conf';
@@ -160,10 +185,39 @@ export function sambaSameValue(key: string, declared: string, effective: string)
   return folded && lowerA === lowerB;
 }
 
-/** One section of `testparm -s` output, as Samba understands it. */
+/** One section of `testparm` output, as Samba understands it. Reported, never compared. */
 export function effectiveShare(testparm: string, share: string): Record<string, string> | null {
   const lines = parseSections(testparm).get(share);
   return lines ? parseShareSettings(lines) : null;
+}
+
+/**
+ * One section of `smb.conf` itself — the read this resource compares against.
+ *
+ * The same parse as `effectiveShare` and a different source, which is the whole point: this is what
+ * the resource wrote, so it comes back in the alphabet it was written in and a hand edit shows up
+ * as itself rather than as Samba's resolution of it.
+ */
+export function fileShare(text: string, share: string): Record<string, string> | null {
+  const lines = parseSections(text).get(share);
+  return lines ? parseShareSettings(lines) : null;
+}
+
+/**
+ * Whether the file says something other than what was declared.
+ *
+ * Through `sambaSameValue` rather than by string equality, even though the file is what this wrote:
+ * somebody who hand-edits `read only = no` to `read only = No` has changed nothing, and rewriting
+ * the file to correct a capital letter is the same noise this resource was built to stop making.
+ *
+ * Extra keys in the section are not drift. A share is edited in place, so a setting somebody added
+ * by hand is theirs — the same bargain `upsertSetting` makes with `[global]`.
+ */
+export function shareDiffers(actual: Record<string, string>, wanted: Record<string, string>): boolean {
+  return Object.entries(wanted).some(([key, value]) => {
+    const found = Object.entries(actual).find(([name]) => sameKey(name, key))?.[1];
+    return found === undefined || !sambaSameValue(key, value, found);
+  });
 }
 
 /** The section as it should appear in the file. */
@@ -275,6 +329,34 @@ export async function readShare(host: Target, share: string, config = SMB_CONF):
   return effectiveShare(asked.out, share);
 }
 
+const PARSES_MARKER = '#pulumi-homelab#parses';
+
+/** The file, and whether Samba can parse it, split apart again. */
+export function parseShareRead(out: string, share: string): { actual: Record<string, string> | null; parses: boolean } {
+  const [text = '', verdict = ''] = out.split(`${PARSES_MARKER}\n`);
+  return { actual: fileShare(text, share), parses: verdict.trim() === 'ok' };
+}
+
+/**
+ * The section as the file has it, and Samba's verdict on the whole configuration.
+ *
+ * One round trip for both, because they are two questions about the same file and the second is an
+ * exit code. `testparm`'s output is discarded here — it is being asked whether, not what.
+ */
+export async function readShareSection(
+  host: Target,
+  share: string,
+  config = SMB_CONF,
+): Promise<{ actual: Record<string, string> | null; parses: boolean } | null> {
+  const asked = await ask(host, escalate(host,
+    `test -f ${shellQuote(config)} || exit 9; cat ${shellQuote(config)}; echo '${PARSES_MARKER}'; `
+    + `testparm -s ${shellQuote(config)} >/dev/null 2>&1 && echo ok || true`,
+  ));
+  if (asked.code === 9) return null;
+  if (asked.code !== 0) throw new Error(`could not read ${config}: ${asked.err.trim()}`);
+  return parseShareRead(asked.out, share);
+}
+
 /**
  * Write the file, but only once testparm agrees it is a Samba configuration.
  *
@@ -304,17 +386,18 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
     // only when the file would actually differ: an update caused by this package being upgraded
     // should not rewrite smb.conf and reload smbd on every machine
     if (updated !== current) await apply(host, updated, config);
-    const resolved = await readShare(host, args.share, config);
-    if (!resolved) throw new Error(`wrote the [${args.share}] section but samba does not report it`);
-    const wanted = { path: args.path, ...settings };
-    return {
-      share: args.share,
-      path: args.path,
-      settings,
-      config,
-      effective: narrowTo(resolved, Object.keys(wanted)),
-      overridden: overriddenIn(wanted, resolved),
-    };
+
+    const after = await readShareSection(host, args.share, config);
+    if (after === null || after.actual === null) {
+      throw new Error(`wrote the [${args.share}] section to ${config} but it is not there`);
+    }
+    if (shareDiffers(after.actual, { path: args.path, ...settings })) {
+      throw new Error(
+        `wrote the [${args.share}] section to ${config} on ${describe(host)} and it does not read `
+        + `back as declared — something else is editing the same file`,
+      );
+    }
+    return { share: args.share, path: args.path, settings, config, actual: after.actual, parses: after.parses };
   };
 
   return {
@@ -324,22 +407,21 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
 
     async read(id, state) {
       const config = state?.config ?? SMB_CONF;
-      const resolved = await readShare(host, id, config);
-      if (!resolved) return { id: undefined, props: undefined };
-      const asked = { path: state?.path ?? '', ...(state?.settings ?? {}) };
-      const effective = narrowTo(resolved, Object.keys(asked));
+      const found = await readShareSection(host, id, config);
+      // no file, or no section in it: Pulumi forgets it and the next up writes it back
+      if (found === null || found.actual === null) return { id: undefined, props: undefined };
       return {
         id,
         props: {
           settings: state?.settings ?? {},
           config,
           ...state,
-          ...state,
           share: id,
-          // what Samba says the path is, which is the answer that matters when they disagree
-          path: resolved.path ?? state?.path ?? '',
-          effective,
-          overridden: overriddenIn(state?.settings ?? {}, resolved),
+          // what the file says the path is, which is the answer that matters when they disagree
+          path: found.actual.path ?? state?.path ?? '',
+          // the two that always come from the machine rather than from what was remembered
+          actual: found.actual,
+          parses: found.parses,
         },
       };
     },
@@ -350,18 +432,18 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
 
     async diff(_id, old, args) {
       const settings = args.settings ?? {};
-      // compared against what Samba reports rather than against the last arguments: a share edited
-      // by hand is drift, and testparm is the only thing that knows what the edit actually meant
+      // compared against the section in the file rather than against the last arguments, so a hand
+      // edit is drift — and against the file rather than against testparm, so a share Samba
+      // reports in its own vocabulary is not drift on every single deployment for ever
       const wanted = { path: args.path, ...settings };
-      // compared through Samba's own vocabulary rather than verbatim: `yes` and `Yes` are one value,
-      // and comparing them as strings is an update on every deployment for ever
-      const differs = Object.entries(wanted).some(([key, value]) => {
-        const answered = Object.entries(old.effective ?? {}).find(([name]) => sameKey(name, key))?.[1];
-        return answered === undefined || !sambaSameValue(key, value, answered);
-      });
       return {
         changes: transportChanged(old)
-          || differs || old.share !== args.share,
+          || shareDiffers(old.actual ?? {}, wanted)
+          // a configuration Samba cannot parse is a share that quietly does not exist, however
+          // right the file looks. Rewriting is the only move available, and apply refuses to
+          // install anything that still does not parse
+          || old.parses === false
+          || old.share !== args.share,
         replaces: old.share !== args.share ? ['share'] : [],
         stables: [],
         deleteBeforeReplace: true,
@@ -376,13 +458,18 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SambaShareAr
   };
 }
 
-/** A Samba share, checked against `testparm` rather than against the file it was written to. */
+/** A Samba share, checked against the file it was written to, with `testparm` asked only whether it parses. */
 export class SambaShare extends pulumi.dynamic.Resource {
   declare readonly share: pulumi.Output<string>;
-  declare readonly effective: pulumi.Output<Record<string, string>>;
+  /** The section as the file has it. */
+  declare readonly actual: pulumi.Output<Record<string, string>>;
+  /** Whether Samba can parse the configuration at all. */
+  declare readonly parses: pulumi.Output<boolean>;
 
   constructor(name: string, host: Target, args: SambaShareArgs, opts?: pulumi.CustomResourceOptions) {
-    super(stamped(providerFor(host)), name, { effective: undefined, overridden: undefined, settings: {}, config: SMB_CONF, ...args }, withLegacyAlias(opts), 'homelab', 'SambaShare');
+    super(stamped(providerFor(host)), name, {
+      actual: undefined, parses: undefined, settings: {}, config: SMB_CONF, ...args,
+    }, withLegacyAlias(opts), 'homelab', 'SambaShare');
   }
 }
 
@@ -521,13 +608,28 @@ export interface SambaSettingArgs {
   config?: string;
 }
 
+/** One `key = value` out of one section of the file, or null where the section has no such key. */
+export function fileSetting(text: string, share: string, key: string): string | null {
+  const section = fileShare(text, share);
+  if (section === null) return null;
+  return Object.entries(section).find(([name]) => sameKey(name, key))?.[1] ?? null;
+}
+
 interface SambaSettingState {
   share: string;
   key: string;
   value: string;
   apply: string;
   config: string;
-  /** What Samba resolved this key to, which is the answer rather than the request. */
+  /** What the line in the file says — the read, and the thing compared. */
+  actual: string;
+  /**
+   * What Samba resolved this key to.
+   *
+   * Reported and never compared. It is the answer to "what did this turn into", which is worth
+   * having, and it is not in the alphabet the declaration is written in — see the note on
+   * `SambaShare`.
+   */
   effective: string;
 }
 
@@ -602,8 +704,18 @@ function settingProviderFor(host: Target): pulumi.dynamic.ResourceProvider<Samba
       await must(host, escalate(host, APPLY[how] ?? APPLY.reload ?? 'true'));
     }
 
+    const written = await must(host, escalate(host, `cat ${shellQuote(config)}`));
+    const actual = fileSetting(written, args.share, args.key);
+    if (actual === null || !sambaSameValue(args.key, args.value, actual)) {
+      throw new Error(
+        `wrote ${args.key} to [${args.share}] in ${config} on ${describe(host)} and it reads back as `
+        + `${actual ?? 'nothing'} — something else is editing the same file`,
+      );
+    }
+    // Samba's resolution, kept as information: it is the answer to "what did this turn into", which
+    // is worth reporting and is not a thing to compare against — see the note on SambaShare
     const effective = await readSetting(host, args.share, args.key, config);
-    return { share: args.share, key: args.key, value: args.value, apply: how, config, effective: effective ?? '' };
+    return { share: args.share, key: args.key, value: args.value, apply: how, config, actual, effective: effective ?? '' };
   };
 
   return {
@@ -614,19 +726,23 @@ function settingProviderFor(host: Target): pulumi.dynamic.ResourceProvider<Samba
     async read(id, state) {
       const [share = '', key = ''] = id.split('#');
       const config = state?.config ?? SMB_CONF;
+      const text = await ask(host, escalate(host, `cat ${shellQuote(config)}`));
+      const actual = text.code === 0 ? fileSetting(text.out, share, key) : null;
+      // the line is gone from the file: there is nothing here to describe any more
+      if (actual === null) return { id: undefined, props: undefined };
       const effective = await readSetting(host, share, key, config);
-      // the section is gone entirely: there is nothing here to describe any more
-      if (effective === null) return { id: undefined, props: undefined };
       return {
         id,
         props: {
-          value: state?.value ?? effective,
+          value: state?.value ?? actual,
           apply: state?.apply ?? 'reload',
           config,
           ...state,
           share,
           key,
-          effective,
+          // the two that always come from the machine rather than from what was remembered
+          actual,
+          effective: effective ?? '',
         },
       };
     },
@@ -638,11 +754,13 @@ function settingProviderFor(host: Target): pulumi.dynamic.ResourceProvider<Samba
 
     async diff(_id, old, args) {
       return {
-        // compared against what Samba resolved, so a hand edit is drift
+        // compared against the line in the file, so a hand edit is drift — and not against what
+        // Samba resolved, which normalises spellings and collapses synonyms and would be drift on
+        // every deployment for ever. See the note on SambaShare
         changes: transportChanged(old)
-          // through Samba's vocabulary, not verbatim: `netbios name` comes back uppercased, so a
-          // declared `homelab` against an effective `HOMELAB` was drift on every run
-          || !sambaSameValue(args.key, args.value, old.effective ?? '')
+          // still through Samba's vocabulary rather than verbatim, because somebody who hand-edits
+          // `no` to `No` has changed nothing and rewriting the file over it is the same noise
+          || !sambaSameValue(args.key, args.value, old.actual ?? '')
           || old.value !== args.value
           || old.apply !== (args.apply ?? 'reload'),
         replaces: old.share !== args.share || old.key !== args.key ? ['share', 'key'] : [],
@@ -664,10 +782,13 @@ function settingProviderFor(host: Target): pulumi.dynamic.ResourceProvider<Samba
 /** One setting in one section, for a section nobody should own outright. */
 export class SambaSetting extends pulumi.dynamic.Resource {
   declare readonly key: pulumi.Output<string>;
+  /** What the file says, which is what drift is measured against. */
+  declare readonly actual: pulumi.Output<string>;
+  /** What Samba resolved it to. Reported, never compared. */
   declare readonly effective: pulumi.Output<string>;
 
   constructor(name: string, host: Target, args: SambaSettingArgs, opts?: pulumi.CustomResourceOptions) {
-    super(stamped(settingProviderFor(host)), name, { apply: 'reload', config: SMB_CONF, effective: undefined, ...args },
+    super(stamped(settingProviderFor(host)), name, { apply: 'reload', config: SMB_CONF, actual: undefined, effective: undefined, ...args },
       withLegacyAlias(opts), 'homelab', 'SambaSetting');
   }
 }

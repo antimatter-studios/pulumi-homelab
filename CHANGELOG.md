@@ -66,6 +66,22 @@ breaking changes live.
 
 ### Fixed
 
+- **`SambaShare` and `SambaSetting` read the file, and ask `testparm` only whether it parses.**
+  Both compared against `testparm` output, which reports Samba's resolution rather than what was
+  written — so both rewrote their sections on every deployment to correct a difference that did not
+  exist. Measured against two real shares of twenty-five settings each, `testparm` reported
+  thirteen: a share setting matching `[global]` is not repeated, a value equal to Samba's default is
+  omitted, spellings are normalised (`2775` reads back `02775`), and synonyms are collapsed
+  (`writeable = yes` *is* `read only = no`, and only the canonical one is printed). Closing that
+  semantically would mean carrying Samba's synonym table, its per-version default table, and enough
+  of its resolution order to tell the two kinds of absence apart. The comparison is now against the
+  section in the file, which is what the resource wrote and round-trips exactly, while `testparm`
+  keeps the job only it can do — a `parses` output, because a configuration Samba cannot read does
+  not break the share it is in, it stops smbd reloading, and the share quietly does not exist.
+  `SambaShare.effective` and `.overridden` are replaced by `.actual` and `.parses`;
+  `SambaSetting` keeps `.effective` as information, reported and never compared, and gains
+  `.actual`. What is given up is "is this setting in force", a question about Samba's resolution
+  order rather than about whether the machine matches the declaration.
 - **Seven `delete` methods read their layout path from state rather than from the module default.**
   A resource created with a non-default `directory`, `file` or `config` was deleted from the
   default path, which left the real file behind and reported success. The package checks now refuse
