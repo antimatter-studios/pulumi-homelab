@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
-  effectiveShare, parseSambaUsers, parseSections, parseShareSettings, removeSection, removeSetting,
-  narrowTo, sambaSameValue, shareSection, testparmCommand, upsertSection, upsertSetting,
+  effectiveShare,
+  fileSetting,
+  fileShare,
+  narrowTo,
+  parseSambaUsers,
+  parseSections,
+  parseShareRead,
+  parseShareSettings,
+  removeSection,
+  removeSetting,
+  sambaSameValue,
+  shareDiffers,
+  shareSection,
+  testparmCommand,
+  upsertSection,
+  upsertSetting,
 } from './samba.ts';
 
 /**
@@ -317,5 +331,165 @@ describe('asking testparm the right question', () => {
 
   it('sends testparm’s commentary to nowhere, since it is not the answer', () => {
     expect(testparmCommand()).toContain('2>/dev/null');
+  });
+});
+
+/**
+ * The bug this read was changed to fix, measured on two real shares of twenty-five settings each:
+ * `testparm` reported thirteen, so the resource rewrote both on every single deployment to correct
+ * a difference that did not exist. Harmless in effect — it wrote the same bytes — and noise on
+ * every preview is how a real diff gets waved through.
+ */
+describe('comparing against the file rather than against testparm', () => {
+  const DECLARED = {
+    path: '/mnt/pool/chris',
+    'writeable': 'yes',
+    'directory mask': '2775',
+    'guest ok': 'no',
+    'vfs objects': 'catia fruit streams_xattr',
+  };
+  const FILE = [
+    '[global]',
+    '   vfs objects = catia fruit streams_xattr',
+    '',
+    '[chris]',
+    '   path = /mnt/pool/chris',
+    '   writeable = yes',
+    '   directory mask = 2775',
+    '   guest ok = no',
+    '   vfs objects = catia fruit streams_xattr',
+  ].join('\n');
+  // what testparm makes of exactly that file, and every difference is one of its four habits
+  const TESTPARM = [
+    '[chris]',
+    '   path = /mnt/pool/chris',
+    // `writeable = yes` IS `read only = no`, and only the canonical spelling is printed
+    '   read only = No',
+    // a leading zero appears from nowhere
+    '   directory mask = 02775',
+    // `guest ok = no` equals the default, so it is omitted entirely
+    // `vfs objects` matches [global], so it is not repeated
+  ].join('\n');
+
+  it('finds the section in the file', () => {
+    expect(fileShare(FILE, 'chris')).toEqual({
+      path: '/mnt/pool/chris',
+      writeable: 'yes',
+      'directory mask': '2775',
+      'guest ok': 'no',
+      'vfs objects': 'catia fruit streams_xattr',
+    });
+  });
+
+  it('says nothing about a section the file does not have', () => {
+    expect(fileShare(FILE, 'photos')).toBeNull();
+  });
+
+  it('is quiet when the file says what was declared', () => {
+    expect(shareDiffers(fileShare(FILE, 'chris') ?? {}, DECLARED)).toBe(false);
+  });
+
+  it('would have reported a difference against testparm that does not exist', () => {
+    // the regression, kept as a test: every one of the four habits below is testparm being right
+    // about samba and wrong about what this resource wrote
+    expect(shareDiffers(effectiveShare(TESTPARM, 'chris') ?? {}, DECLARED)).toBe(true);
+  });
+
+  it('does not mind a synonym, because it never sees one', () => {
+    expect(fileShare(FILE, 'chris')).toHaveProperty('writeable');
+    expect(effectiveShare(TESTPARM, 'chris')).toHaveProperty('read only');
+  });
+
+  it('does not mind a setting that matches [global], because the file still carries it', () => {
+    expect(fileShare(FILE, 'chris')?.['vfs objects']).toBe('catia fruit streams_xattr');
+    expect(effectiveShare(TESTPARM, 'chris')?.['vfs objects']).toBeUndefined();
+  });
+
+  it('does not mind a value equal to samba\'s default, because the file still carries it', () => {
+    expect(fileShare(FILE, 'chris')?.['guest ok']).toBe('no');
+    expect(effectiveShare(TESTPARM, 'chris')?.['guest ok']).toBeUndefined();
+  });
+
+  it('does not mind a normalised spelling, because the file was not normalised', () => {
+    expect(fileShare(FILE, 'chris')?.['directory mask']).toBe('2775');
+    expect(effectiveShare(TESTPARM, 'chris')?.['directory mask']).toBe('02775');
+  });
+
+  it('reports a setting somebody changed by hand', () => {
+    const edited = FILE.replace('writeable = yes', 'writeable = no');
+    expect(shareDiffers(fileShare(edited, 'chris') ?? {}, DECLARED)).toBe(true);
+  });
+
+  it('reports a setting somebody deleted by hand', () => {
+    const edited = FILE.replace('   guest ok = no\n', '');
+    expect(shareDiffers(fileShare(edited, 'chris') ?? {}, DECLARED)).toBe(true);
+  });
+
+  it('forgives a hand edit that changed the spelling and not the value', () => {
+    // rewriting the file to correct a capital letter is the same noise this was built to stop
+    const edited = FILE.replace('guest ok = no', 'guest ok = No');
+    expect(shareDiffers(fileShare(edited, 'chris') ?? {}, DECLARED)).toBe(false);
+  });
+
+  it('forgives a hand edit that only changed how the key was spaced or capitalised', () => {
+    // samba ignores whitespace and case inside a parameter name, and a file aligned by hand is
+    // spaced however somebody liked. Matching verbatim would leave the old line in place and add a
+    // second one saying the same thing, with samba taking whichever it read last
+    const edited = FILE
+      .replace('directory mask =', 'directory  mask   =')
+      .replace('guest ok =', 'Guest Ok =');
+    expect(shareDiffers(fileShare(edited, 'chris') ?? {}, DECLARED)).toBe(false);
+  });
+
+  it('leaves a setting somebody added alone, since the section is edited in place', () => {
+    const edited = FILE.replace('   path = /mnt/pool/chris', '   path = /mnt/pool/chris\n   veto files = /.DS_Store/');
+    expect(shareDiffers(fileShare(edited, 'chris') ?? {}, DECLARED)).toBe(false);
+  });
+});
+
+describe('asking samba only whether it parses', () => {
+  const OUT = '[chris]\n   path = /p\n#pulumi-homelab#parses\nok\n';
+
+  it('splits the file from the verdict', () => {
+    expect(parseShareRead(OUT, 'chris')).toEqual({ actual: { path: '/p' }, parses: true });
+  });
+
+  it('reports a configuration samba cannot parse', () => {
+    // a broken smb.conf does not break the share it is in — it stops smbd reloading, so the share
+    // quietly does not exist and nothing about the file itself looks wrong
+    expect(parseShareRead('[chris]\n   path = /p\n#pulumi-homelab#parses\n', 'chris').parses).toBe(false);
+  });
+
+  it('still reads the section out of a file that does not parse', () => {
+    // the two questions are independent, and the section is what a rewrite is compared against
+    expect(parseShareRead('[chris]\n   path = /p\n#pulumi-homelab#parses\n', 'chris').actual)
+      .toEqual({ path: '/p' });
+  });
+
+  it('does not mistake the marker for part of the file', () => {
+    expect(parseShareRead(OUT, 'chris').actual).not.toHaveProperty('#pulumi-homelab#parses');
+  });
+});
+
+describe('one setting out of one section of the file', () => {
+  const FILE = '[global]\n   netbios name = homelab\n   workgroup = WORKGROUP\n';
+
+  it('finds it by key, however it was spaced', () => {
+    expect(fileSetting(FILE, 'global', 'netbios   name')).toBe('homelab');
+    expect(fileSetting(FILE, 'global', 'NetBIOS name')).toBe('homelab');
+  });
+
+  it('answers nothing for a key the section does not have', () => {
+    expect(fileSetting(FILE, 'global', 'server string')).toBeNull();
+  });
+
+  it('answers nothing for a section the file does not have', () => {
+    expect(fileSetting(FILE, 'chris', 'netbios name')).toBeNull();
+  });
+
+  it('reads back what was declared rather than what samba uppercased it to', () => {
+    // declaring `netbios name = homelab` on a machine called homelab sets it to exactly its own
+    // default; testparm then reports HOMELAB, or nothing at all, and neither is what was written
+    expect(fileSetting(FILE, 'global', 'netbios name')).toBe('homelab');
   });
 });

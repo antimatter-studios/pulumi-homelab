@@ -74,6 +74,25 @@ alphabet as the write**, so comparing them verbatim is drift on every refresh fo
 | `netbios name = homelab` | `testparm` says `HOMELAB` |
 | a password | `rclone obscure` never returns the same string twice |
 | `netbios name = homelab` | `testparm -s` says **nothing at all** — it prints only what differs from the default, and Samba derives that default from the hostname |
+| `writeable = yes` | `testparm` says `read only = No` — one setting, two spellings, and only the canonical one is printed |
+| `directory mask = 2775` | `testparm` says `02775` |
+| a share setting that matches `[global]` | `testparm` does not repeat it, so it is simply absent |
+
+The Samba row is where this stopped being a table of quirks to work around. Measured against two
+real shares of twenty-five settings each, `testparm` reported thirteen — for four independent
+reasons, of which normalising a spelling is the easy one. Resolving synonyms needs Samba's synonym
+table; knowing which values equal a default needs its default table, per version; and "absent
+because it matches `[global]`" is indistinguishable from "absent because it is the default" without
+consulting both. That is a reimplementation of Samba's configuration semantics inside a Pulumi
+resource, wrong in a new way each time Samba changed.
+
+So `SambaShare` and `SambaSetting` now read **the section in the file** — which is what they wrote,
+so it round-trips exactly — and ask `testparm` the question only it can answer: **does what is on
+the machine parse.** A broken `smb.conf` does not break the share it is in; it stops smbd reloading,
+so the share quietly does not exist and nothing about the file itself looks wrong. Two mechanisms
+each doing one job, instead of one doing both badly. What is given up is "is this setting in force",
+which is a question about Samba's resolution order rather than about whether the machine matches the
+declaration — and the resource that answered it would have to model everything above.
 
 Each one cost a resource that reported an update on every deployment, which is worse than noise: an
 update that always runs is a write to the machine that always runs, and `pulumi up` can never answer
@@ -159,7 +178,7 @@ import captured by reference, and `promisify` reaching native code.
 ### Declared, effective, overridden
 
 The package's central idea was implemented five times before it was named. `BootConfig` asks
-`vcgencmd`, `Journald` asks `systemd-analyze cat-config`, `SambaShare` asks `testparm`, `SshdConfig`
+`vcgencmd`, `Journald` asks `systemd-analyze cat-config`, `SambaShare` asks the file, `SshdConfig`
 asks `sshd -T` — each with its own field names for **what this resource wrote is not what the system
 does**.
 
@@ -434,8 +453,8 @@ exist — and every command exits zero.
 | **`Swap`** | `enabled` `sizeMb?` `path?` | `/proc/swaps`, `/etc/fstab`, the `dphys-swapfile` unit |
 | **`Journald`** | `settings` `file?` | `systemd-analyze cat-config` |
 | **`KernelCmdline`** | `flags` `path?` | the boot partition's `cmdline.txt` |
-| **`SambaShare`** | `share` `path` `settings?` | `testparm -s` |
-| **`SambaSetting`** | `share` `key` `value` `apply?` | `testparm -s`, for one key |
+| **`SambaShare`** | `share` `path` `settings?` `config?` | the section in `smb.conf`, plus `testparm` for validity |
+| **`SambaSetting`** | `share` `key` `value` `apply?` `config?` | the line in `smb.conf`; `testparm` reported, never compared |
 | **`Hostname`** | `name` `domain?` `restartAvahi?` | `hostnamectl` and the `127.0.1.1` line |
 | **`SambaUser`** | `name` `password` | `pdbedit -L` — existence only |
 | **`RcloneRemote`** | `remote` `type` `settings?` `secrets?` `config?` | `rclone config dump`, credentials revealed |
