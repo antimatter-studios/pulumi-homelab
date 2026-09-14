@@ -29,6 +29,16 @@ breaking changes live.
   against it, and resolving a ref each run would mean deciding whether a changed answer is an
   upgrade or a moved tag. An abbreviated commit matches the full answer, so a short sha is not
   permanent drift. Checkouts are detached, and a tree already at the commit costs no fetch.
+- **`PosixAcl`** — ACL entries on a path, read back with `getfacl -pc` and compared on **effective**
+  permissions rather than nominal ones, so a `chmod` that recomputed the mask and quietly suppressed
+  a named entry reads as drift instead of as a mystery. Access entries and default entries are two
+  arguments rather than a flag, because declaring one and meaning both is the mistake people
+  actually make. It owns the entries it names and leaves the rest of the ACL alone — `setfacl -b`
+  and `--set` appear nowhere. Base entries are refused as access entries, where they are the mode
+  bits under another name and would fight `Directory`, and allowed as defaults, where no mode sets
+  them; a `mask` is refused in both, since setfacl computes it. There is deliberately no `recursive`
+  argument: applying an ACL across files that already exist cannot be read back without walking the
+  tree on every refresh.
 
 ### Fixed
 

@@ -178,6 +178,29 @@ export {
   type SudoRuleArgs,
 } from './resources/sudo.ts';
 export { Precondition, readPrecondition, checkCommand, type PreconditionArgs } from './resources/precondition.ts';
+export {
+  PosixAcl,
+  readAcl,
+  parseGetfacl,
+  normalisePerms,
+  entryRefusal,
+  entryKey,
+  entrySatisfied,
+  formatEntry,
+  formatRemoval,
+  // fstab.ts already exports a `findEntry` for the line describing a mount point. Named apart
+  // rather than shadowed.
+  findEntry as findAclEntry,
+  unsatisfied,
+  abandoned,
+  setfaclCommand,
+  resolveEntries,
+  type PosixAclArgs,
+  type AclEntryArgs,
+  type AclEntry,
+  type AclEntryType,
+  type AclScope,
+} from './resources/acl.ts';
 export { Swap, readSwap, parseProcSwaps, parseFstabSwap, swapAction, type SwapArgs } from './resources/swap.ts';
 export {
   Journald,

@@ -411,6 +411,43 @@ exist — and every command exits zero.
 | **`SambaUser`** | `name` `password` | `pdbedit -L` — existence only |
 | **`RcloneRemote`** | `remote` `type` `settings?` `secrets?` `config?` | `rclone config dump`, credentials revealed |
 
+### Access control
+
+| | Arguments | Reads from |
+|---|---|---|
+| **`PosixAcl`** | `path` `entries?` `defaultEntries?` | `getfacl -pc`, compared on **effective** permissions |
+
+For the grant that ownership and group membership cannot express. A service account that needs
+write access to one directory inside a shared pool has no good answer in the two levers a mode
+offers: adding it to the group that owns the pool grants it everything in the pool, and chowning the
+directory takes it from whoever owns the things inside. A named-user entry says exactly the intended
+thing and changes nothing else.
+
+**Access entries and default entries are different things**, which is why they are two arguments
+rather than a flag. An access entry grants nothing to children; a default entry grants nothing to
+the directory itself. Most real grants want both, and half the job done is the failure people
+actually hit — it surfaces as a permission denied somewhere far from the declaration.
+
+**A `chmod` recomputes the mask, and the mask can suppress a named entry that is still listed.**
+`getfacl` goes on printing `user:svc:rwx` while what it grants is nothing, which is why it also
+prints `#effective:`. This reads the effective permission, so a suppressed grant is drift rather
+than a mystery — and if a `Directory` sets the mode on the same path, it must run first.
+
+It owns the entries it names and leaves every other entry alone; `setfacl -b` and `--set` appear
+nowhere, because a pool root already carries the entries that make the whole scheme work.
+
+There is **no recursive argument**, and leaving it out is the design: applying an ACL across files
+that already exist cannot be read back without walking the tree on every refresh, and writing
+without reading is what this package refuses to do. `defaultEntries` is the declarative half — every
+child created from now on inherits it, and the read can prove it. For files already there, once, by
+hand: `sudo setfacl -R -m u:svc:rwX /path`, with the capital `X` so existing files do not all become
+executable.
+
+The base entries (`user::`, `group::`, `other::`) are refused as *access* entries and allowed as
+*defaults*: as access entries they are the mode bits under another name and would fight `Directory`
+over the same three numbers, and as defaults no mode sets them at all. A `mask` is refused in both,
+because setfacl computes it.
+
 ### Gates and composition
 
 | | Arguments | Reads from |
