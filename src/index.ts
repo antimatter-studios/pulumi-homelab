@@ -58,6 +58,9 @@ export {
   readArchive,
   formatOf,
   extractCommand,
+  archiveAct,
+  chownCommand,
+  ownershipChanged,
   // deb.ts already exports an `installScript`, and the two compose different things: apt against a
   // downloaded file, and an unpack into a staging directory. Named apart rather than shadowed.
   installScript as archiveInstallScript,
@@ -73,6 +76,7 @@ export {
   type ArchiveArgs,
   type ArchiveFormat,
   type ArchiveSource,
+  type ArchiveAct,
 } from './resources/archive.ts';
 export {
   GitCheckout,
