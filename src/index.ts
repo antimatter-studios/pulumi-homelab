@@ -142,9 +142,16 @@ export {
   SshKey,
   readSshKey,
   parseFingerprint,
+  parseKeyFiles,
+  permissionsWrong,
+  permissionsCommand,
+  PRIVATE_MODE,
+  PUBLIC_MODE,
   parseHostKeys,
   hostKeys,
   type SshKeyArgs,
+  type KeyFiles,
+  type KeyOnDisk,
 } from './resources/sshkey.ts';
 export { Group, readGroup, parseGroupEntry, renumberRefusal, type GroupArgs } from './resources/group.ts';
 export {
