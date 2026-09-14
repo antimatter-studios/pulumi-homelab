@@ -22,7 +22,15 @@ breaking changes live.
   half-unpacked tree or a binary built for the wrong architecture. `version` is reported for
   `pulumi stack` and is never compared; failing to obtain it is not an error. The unpack goes to a
   staging directory and is moved into place with `link` repointed last, so a failed fetch cannot
-  replace a working install with a broken one.
+  replace a working install with a broken one. `owner` and `group` set who owns the unpacked tree,
+  defaulting to root: the fetch runs with escalation, so without them the tree lands root-owned and
+  a tool that ships its own updater can never rewrite its own install directory — it fails quietly,
+  the read stays green, and the software never updates again. Ownership is applied recursively at
+  install and read only at the prefix, because software that updates itself legitimately rewrites
+  files underneath and a recursive check would report drift on every update. A changed owner is a
+  `chown` rather than a refetch, so fixing ownership cannot roll a self-updated tool back to the
+  bootstrap. Extraction now passes `--no-same-owner`, so whoever packed the archive does not choose
+  who owns files on the machine.
 - **`GitCheckout`** — a repository at a commit, read back with `git rev-parse HEAD`. A tag or a
   branch is refused rather than resolved, with a message naming the `git ls-remote` that turns one
   into a sha: rev-parse answers with a sha, so a sha is the only declaration that can be compared

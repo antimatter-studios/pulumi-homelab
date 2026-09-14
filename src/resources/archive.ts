@@ -99,6 +99,22 @@ export interface ArchiveArgs {
    * and wrong often enough to be worth overriding.
    */
   versionPattern?: string;
+  /**
+   * Who owns the unpacked tree.
+   *
+   * **The field that decides whether self-updating software can update itself.** The fetch and the
+   * unpack run with escalation, so without this the tree lands root-owned — right for `/opt`, and
+   * wrong for a tool installed into a service account's home that ships its own updater. Root-owned,
+   * the updater cannot rewrite its own install directory, so it fails quietly, the read stays green,
+   * and the software never updates again. That is the silent success this package exists to avoid,
+   * and it is worse here than elsewhere because the resource's whole design assumes the software
+   * takes over after the bootstrap.
+   *
+   * Defaults to root, so nothing declared before this existed changes.
+   */
+  owner?: string;
+  /** The group on the unpacked tree. Defaults to root. */
+  group?: string;
   /** Leading path components to strip. Some archives carry a top-level directory and some do not. */
   strip?: number;
   /** `tar.gz`, `tar.xz`, `tar.bz2` or `zip`. Inferred from the url when not given. */
@@ -113,6 +129,18 @@ interface ArchiveState {
   link: string;
   binary: string;
   healthCommand: string;
+  /**
+   * Who owns the prefix, as the machine reports it after a read and as declared after an apply.
+   *
+   * **The prefix itself, never the tree.** Ownership is set recursively at install, because a tree
+   * the account cannot write is a tree its updater cannot rewrite — but it is *read* only at the
+   * top. Software that updates itself legitimately rewrites files underneath, and a new version
+   * that lands one file owned differently would otherwise read as drift on every single update.
+   * Asking about the prefix answers "was this installed as the right user" without pretending to
+   * police what the software does afterwards.
+   */
+  owner: string;
+  group: string;
   strip: number;
   format: ArchiveFormat;
   versionCommand: string;
@@ -128,7 +156,7 @@ interface ArchiveState {
   version: string;
 }
 
-const DEFAULTS = { strip: 0, versionPattern: '([0-9]+\\.[0-9]+(?:\\.[0-9]+)?[^\\s]*)' };
+const DEFAULTS = { owner: 'root', group: 'root', strip: 0, versionPattern: '([0-9]+\\.[0-9]+(?:\\.[0-9]+)?[^\\s]*)' };
 
 /** What kind of archive a url names, by its extension. */
 export function formatOf(url: string): ArchiveFormat | null {
@@ -161,7 +189,10 @@ export function extractCommand(format: ArchiveFormat, file: string, into: string
   }
   const flag = { 'tar.gz': '-z', 'tar.xz': '-J', 'tar.bz2': '-j' }[format];
   const stripping = strip > 0 ? ` --strip-components=${strip}` : '';
-  return `tar ${flag} -xf ${source} -C ${target}${stripping}`;
+  // --no-same-owner because tar run as root restores the uids recorded in the archive by default,
+  // which lets whoever built the tarball choose who owns files on this machine, and makes the
+  // resulting ownership depend on how the archive was packed rather than on what was declared
+  return `tar ${flag} --no-same-owner -xf ${source} -C ${target}${stripping}`;
 }
 
 /**
@@ -183,6 +214,8 @@ export function installScript(args: {
   sha256: string;
   prefix: string;
   link?: string;
+  owner?: string;
+  group?: string;
   strip?: number;
   format: ArchiveFormat;
 }): string {
@@ -200,13 +233,41 @@ export function installScript(args: {
     `rm -rf ${prefix}`,
     `mkdir -p "$(dirname ${prefix})"`,
     `mv "$dir/unpacked" ${prefix}`,
+    // recursive here and only here: the account has to be able to rewrite every file its updater
+    // touches, and this is the one moment the tree is known to be exactly what was unpacked
+    chownCommand(args.prefix, args.owner ?? DEFAULTS.owner, args.group ?? DEFAULTS.group),
   ];
   if (args.link !== undefined && args.link !== '') {
     // -n as well as -f: without it, relinking a link that points at a directory creates the new link
     // *inside* that directory rather than replacing it
     steps.push(`ln -sfn ${prefix} ${shellQuote(args.link)}`);
+    // -h, so the link itself is chowned rather than what it points at — which was just chowned
+    // anyway, and would be the wrong target entirely once an upgrade repoints it
+    steps.push(`chown -h ${shellQuote(`${args.owner ?? DEFAULTS.owner}:${args.group ?? DEFAULTS.group}`)} ${shellQuote(args.link)}`);
   }
   return steps.join('; ');
+}
+
+/** Set ownership on an unpacked tree. Recursive, because an updater rewrites files inside it. */
+export function chownCommand(prefix: string, owner: string, group: string): string {
+  return `chown -R ${shellQuote(`${owner}:${group}`)} ${shellQuote(prefix)}`;
+}
+
+/**
+ * Whether the prefix is owned by somebody other than the declaration says.
+ *
+ * Separate from `sourceChanged` on purpose: a changed owner is not a reason to fetch the archive
+ * again. Re-downloading would replace whatever the software has installed for itself since, to fix
+ * something a single `chown` fixes.
+ */
+export function ownershipChanged(
+  actual: { owner: string; group: string },
+  wanted: { owner: string; group: string },
+): boolean {
+  // nothing read back is an absent install, which the presence check already answers; reporting it
+  // here too would ask for a chown on a path that is not there
+  if (actual.owner === '' && actual.group === '') return false;
+  return actual.owner !== wanted.owner || actual.group !== wanted.group;
 }
 
 /** Where the install is looked for: the stable link when there is one, the prefix otherwise. */
@@ -221,6 +282,7 @@ export function binaryPath(where: string, binary: string): string {
   return `${where.replace(/\/+$/, '')}/${binary.replace(/^\.?\/+/, '')}`;
 }
 
+const OWNER_MARKER = '#pulumi-homelab#owner';
 const VERSION_MARKER = '#pulumi-homelab#version';
 
 /**
@@ -242,19 +304,25 @@ export function substitute(command: string, where: string): string {
  * will not run on this architecture, a program with no version flag, and a program that prints its
  * version to stderr are all ordinary, and none of them is a fault.
  */
-export function probeCommand(
-  where: string,
-  binary: string,
-  healthCommand: string,
-  versionCommand: string,
-): string {
+export function probeCommand(args: {
+  where: string;
+  prefix: string;
+  binary?: string;
+  healthCommand?: string;
+  versionCommand?: string;
+}): string {
+  const { where, prefix, binary = '', healthCommand = '', versionCommand = '' } = args;
   const tests = [`test -d ${shellQuote(where)}`];
   if (binary !== '') tests.push(`test -x ${shellQuote(binary)}`);
   // both streams discarded: the question is whether it runs, and a program that greets stdout or
   // warns on stderr while exiting zero is a working program
   if (healthCommand !== '') tests.push(`{ ${substitute(healthCommand, where)} ; } >/dev/null 2>&1`);
   const version = versionCommand === '' ? '' : `; ${substitute(versionCommand, where)} 2>&1 || true`;
-  return `{ ${tests.join(' && ')} && echo present || true; }; echo '${VERSION_MARKER}'${version}`;
+  return `{ ${tests.join(' && ')} && echo present || true; }; `
+    // the prefix rather than `where`: stat follows a symlink, so asking through the link would
+    // answer about whichever version it currently points at instead of the one being described
+    + `echo '${OWNER_MARKER}'; stat -c '%U:%G' ${shellQuote(prefix)} 2>/dev/null || true; `
+    + `echo '${VERSION_MARKER}'${version}`;
 }
 
 /** The version out of whatever the software printed, or the empty string. */
@@ -268,10 +336,20 @@ export function parseVersion(out: string, pattern = DEFAULTS.versionPattern): st
   }
 }
 
-/** What the probe said, split back into the two things it answers. */
-export function parseProbe(out: string, pattern = DEFAULTS.versionPattern): { installed: boolean; version: string } {
-  const [presence = '', printed = ''] = out.split(`${VERSION_MARKER}\n`);
-  return { installed: presence.trim() === 'present', version: parseVersion(printed, pattern) };
+/** What the probe said, split back into the things it answers. */
+export function parseProbe(
+  out: string,
+  pattern = DEFAULTS.versionPattern,
+): { installed: boolean; owner: string; group: string; version: string } {
+  const [presence = '', rest = ''] = out.split(`${OWNER_MARKER}\n`);
+  const [ownership = '', printed = ''] = rest.split(`${VERSION_MARKER}\n`);
+  const [owner = '', group = ''] = ownership.trim().split(':');
+  return {
+    installed: presence.trim() === 'present',
+    owner,
+    group,
+    version: parseVersion(printed, pattern),
+  };
 }
 
 /** What to fetch and where to put it. A change to any of it is the one reason to install again. */
@@ -313,18 +391,35 @@ export function installNeeded(installed: boolean, old: ArchiveSource | null, wan
   return sourceChanged(old, wanted);
 }
 
+/** What an install needs doing to it. */
+export type ArchiveAct = 'install' | 'chown' | 'nothing';
+
+/**
+ * Which of the three acts an install needs.
+ *
+ * The whole decision in one place, because the difference between the two that do something is the
+ * point of the resource. Fetching replaces what is on the machine; a chown does not. Reaching for
+ * the first where the second would do is how a tool that has updated itself half a dozen times
+ * since the bootstrap gets quietly rolled back to the version in the program.
+ */
+export function archiveAct(
+  actual: { installed: boolean; owner: string; group: string },
+  previous: ArchiveSource | null,
+  wanted: ArchiveSource & { owner: string; group: string },
+): ArchiveAct {
+  if (installNeeded(actual.installed, previous, wanted)) return 'install';
+  if (ownershipChanged(actual, wanted)) return 'chown';
+  return 'nothing';
+}
+
 /** Is it there, and what does it say it is. */
 export async function readArchive(
   host: Target,
-  where: string,
-  binary = '',
-  healthCommand = '',
-  versionCommand = '',
-  versionPattern = DEFAULTS.versionPattern,
-): Promise<{ installed: boolean; version: string }> {
+  args: { where: string; prefix: string; binary?: string; healthCommand?: string; versionCommand?: string; versionPattern?: string },
+): Promise<{ installed: boolean; owner: string; group: string; version: string }> {
   // `ask`, not `must`: every way this can fail is an answer about the machine rather than a fault
-  const asked = await ask(host, escalate(host, probeCommand(where, binary, healthCommand, versionCommand)));
-  return parseProbe(asked.out, versionPattern);
+  const asked = await ask(host, escalate(host, probeCommand(args)));
+  return parseProbe(asked.out, args.versionPattern ?? DEFAULTS.versionPattern);
 }
 
 /** Everything the arguments settle to, with the defaults applied exactly once. */
@@ -332,6 +427,8 @@ export function resolveArgs(args: ArchiveArgs): ArchiveSource & {
   name: string;
   binary: string;
   healthCommand: string;
+  owner: string;
+  group: string;
   versionCommand: string;
   versionPattern: string;
   where: string;
@@ -355,6 +452,8 @@ export function resolveArgs(args: ArchiveArgs): ArchiveSource & {
     format,
     binary: binaryPath(where, args.binary ?? ''),
     healthCommand: args.healthCommand ?? '',
+    owner: args.owner ?? DEFAULTS.owner,
+    group: args.group ?? DEFAULTS.group,
     versionCommand: args.versionCommand ?? '',
     versionPattern: args.versionPattern ?? DEFAULTS.versionPattern,
     where,
@@ -364,24 +463,31 @@ export function resolveArgs(args: ArchiveArgs): ArchiveSource & {
 function providerFor(host: Target): pulumi.dynamic.ResourceProvider<ArchiveArgs, ArchiveState> {
   const settle = async (args: ArchiveArgs, previous: ArchiveSource | null): Promise<ArchiveState> => {
     const wanted = resolveArgs(args);
-    const before = await readArchive(
-      host, wanted.where, wanted.binary, wanted.healthCommand, wanted.versionCommand, wanted.versionPattern,
-    );
+    const before = await readArchive(host, wanted);
 
-    if (installNeeded(before.installed, previous, wanted)) {
-      await must(host, escalate(host, installScript(wanted)));
-      const after = await readArchive(
-      host, wanted.where, wanted.binary, wanted.healthCommand, wanted.versionCommand, wanted.versionPattern,
-    );
-      if (!after.installed) {
-        throw new Error(
-          `unpacked ${args.url} to ${wanted.prefix} on ${describe(host)} but ${wanted.binary || wanted.where} `
-          + `is still not there — check strip, or whether the archive carries a top-level directory`,
-        );
-      }
-      return { ...wanted, installed: true, version: after.version };
+    const act = archiveAct(before, previous, wanted);
+    if (act === 'nothing') {
+      return { ...wanted, installed: before.installed, owner: before.owner, group: before.group, version: before.version };
     }
-    return { ...wanted, installed: before.installed, version: before.version };
+    await must(host, escalate(host, act === 'install'
+      ? installScript(wanted)
+      : chownCommand(wanted.prefix, wanted.owner, wanted.group)));
+
+    const after = await readArchive(host, wanted);
+    if (!after.installed) {
+      throw new Error(
+        `unpacked ${args.url} to ${wanted.prefix} on ${describe(host)} but ${wanted.binary || wanted.where} `
+        + `is still not there — check strip, or whether the archive carries a top-level directory`,
+      );
+    }
+    if (ownershipChanged(after, wanted)) {
+      throw new Error(
+        `installed ${args.url} to ${wanted.prefix} on ${describe(host)} but it is owned by `
+        + `${after.owner}:${after.group} rather than ${wanted.owner}:${wanted.group} — `
+        + `check that both exist on the machine`,
+      );
+    }
+    return { ...wanted, installed: true, owner: after.owner, group: after.group, version: after.version };
   };
 
   return {
@@ -390,11 +496,15 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<ArchiveArgs,
     },
 
     async read(id, state) {
-      const where = state?.link || state?.prefix || '';
-      const actual = await readArchive(
-        host, where, state?.binary ?? '', state?.healthCommand ?? '',
-        state?.versionCommand ?? '', state?.versionPattern,
-      );
+      const prefix = state?.prefix ?? '';
+      const actual = await readArchive(host, {
+        where: state?.link || prefix,
+        prefix,
+        binary: state?.binary ?? '',
+        healthCommand: state?.healthCommand ?? '',
+        versionCommand: state?.versionCommand ?? '',
+        versionPattern: state?.versionPattern,
+      });
       // nothing there: Pulumi forgets it, and the next up installs it back
       if (!actual.installed) return { id: undefined, props: undefined };
       return {
@@ -412,8 +522,10 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<ArchiveArgs,
           versionPattern: state?.versionPattern ?? DEFAULTS.versionPattern,
           ...state,
           name: id,
-          // the two that always come from the machine rather than from what was remembered
+          // the ones that always come from the machine rather than from what was remembered
           installed: true,
+          owner: actual.owner,
+          group: actual.group,
           version: actual.version,
         },
       };
@@ -433,7 +545,9 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<ArchiveArgs,
           || sourceChanged(old, wanted)
           // a stricter read is a stricter question, and the answer to it has not been asked yet
           || old.binary !== wanted.binary
-          || old.healthCommand !== wanted.healthCommand,
+          || old.healthCommand !== wanted.healthCommand
+          // a chown rather than a refetch, which is why this is not part of sourceChanged
+          || ownershipChanged(old, wanted),
         // a different prefix is a different install rather than an upgrade of this one, and leaving
         // the old tree behind with nothing pointing at it is worse than replacing it
         replaces: old.prefix !== wanted.prefix ? ['prefix'] : [],
@@ -468,6 +582,8 @@ export class Archive extends pulumi.dynamic.Resource {
       link: '',
       binary: '',
       healthCommand: '',
+      owner: DEFAULTS.owner,
+      group: DEFAULTS.group,
       strip: DEFAULTS.strip,
       versionCommand: '',
       versionPattern: DEFAULTS.versionPattern,

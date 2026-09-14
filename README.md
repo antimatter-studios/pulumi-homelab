@@ -348,7 +348,7 @@ which is *never matched on*; that is what lets `audit()` find orphans.
 
 | | Arguments | Reads from |
 |---|---|---|
-| **`Archive`** | `name` `url` `sha256` `prefix` `link?` `binary?` `healthCommand?` `versionCommand?` `strip?` `format?` | `test -d`, `test -x`, and running the thing |
+| **`Archive`** | `name` `url` `sha256` `prefix` `link?` `binary?` `healthCommand?` `owner?` `group?` `strip?` `format?` | `test -d`, `test -x`, running the thing, and `stat` |
 | **`GitCheckout`** | `url` `path` `commit` | `git rev-parse HEAD` |
 
 **`Archive` asks one question: is it installed.** It fetches only when the answer is no, or when
@@ -369,6 +369,18 @@ corrupted download looks like from the outside, and all three of those pass a pa
 `installScript` unpacks to a staging directory and moves it into place, then repoints `link` last,
 so a failed fetch cannot replace a working install with a broken one and a rollback is repointing a
 symlink rather than fetching anything.
+
+**`owner` decides whether self-updating software can actually update itself.** The fetch and the
+unpack run with escalation, so without it the tree lands root-owned — right for `/opt`, and wrong
+for a tool installed into a service account's home. Root-owned, the updater cannot rewrite its own
+install directory: it fails quietly, the read stays green, and the software never updates again.
+Ownership is set **recursively at install** and **read only at the prefix** — a tool that updates
+itself legitimately rewrites files underneath, and a recursive check would report drift on every
+update it made. Asking about the top answers "was this installed as the right user" without
+pretending to police what the software does afterwards. A changed owner is a `chown`, never a
+refetch: re-downloading to fix ownership would roll a self-updated tool back to the bootstrap.
+Extraction passes `--no-same-owner`, so whoever packed the tarball does not get to choose who owns
+files on your machine.
 
 **`GitCheckout` takes a commit and refuses a tag or a branch.** `git rev-parse HEAD` answers with a
 sha, so a sha is the only declaration that can be compared against it. Taking a ref instead would
