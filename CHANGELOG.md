@@ -40,6 +40,18 @@ breaking changes live.
   argument: applying an ACL across files that already exist cannot be read back without walking the
   tree on every refresh.
 
+### Changed
+
+- **`Directory` takes `setgid`, `sticky` and `setuid` as fields** rather than leaving them to a
+  leading digit on `mode`. `2775` is correct the day it is written and quietly wrong the first time
+  somebody edits the mode without knowing why there were four digits, and the bit that goes is the
+  one holding a shared area together. `sticky` belongs beside any write grant on a shared directory,
+  group or ACL: write permission on a directory is what permits deleting the entries in it. A
+  four-digit `mode` still means what it always did; writing a non-zero leading digit *and* a flag is
+  refused at preview rather than resolved by a precedence nobody would remember. `mode` is now also
+  checked for being three or four octal digits, so a symbolic mode fails at the declaration rather
+  than applying cleanly and reading back as permanent drift.
+
 ### Fixed
 
 - **Seven `delete` methods read their layout path from state rather than from the module default.**

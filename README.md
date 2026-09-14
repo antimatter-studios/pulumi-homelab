@@ -301,13 +301,22 @@ Pulumi once did.
 | | Arguments | Reads from |
 |---|---|---|
 | **`ManagedFile`** | `path` `content` `mode?` `owner?` `group?` `reloadSystemd?` | `stat` and `cat` |
-| **`Directory`** | `path` `mode?` `owner?` `group?` | `stat` |
+| **`Directory`** | `path` `mode?` `owner?` `group?` `setgid?` `sticky?` `setuid?` | `stat` |
 | **`Symlink`** | `path` `target` | `readlink`, then `stat` |
 | **`FstabEntry`** | `source` `target` `type` `options?` `dump?` `pass?` `mount?` | the line in `/etc/fstab`, plus `findmnt` |
 
 `Directory` makes parents on the way up and removes only the leaf on the way down, with
 `rmdir` rather than `rm -rf` — a directory with something still in it is a machine saying the
 code's picture of it is incomplete, and failing loudly is worth more than a tidy teardown.
+
+**`setgid` and `sticky` are fields rather than a digit somebody has to remember to prepend.** `2775`
+is correct the day it is written and quietly wrong the first time somebody edits the mode without
+knowing why there were four digits — and the bit that goes is the one holding a shared area
+together. `sticky` is the one that belongs beside *any* write grant on a shared directory, group or
+ACL: write permission on a directory is what permits deleting the entries in it, so an account given
+write there can otherwise remove work it cannot even read into. It is why `/tmp` has had it since
+before any of this. Writing a non-zero leading digit *and* a flag is refused rather than resolved,
+because that is two answers to one question.
 
 `Symlink` tells four states apart: a link pointing where the code says, a link pointing
 elsewhere, **something real at that path**, and nothing. The third throws rather than
@@ -435,6 +444,13 @@ than a mystery — and if a `Directory` sets the mode on the same path, it must 
 
 It owns the entries it names and leaves every other entry alone; `setfacl -b` and `--set` appear
 nowhere, because a pool root already carries the entries that make the whole scheme work.
+
+**A grant's reach is not what its immediate children suggest.** `defaultEntries` is inherited by
+every descendant created from then on, at any depth, and directory trees are routinely deeper than a
+top-level look implies — one survey of a projects directory found 66 git repositories where scanning
+the immediate children saw 28, because six of the "projects" were containers of nested ones.
+Reasoning about the blast radius of a grant from what `ls` shows will understate it. Pair a write
+grant with `sticky` on the `Directory`.
 
 There is **no recursive argument**, and leaving it out is the design: applying an ACL across files
 that already exist cannot be read back without walking the tree on every refresh, and writing
