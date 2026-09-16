@@ -926,9 +926,35 @@ method — into the state file, and `read`, `diff` and `update` all run **the st
 than the current source**. A resource created last month is still running last month's `ssh.ts`.
 
 So each resource carries a **transport version** in its own state, and a `diff` reports a change
-when that number is older than the package's. Bumping it is a deliberate act, done when a change to
-the transport must reach resources that already exist — a quoting fix, a connection option, a
-security fix — and left alone for everything else.
+when that number is older than the package's. Bumping it is a deliberate act.
+
+**It is not only about the transport, whatever the name says** — and getting that wrong is the most
+recent bug in this file. Everything a resource does *after* connecting is in the serialised closure
+too: its `read`, its `diff`, the shape of its state. Three merged changes altered what a resource
+reads — Samba reading the file instead of `testparm`, `SshKey` asserting the mode on both halves,
+`AptPackages` marking what it declares as manual — and none bumped the version, because none touched
+the transport. All three were correct, merged, tested, and inert on every machine that already had
+those resources. It came back as *"merged and correct, and on my machine it has never executed"*.
+
+The name cannot change: the field in state is `transport`, and renaming it would make every stamped
+resource read as unstamped and wait for something else to move it. So the rule is stated instead of
+implied. **Bump it for any change that must reach resources that already exist** — a quoting fix, a
+connection option, a security fix, a different `read`, a new state field, a corrected `diff`. The
+question is never *"did I touch the transport"* but *"would a resource created last month still be
+wrong"*.
+
+And it is asked mechanically rather than remembered. `pnpm run check:revision` hashes every non-test
+source under `src/` and compares it with `provider-revision.json`, which records the hash beside the
+revision it belongs to. A source change with no bump fails in CI, and the two ways to satisfy it are
+both a decision rather than a way to silence it:
+
+```
+pnpm run revision:record              # after bumping TRANSPORT: the change must reach existing state
+pnpm run revision:record --no-bump    # it must not, and here is a commit saying so
+```
+
+`--no-bump` is the honest escape for a doc comment or a test helper. It is deliberately not the
+default, because the failure it guards is silent on every machine and obvious on none.
 
 **The first attempt at this compared the serialised closure, and it could not work.** `update` does
 not re-persist `__provider`, so once the stored text differed from the program's it differed for

@@ -25,7 +25,26 @@ import * as pulumi from '@pulumi/pulumi';
  * and for `SystemdUnit` that means every managed service restarts.
  */
 /**
- * The transport's version, bumped deliberately.
+ * The provider's revision, bumped deliberately.
+ *
+ * **It is not only about the transport, whatever its name says.** The field in state is `transport`
+ * and cannot be renamed without every stamped resource reading as unstamped, so the name is stuck —
+ * but the thing it governs is wider: *anything* a resource does after connecting is in the
+ * serialised closure too. Its `read`, its `diff`, the shape of its state. Change one of those and
+ * existing resources go on running the old one until this number moves.
+ *
+ * **That has already been got wrong once, which is why the rule below is blunt.** Three merged
+ * changes altered what a resource reads — Samba reading the file instead of `testparm`, `SshKey`
+ * asserting the mode on both halves, `AptPackages` marking what it declares as manual — and none of
+ * them bumped this, because none of them touched the transport. All three were correct, merged,
+ * tested, and inert on every machine that already had those resources. The apt-mark fix was
+ * reported as "merged and correct, and on my machine it has never executed".
+ *
+ * So: **bump it for any change that must reach resources that already exist.** A quoting fix, a
+ * connection option, a security fix, a different `read`, a new state field, a corrected `diff`. The
+ * question is never "did I touch the transport" but "would a resource created last month still be
+ * wrong". `scripts/serialise-check.ts` asks it mechanically now rather than relying on somebody
+ * remembering.
  *
  * **This replaces comparing the serialised closure, which could not work.** The first attempt at
  * this compared `__provider` in state against the program's — and `update` does not persist a new
@@ -41,11 +60,16 @@ import * as pulumi from '@pulumi/pulumi';
  *
  * A number is better on both counts. It is data, so it survives serialisation; it is carried in each
  * resource's own state, so an update persists it and the upgrade completes; and it moves only when
- * somebody decides it should. **Bump it when a change to the transport must reach resources that
- * already exist** — a quoting fix, a connection option, a security fix — and leave it alone for
- * everything else.
+ * somebody decides it should.
+ *
+ * ## Revisions
+ *
+ * - **1** — the mechanism itself, replacing the closure comparison.
+ * - **2** — Samba reads the file rather than `testparm`; `SshKey` owns both halves' mode and
+ *   ownership; `AptPackage` and `AptPackages` mark what they declare as manual; seven `delete`
+ *   methods read their layout path from state; `Directory` takes `setgid` and `sticky`.
  */
-export const TRANSPORT = 1;
+export const TRANSPORT = 2;
 
 /**
  * Whether this resource's state was written before the current transport.

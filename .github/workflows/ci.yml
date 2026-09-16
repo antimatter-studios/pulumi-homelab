@@ -48,6 +48,12 @@ jobs:
         # Pulumi's serialiser rejects — so a vitest version of these checks fails on correct code.
         run: pnpm run check:serialise
 
+      - name: Provider revision
+        # A change to what a resource reads is inert on every resource that already exists until
+        # TRANSPORT moves, because each one runs the closure stored in its own state. That was got
+        # wrong three times before this check existed, so it is asked here rather than remembered.
+        run: pnpm run check:revision
+
   ci:
     # One always-run job for branch protection to require, so the jobs above can be renamed, split
     # into a matrix or made conditional without ever stranding a merge on a check that never reports.
