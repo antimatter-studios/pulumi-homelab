@@ -69,8 +69,37 @@ export interface Host {
    * `ProxyJump` rather than `ProxyCommand` because ssh already knows how to chain hops and checks
    * `known_hosts` for *each* one, which is the property this transport exists to inherit: a
    * `ProxyCommand` piping through netcat would silently drop host verification for the far end.
+   *
+   * With `identityFile` set this becomes a `ProxyCommand` using `-W`, because `-J` does not pass
+   * options to its child and so cannot pin the jump's identity. `-W` is not the thing rejected
+   * above: it keeps ssh doing the forwarding, and host verification for the far end with it.
    */
   proxyJump?: string;
+  /**
+   * The one key to offer, rather than everything in the agent.
+   *
+   * **This is a fix for an intermittent failure that points at the wrong thing.** sshd's
+   * `MaxAuthTries` defaults to 6. An agent holding nine keys offers them in its own order, and if
+   * the key a host accepts is the eighth, the connection is closed with `Received disconnect: Too
+   * many authentication failures` before it is ever reached. The message looks like the server
+   * rejecting you, and the obvious response — relaxing the server's limits, or unbanning an
+   * address — treats a symptom that was never the cause.
+   *
+   * What makes it worth a field rather than a note is that **the agent's order is not stable**. The
+   * same key was measured at position five and then at position eight on one machine, because the
+   * order changed when the vault was re-unlocked. So an unchanged stack deploys at three o'clock
+   * and fails at five, and the only thing that moved was something outside it.
+   *
+   * A **`.pub` path is enough**, and is the better thing to declare: ssh matches the public key
+   * against the agent and offers only that one, so the private key never leaves the agent and
+   * nothing secret goes anywhere near a Pulumi program. `-o IdentitiesOnly=yes` is what makes it a
+   * restriction rather than a preference — without it, the file is added to the list rather than
+   * replacing it.
+   *
+   * It applies to the jump as well, which is usually where the limit is hit, since a bastion is the
+   * machine every key gets offered to.
+   */
+  identityFile?: string;
   /** Seconds before a silent host is called dead, rather than hanging a deployment for ever. */
   timeout?: number;
   /**
@@ -192,8 +221,11 @@ const CONNECT_SECONDS = 10;
  * So the jump is hashed into the name as well. Short, because a unix socket path has about a
  * hundred characters and `/tmp` plus a hash is the only thing that reliably fits.
  */
-function controlPath(host: Host): string {
-  const route = host.proxyJump ?? 'direct';
+export function controlPath(host: Host): string {
+  // the identity is part of it too: a socket opened offering one key would otherwise be reused for
+  // a declaration asking for another, and the second would silently inherit the first's
+  // authentication — the same class of bug as sharing a socket between two routes
+  const route = `${host.proxyJump ?? 'direct'}\u0000${host.identityFile ?? 'agent'}`;
   // a small deterministic hash: the same route must always give the same socket, or multiplexing
   // buys nothing at all
   let hash = 0;
@@ -209,6 +241,90 @@ const multiplexing = (host: Host): string[] => [
   '-o', 'ControlPersist=60s',
 ];
 
+/** `user@host:port` taken apart, with every part but the host optional. */
+export function parseJump(spec: string): { user?: string; host: string; port?: number } {
+  const text = spec.trim();
+  const at = text.lastIndexOf('@');
+  const user = at > 0 ? text.slice(0, at) : undefined;
+  const rest = at > 0 ? text.slice(at + 1) : text;
+  // an IPv6 literal is bracketed and full of colons, so the port is only the colon *after* the
+  // bracket; splitting on the first colon would take an address apart in the middle
+  const bracketed = rest.match(/^\[(.+)\](?::(\d+))?$/);
+  if (bracketed) {
+    return { user, host: bracketed[1] ?? '', ...(bracketed[2] ? { port: Number(bracketed[2]) } : {}) };
+  }
+  const colon = rest.lastIndexOf(':');
+  if (colon > 0 && /^\d+$/.test(rest.slice(colon + 1))) {
+    return { user, host: rest.slice(0, colon), port: Number(rest.slice(colon + 1)) };
+  }
+  return { user, host: rest };
+}
+
+/**
+ * Restrict authentication to one key.
+ *
+ * `IdentitiesOnly=yes` is what makes `-i` a restriction rather than an addition: without it the
+ * file joins the list the agent already offers instead of replacing it, and the offer that trips
+ * `MaxAuthTries` still happens.
+ */
+export function identityArgs(identityFile?: string): string[] {
+  return identityFile === undefined ? [] : ['-o', 'IdentitiesOnly=yes', '-i', identityFile];
+}
+
+/**
+ * Why a jump cannot carry an identity, or null when it can.
+ *
+ * One hop becomes a `ProxyCommand`. Several would have to nest one inside another, quoted through
+ * two layers of `/bin/sh`, and a command built wrong there does not fail cleanly — it connects
+ * somewhere unintended or hangs. Refusing is the honest answer until somebody has a second hop to
+ * test against.
+ */
+export function multiHopRefusal(host: Host): string | null {
+  if (host.identityFile === undefined || host.proxyJump === undefined) return null;
+  if (!host.proxyJump.includes(',')) return null;
+  return `identityFile cannot be combined with a multi-hop proxyJump (${host.proxyJump}) yet: `
+    + `pinning an identity turns the jump into a ProxyCommand, and chaining those means nesting one `
+    + `inside another through two layers of shell quoting. Use a single hop, or leave identityFile `
+    + `unset and pin the identity in ~/.ssh/config for each hop instead.`;
+}
+
+/**
+ * The jump, as a command rather than as `-J`.
+ *
+ * **`-J` cannot do this, and that is the whole reason for the switch.** `ProxyJump` does not pass
+ * options to the ssh it spawns, so `-o IdentitiesOnly=yes -i file` pins the final hop and leaves
+ * the bastion being offered every key in the agent — useless, because the bastion is usually the
+ * machine with `MaxAuthTries`. Measured: `-J` with the identity pinned still failed at the bastion;
+ * the same identity inside a `ProxyCommand` connected.
+ *
+ * `-W %h:%p` rather than netcat, which matters: ssh does the forwarding itself and checks
+ * `known_hosts` for the far end, so this keeps the property `ProxyJump` was chosen for. `%h` and
+ * `%p` are the *target's* host and port, filled in by the outer ssh.
+ */
+export function proxyCommand(host: Host): string {
+  const jump = parseJump(host.proxyJump ?? '');
+  return [
+    'ssh',
+    '-o', 'BatchMode=yes',
+    '-o', `ConnectTimeout=${host.timeout ?? CONNECT_SECONDS}`,
+    ...(host.identityFile !== undefined
+      ? ['-o', 'IdentitiesOnly=yes', '-i', shellQuote(host.identityFile)]
+      : []),
+    '-W', '%h:%p',
+    ...(jump.port !== undefined ? ['-p', String(jump.port)] : []),
+    ...(jump.user !== undefined ? ['-l', shellQuote(jump.user)] : []),
+    shellQuote(jump.host),
+  ].join(' ');
+}
+
+/** How this host is reached through another, if it is. */
+export function jumpArgs(host: Host): string[] {
+  if (host.proxyJump === undefined) return [];
+  // plain -J whenever no identity is declared, so nothing existing changes shape
+  if (host.identityFile === undefined) return ['-o', `ProxyJump=${host.proxyJump}`];
+  return ['-o', `ProxyCommand=${proxyCommand(host)}`];
+}
+
 /**
  * The arguments ssh is actually given.
  *
@@ -218,13 +334,16 @@ const multiplexing = (host: Host): string[] => [
  * open a connection per resource and trip sshd's startup limit.
  */
 export function sshArgs(host: Host, command: string): string[] {
+  const refusal = multiHopRefusal(host);
+  if (refusal !== null) throw new Error(refusal);
   return [
     '-o', 'BatchMode=yes',
     '-o', `ConnectTimeout=${host.timeout ?? CONNECT_SECONDS}`,
     // before the destination, because ssh reads options in order and a later one does not override
     // an earlier: an option after the host name is not applied to that connection at all
     ...(host.port !== undefined ? ['-p', String(host.port)] : []),
-    ...(host.proxyJump !== undefined ? ['-o', `ProxyJump=${host.proxyJump}`] : []),
+    ...identityArgs(host.identityFile),
+    ...jumpArgs(host),
     ...multiplexing(host),
     `${host.user}@${host.address}`,
     command,

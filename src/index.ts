@@ -23,6 +23,7 @@
  */
 
 export { ask, must, asRoot, escalate, shellQuote, heredoc, heredocInto, sshArgs, type Host, type Ran } from './ssh.ts';
+export { identityArgs, jumpArgs, proxyCommand, parseJump, multiHopRefusal, controlPath } from './ssh.ts';
 export { sshTransport, describe, type Transport, type Target } from './ssh.ts';
 export { localTransport, type LocalOptions } from './local.ts';
 export { disagreeing, type Resolved, type FileOnHost } from './resolved.ts';
