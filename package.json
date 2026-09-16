@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run && node --experimental-strip-types scripts/serialise-check.ts",
+    "test": "vitest run && node --experimental-strip-types scripts/serialise-check.ts && node --experimental-strip-types scripts/revision.ts",
     "test:unit": "vitest run",
-    "check:serialise": "node --experimental-strip-types scripts/serialise-check.ts"
+    "check:serialise": "node --experimental-strip-types scripts/serialise-check.ts",
+    "check:revision": "node --experimental-strip-types scripts/revision.ts",
+    "revision:record": "node --experimental-strip-types scripts/revision.ts --record"
   },
   "dependencies": {
     "@pulumi/command": "^1.0.1",

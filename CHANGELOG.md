@@ -66,6 +66,23 @@ breaking changes live.
 
 ### Fixed
 
+- **`TRANSPORT` bumped to 2, and a check so it cannot be forgotten again.** Pulumi serialises a
+  dynamic provider's whole closure into the state file, so `read`, `diff` and `update` all run the
+  *stored* code rather than the current source — a resource created last month still runs last
+  month's `read`, and only a `TRANSPORT` bump makes it pick up a new one. Three merged changes
+  altered what a resource reads (Samba reading the file instead of `testparm`, `SshKey` asserting
+  the mode on both halves, `AptPackage`/`AptPackages` marking what they declare as manual) and none
+  of them bumped it, because none of them touched the transport. All three were correct, merged,
+  tested, and inert on every machine that already had those resources; the apt-mark fix was reported
+  back as "merged and correct, and on my machine it has never executed". The constant's name cannot
+  change — the field in state is `transport`, and renaming it would make every stamped resource read
+  as unstamped — so its documentation now says plainly that it governs anything in the closure, not
+  only the transport. `scripts/revision.ts` hashes every non-test source under `src/` and records it
+  beside the revision it belongs to, so a source change with no bump fails in CI; the way to satisfy
+  it is `pnpm run revision:record` after bumping, or `--no-bump` to record that the change need not
+  reach existing resources. Unstamped state still answers `false` and still waits for something else
+  about it to change, which is unaltered and deliberate.
+
 - **`AptPackage` and `AptPackages` mark what they declare as manually installed.** apt records
   whether a package is present because somebody asked for it (*manual*) or because something else
   required it (*auto*), and `apt autoremove` is entitled to take an auto package once nothing
