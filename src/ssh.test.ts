@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { asRoot, describe as describeTarget, escalate, heredoc, shellQuote, sshArgs } from './ssh.ts';
+import {
+  asRoot,
+  controlPath,
+  describe as describeTarget,
+  escalate,
+  heredoc,
+  identityArgs,
+  jumpArgs,
+  multiHopRefusal,
+  parseJump,
+  proxyCommand,
+  shellQuote,
+  sshArgs,
+} from './ssh.ts';
 
 /**
  * Everything sent to the machine goes through quoting: file contents, unit definitions, package
@@ -224,5 +237,189 @@ describe('naming a machine in an error', () => {
 
   it('stays short for the ordinary case', () => {
     expect(describeTarget({ address: '198.51.100.10', user: 'admin' })).toBe('admin@198.51.100.10');
+  });
+});
+
+/**
+ * The failure this exists for points at the wrong thing. sshd's MaxAuthTries is 6; an agent holding
+ * nine keys offers them in its own order; and if the key a host accepts is eighth, the connection
+ * closes with `Too many authentication failures` before it is reached. Measured on a real bastion,
+ * with the same key at position five earlier in the day and eight later, because the agent's order
+ * changed when the vault was re-unlocked. So an unchanged stack works at three and fails at five,
+ * and the obvious response — relaxing the server's limits — treats a symptom that was never the
+ * cause.
+ */
+describe('offering one key rather than every key', () => {
+  const host = { address: '10.0.0.9', user: 'root', identityFile: '/home/me/.ssh/s1.pub' };
+
+  it('offers nothing in particular when no identity is declared', () => {
+    expect(identityArgs(undefined)).toEqual([]);
+    expect(sshArgs({ address: '10.0.0.9', user: 'root' }, 'true')).not.toContain('-i');
+  });
+
+  it('restricts rather than adds', () => {
+    // without IdentitiesOnly the file joins the list the agent already offers instead of replacing
+    // it, so the offer that trips MaxAuthTries still happens and nothing is fixed
+    expect(identityArgs('/k/id.pub')).toEqual(['-o', 'IdentitiesOnly=yes', '-i', '/k/id.pub']);
+  });
+
+  it('puts the identity before the destination', () => {
+    // ssh applies options in order and ignores one that comes after the host name
+    const args = sshArgs(host, 'true');
+    expect(args.indexOf('-i')).toBeLessThan(args.indexOf('root@10.0.0.9'));
+  });
+
+  it('takes a .pub path, so nothing secret goes near a program', () => {
+    // ssh matches the public key against the agent and offers only that one; the private half never
+    // leaves the agent
+    expect(sshArgs(host, 'true')).toContain('/home/me/.ssh/s1.pub');
+  });
+});
+
+describe('reaching a machine through another with an identity pinned', () => {
+  const direct = { address: '10.0.0.9', user: 'root', proxyJump: 'jump@bastion:10022' };
+  const pinned = { ...direct, identityFile: '/k/id.pub' };
+
+  it('keeps plain -J when no identity is declared, so nothing existing changes', () => {
+    expect(sshArgs(direct, 'true')).toContain('ProxyJump=jump@bastion:10022');
+    expect(sshArgs(direct, 'true').join(' ')).not.toContain('ProxyCommand');
+  });
+
+  it('switches to a ProxyCommand when one is, because -J cannot carry options', () => {
+    // measured: -J with the identity pinned still failed at the bastion, since ProxyJump does not
+    // pass options to the ssh it spawns — so the bastion was still offered every key in the agent
+    const args = sshArgs(pinned, 'true');
+    expect(args.join(' ')).not.toContain('ProxyJump=');
+    expect(args.join(' ')).toContain('ProxyCommand=');
+  });
+
+  it('pins the identity on the jump as well as the target', () => {
+    // the bastion is usually the machine with the limit, being the one every key is offered to
+    expect(proxyCommand(pinned)).toContain('IdentitiesOnly=yes');
+    expect(proxyCommand(pinned)).toContain("-i '/k/id.pub'");
+    expect(sshArgs(pinned, 'true')).toContain('-i');
+  });
+
+  it('forwards with -W rather than netcat, so the far end is still verified', () => {
+    // the reason ProxyJump was chosen over a ProxyCommand in the first place was host verification
+    // for the far end; -W keeps ssh doing the forwarding, so this is not a return to that
+    const command = proxyCommand(pinned);
+    expect(command).toContain('-W %h:%p');
+    expect(command).not.toMatch(/\b(nc|netcat|socat)\b/);
+  });
+
+  it('carries the jump host, its port and its user', () => {
+    const command = proxyCommand(pinned);
+    expect(command).toContain("-p 10022");
+    expect(command).toContain("-l 'jump'");
+    expect(command).toContain("'bastion'");
+  });
+
+  it('fails rather than waiting for a password on the jump', () => {
+    expect(proxyCommand(pinned)).toContain('BatchMode=yes');
+  });
+
+  it('gives the jump the same timeout as the connection', () => {
+    expect(proxyCommand({ ...pinned, timeout: 7 })).toContain('ConnectTimeout=7');
+  });
+
+  it('quotes what goes into the command, since ssh runs it through a shell', () => {
+    // ssh hands a ProxyCommand to /bin/sh, so an unquoted apostrophe in a user name or a path is
+    // somebody else's words becoming shell syntax on the machine in between
+    expect(proxyCommand({ ...pinned, proxyJump: "it's@host" })).toContain(`-l ${shellQuote("it's")}`);
+    expect(proxyCommand({ ...pinned, identityFile: '/k/a b.pub' })).toContain(`-i ${shellQuote('/k/a b.pub')}`);
+  });
+
+  it('quotes a path that would otherwise read as a flag', () => {
+    // `-i -oProxyCommand=...` would be ssh reading the filename as an option
+    expect(proxyCommand({ ...pinned, identityFile: '-nasty' })).toContain(`-i ${shellQuote('-nasty')}`);
+  });
+
+  it('does not quote the option names, which are not data', () => {
+    expect(proxyCommand(pinned)).toContain('-o IdentitiesOnly=yes');
+  });
+
+  it('hands both hops the same literal path, tilde and all', () => {
+    // ssh expands `~` in IdentityFile itself, so quoting it for /bin/sh is not a bug: the inner ssh
+    // receives exactly the string the outer one gets as argv, and both resolve it the same way.
+    // The tempting "fix" is dropping the quotes to let the shell expand it, which breaks every path
+    // containing a space
+    const tilde = { ...pinned, identityFile: '~/.ssh/that-one.pub' };
+    expect(sshArgs(tilde, 'true')).toContain('~/.ssh/that-one.pub');
+    expect(proxyCommand(tilde)).toContain(`-i ${shellQuote('~/.ssh/that-one.pub')}`);
+  });
+
+  it('reads the local ssh configuration and writes nothing to it', () => {
+    // every option is on the command line. The agent, known_hosts and ~/.ssh/config are inherited
+    // exactly as they work from a terminal, and nothing here edits any of them
+    const args = sshArgs(pinned, 'true');
+    expect(args).not.toContain('-F');
+    expect(args.join(' ')).not.toContain('UserKnownHostsFile');
+    expect(args.join(' ')).not.toContain('StrictHostKeyChecking');
+  });
+
+  it('refuses a multi-hop jump rather than nesting shells it cannot test', () => {
+    // a nested ProxyCommand built wrong does not fail cleanly: it connects somewhere unintended or
+    // hangs, which is worse than being told no
+    expect(multiHopRefusal({ ...pinned, proxyJump: 'a@one,b@two' })).toMatch(/multi-hop/);
+    expect(() => sshArgs({ ...pinned, proxyJump: 'a@one,b@two' }, 'true')).toThrow(/multi-hop/);
+  });
+
+  it('allows a multi-hop jump when no identity is pinned', () => {
+    expect(multiHopRefusal({ ...direct, proxyJump: 'a@one,b@two' })).toBeNull();
+  });
+
+  it('names the way out in the refusal', () => {
+    expect(multiHopRefusal({ ...pinned, proxyJump: 'a@one,b@two' })).toContain('ssh/config');
+  });
+});
+
+describe('taking a jump specification apart', () => {
+  it('reads every combination of the three parts', () => {
+    expect(parseJump('host')).toEqual({ user: undefined, host: 'host' });
+    expect(parseJump('me@host')).toEqual({ user: 'me', host: 'host' });
+    expect(parseJump('host:2222')).toEqual({ user: undefined, host: 'host', port: 2222 });
+    expect(parseJump('me@host:2222')).toEqual({ user: 'me', host: 'host', port: 2222 });
+  });
+
+  it('does not take an IPv6 address apart in the middle', () => {
+    // splitting on the first colon would make `fe80::1` a host of `fe80` on a port of nothing
+    expect(parseJump('[fe80::1]:22')).toEqual({ user: undefined, host: 'fe80::1', port: 22 });
+    expect(parseJump('me@[fe80::1]')).toEqual({ user: 'me', host: 'fe80::1' });
+  });
+
+  it('does not mistake a hostname containing a colon-like suffix for a port', () => {
+    expect(parseJump('host:name')).toEqual({ user: undefined, host: 'host:name' });
+  });
+
+  it('ignores the whitespace somebody left in a config value', () => {
+    expect(parseJump('  me@host  ')).toEqual({ user: 'me', host: 'host' });
+  });
+});
+
+describe('the control socket', () => {
+  const base = { address: '10.0.0.9', user: 'root' };
+
+  it('is the same for the same route, or multiplexing buys nothing', () => {
+    expect(controlPath(base)).toBe(controlPath({ ...base }));
+  });
+
+  it('separates a route through a jump from a direct one', () => {
+    expect(controlPath(base)).not.toBe(controlPath({ ...base, proxyJump: 'bastion' }));
+  });
+
+  it('separates two identities on the same route', () => {
+    // a socket opened offering one key would otherwise be reused for a declaration asking for
+    // another, and the second would silently inherit the first's authentication
+    expect(controlPath({ ...base, identityFile: '/k/a.pub' }))
+      .not.toBe(controlPath({ ...base, identityFile: '/k/b.pub' }));
+    expect(controlPath(base)).not.toBe(controlPath({ ...base, identityFile: '/k/a.pub' }));
+  });
+
+  it('stays short enough to be a unix socket path', () => {
+    // a socket path has about a hundred characters, and an error about exceeding it is one nobody
+    // reads correctly
+    const long = { address: 'a'.repeat(60), user: 'root', identityFile: `/home/${'b'.repeat(60)}/k.pub` };
+    expect(controlPath(long).length).toBeLessThan(60);
   });
 });

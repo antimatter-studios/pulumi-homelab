@@ -66,6 +66,22 @@ breaking changes live.
 
 ### Fixed
 
+- **`Host.identityFile` offers one key rather than everything in the agent.** sshd's `MaxAuthTries`
+  is 6; an agent holding nine keys offers them in its own order; and a host that accepts the eighth
+  closes the connection with `Received disconnect: Too many authentication failures` before
+  reaching it. That reads as the server rejecting you, so the obvious responses — relaxing the
+  limit, unbanning an address — treat a symptom that was never the cause. And the agent's order is
+  not stable: the same key was measured at position five and then at eight, the order having changed
+  when the vault was re-unlocked, so an unchanged stack deploys in the morning and fails in the
+  afternoon. A `.pub` path is enough, and better: ssh matches it against the agent and offers only
+  that one, so nothing secret goes near a program. Unset, nothing changes. When set, the
+  `proxyJump` becomes a `ProxyCommand` using `-W`, because `-J` does not pass options to the ssh it
+  spawns and so cannot pin the jump's identity — which is where the limit is usually hit. `-W` keeps
+  ssh doing the forwarding and `known_hosts` checked for the far end, so it is not the
+  netcat-style `ProxyCommand` that `ProxyJump` was chosen over. A multi-hop jump with an identity is
+  refused rather than nested through two layers of shell quoting. The identity is hashed into the
+  control socket's name, so a socket opened with one key is not reused for a declaration asking for
+  another.
 - **`SambaShare` and `SambaSetting` read the file, and ask `testparm` only whether it parses.**
   Both compared against `testparm` output, which reports Samba's resolution rather than what was
   written — so both rewrote their sections on every deployment to correct a difference that did not

@@ -708,6 +708,53 @@ Host keys are deliberately not managed; `hostKeys(host)` reports their fingerpri
 machine presenting new ones has been reinstalled, which is worth being told loudly and is not worth
 rotating on purpose.
 
+### Which key gets offered: `Host.identityFile`
+
+```ts
+const host: Host = {
+  address: '10.0.0.9',
+  user: 'root',
+  port: 10022,
+  identityFile: '~/.ssh/that-one.pub',
+};
+```
+
+**A fix for an intermittent failure that points at the wrong thing.** sshd's `MaxAuthTries`
+defaults to 6. An agent holding nine keys offers them in its own order, and if the key a host
+accepts is the eighth, the connection closes with `Received disconnect: Too many authentication
+failures` before it is ever reached. That reads as the server rejecting you, and the obvious
+responses — relaxing the server's limit, unbanning an address — treat a symptom that was never the
+cause. It is also how an address gets itself fail2ban-banned: enough failed offers look exactly like
+someone guessing.
+
+What makes it worth a field rather than a note is that **the agent's order is not stable.** The same
+key was measured at position five and then at eight on one machine, the order having changed when
+the vault was re-unlocked. So an unchanged stack deploys at three o'clock and fails at five, and the
+only thing that moved was outside it.
+
+A **`.pub` path is enough and is the better thing to declare**: ssh matches the public key against
+the agent and offers only that one, so the private key never leaves the agent and nothing secret
+goes near a Pulumi program. `IdentitiesOnly=yes` is what makes `-i` a restriction rather than an
+addition — without it the file joins the list instead of replacing it, and the offer that tripped
+the limit still happens.
+
+**It applies to the jump too, and that is where `ProxyJump` has to give way.** `-J` does not pass
+options to the ssh it spawns, so pinning an identity would fix the far end and leave the bastion
+being offered every key — useless, since the bastion is usually the machine with the limit.
+Measured: `-J` with the identity pinned still failed at the bastion; the same identity inside a
+`ProxyCommand` connected. So when `identityFile` is set the jump becomes
+`ProxyCommand=ssh … -W %h:%p …`, and only then — the plain `-J` path is untouched otherwise.
+
+`-W` is not a return to the thing `ProxyJump` was chosen over: ssh still does the forwarding and
+still checks `known_hosts` for the far end, which a `ProxyCommand` piping through netcat would not.
+A **multi-hop** jump with an identity is refused rather than attempted, because chaining
+`ProxyCommand`s means nesting one inside another through two layers of shell quoting, and a command
+built wrong there does not fail cleanly — it connects somewhere unintended, or hangs.
+
+The identity is hashed into the control socket's name alongside the route. Otherwise a socket opened
+offering one key would be reused for a declaration asking for another, and the second would silently
+inherit the first's authentication.
+
 ## The one where the obvious comparison is wrong
 
 `RcloneRemote` is worth reading before writing anything similar. rclone stores passwords *obscured*,
