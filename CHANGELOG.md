@@ -66,7 +66,16 @@ breaking changes live.
 
 ### Fixed
 
-- **`TRANSPORT` bumped to 2, and a check so it cannot be forgotten again.** Pulumi serialises a
+- **The control socket's name includes `SSH_AUTH_SOCK`.** `ControlPath` already hashed the route and
+  the declared identity, for the same reason in both cases: a master opened one way must not be
+  reused by a declaration asking for another, or the second silently inherits the first's
+  authentication. The agent was the remaining hole — with `ControlPersist=60s`, swapping
+  `SSH_AUTH_SOCK` between two runs inside that window reuses a live master authenticated by whichever
+  agent opened it. Read at call time rather than captured, because a captured value would be
+  serialised into state and revived on a machine where that socket never existed. Folded in as
+  revision 3 before revision 2 had been deployed anywhere, so consumers take one update cycle rather
+  than two.
+- **`TRANSPORT` bumped, and a check so it cannot be forgotten again.** Pulumi serialises a
   dynamic provider's whole closure into the state file, so `read`, `diff` and `update` all run the
   *stored* code rather than the current source — a resource created last month still runs last
   month's `read`, and only a `TRANSPORT` bump makes it pick up a new one. Three merged changes

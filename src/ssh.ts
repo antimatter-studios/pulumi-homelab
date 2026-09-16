@@ -225,7 +225,12 @@ export function controlPath(host: Host): string {
   // the identity is part of it too: a socket opened offering one key would otherwise be reused for
   // a declaration asking for another, and the second would silently inherit the first's
   // authentication — the same class of bug as sharing a socket between two routes
-  const route = `${host.proxyJump ?? 'direct'}\u0000${host.identityFile ?? 'agent'}`;
+  // and the agent, for the same reason again: swap SSH_AUTH_SOCK between two runs inside
+  // ControlPersist's sixty seconds and a live master would be reused with the identity of the agent
+  // that opened it. Read at call time rather than captured, because a captured value would be
+  // serialised into state and revived on a machine where that socket never existed
+  const agent = process.env.SSH_AUTH_SOCK ?? '';
+  const route = `${host.proxyJump ?? 'direct'}\u0000${host.identityFile ?? 'agent'}\u0000${agent}`;
   // a small deterministic hash: the same route must always give the same socket, or multiplexing
   // buys nothing at all
   let hash = 0;
