@@ -359,8 +359,8 @@ which is *never matched on*; that is what lets `audit()` find orphans.
 
 | | Arguments | Reads from |
 |---|---|---|
-| **`AptPackage`** | `name` `update?` | `dpkg-query` |
-| **`AptPackages`** | `present?` `absent?` `update?` | `dpkg-query`, whole list in one round trip |
+| **`AptPackage`** | `name` `update?` | `dpkg-query`, and `apt-mark showmanual` |
+| **`AptPackages`** | `present?` `absent?` `update?` | `dpkg-query` and `apt-mark`, whole list in one round trip |
 | **`DebPackage`** | `name` `url` `sha256` `version?` | `dpkg-query` |
 
 ### Software that is not packaged
@@ -815,6 +815,31 @@ removes, and it does so with a success exit code, because from apt's point of vi
 what was asked. So a removal is simulated first with `apt-get -s purge`, and if apt would take
 anything not named in `absent`, the deployment fails and names the collateral. Declaring a package
 absent is a statement about that package, not permission to remove what depends on it.
+
+**Declared and installed are not the same statement, and the difference is quiet.** apt records
+whether a package is on the machine because somebody asked for it — *manual* — or because something
+else required it — *auto* — and `apt autoremove` is entitled to take an auto package the moment
+nothing requires it any more. A package that was already present as a **dependency** needs no
+installing, so the resource correctly computes nothing missing, installs nothing, and reports
+success, while the machine's actual position is "present because something else wants it". Those
+agree right up until the thing that wanted it changes, and then an `autoremove` somebody runs for
+unrelated reasons is allowed to remove a package the stack declares.
+
+So both resources read `apt-mark showmanual` alongside dpkg — one round trip, and the names asked
+about rather than the machine's whole list — and mark the difference, which makes "declared" and
+"manual" the same statement. Only the difference, and only when there is one: `apt-mark manual` is
+idempotent and harmless to repeat, which is exactly why marking unconditionally would be easy and
+wrong. A declared package apt holds as auto comes back in `auto` and reads as drift.
+
+Neither resource ever marks anything **auto**. Dropping a name from a declaration leaves the package
+installed and leaves its marking alone: handing a package to `autoremove` is removal by a slower
+route, and this package does not remove what it did not install — the same reasoning that keeps
+`setfacl -b` out of `PosixAcl`.
+
+`--no-install-recommends` is deliberately *not* set, and the case that settled it is worth keeping:
+`qemu-system-arm` has its UEFI firmware as a **Recommends** rather than a Depends, so with
+recommends off it installs cleanly and then no arm guest can boot, because a guest with no firmware
+has nothing to start. That reads as a broken VM rather than as a missing package.
 
 A package named in both lists throws rather than resolving, because that is not a machine that can
 exist, and picking a winner would be the resource deciding which half of the code to believe.

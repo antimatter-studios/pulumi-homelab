@@ -66,6 +66,22 @@ breaking changes live.
 
 ### Fixed
 
+- **`AptPackage` and `AptPackages` mark what they declare as manually installed.** apt records
+  whether a package is present because somebody asked for it (*manual*) or because something else
+  required it (*auto*), and `apt autoremove` is entitled to take an auto package once nothing
+  requires it. A package already present as a dependency needs no installing, so `AptPackages`
+  correctly computed nothing missing, installed nothing, and reported success — while the machine's
+  position was "present because something else wants it", which an unrelated `autoremove` is allowed
+  to undo. Found on a machine where three declared UEFI firmware packages were all auto-marked,
+  having arrived as recommends of `qemu-system-arm`. Both resources now read `apt-mark showmanual`
+  alongside dpkg in the same round trip and mark only the difference, so nothing is written on a
+  deployment where nothing changed; a declared package held as auto is reported in `auto` (or
+  `manual: false`) and reads as drift. Neither ever marks anything *auto* — handing a package to
+  `autoremove` is removal by a slower route. `--no-install-recommends` is deliberately not set:
+  `qemu-system-arm` has its UEFI firmware as a Recommends, so turning recommends off installs
+  cleanly and leaves no arm guest able to boot, which reads as a broken VM rather than a missing
+  package. `AptPackages`'s install/mark ordering and its drift decision are extracted as
+  `presentCommands` and `packagesChanged`.
 - **`Host.identityFile` offers one key rather than everything in the agent.** sshd's `MaxAuthTries`
   is 6; an agent holding nine keys offers them in its own order; and a host that accepts the eighth
   closes the connection with `Received disconnect: Too many authentication failures` before
