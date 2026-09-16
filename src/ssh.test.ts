@@ -416,6 +416,24 @@ describe('the control socket', () => {
     expect(controlPath(base)).not.toBe(controlPath({ ...base, identityFile: '/k/a.pub' }));
   });
 
+  it('separates two agents on the same route', () => {
+    // a scoped agent socket holds a different key from the main one, and swapping between them
+    // inside ControlPersist's sixty seconds would otherwise reuse a live master authenticated by
+    // whichever agent opened it
+    const before = process.env.SSH_AUTH_SOCK;
+    try {
+      process.env.SSH_AUTH_SOCK = '/tmp/trove-ssh-0.sock';
+      const one = controlPath(base);
+      process.env.SSH_AUTH_SOCK = '/tmp/trove-ssh-1.sock';
+      expect(controlPath(base)).not.toBe(one);
+      delete process.env.SSH_AUTH_SOCK;
+      expect(controlPath(base)).not.toBe(one);
+    } finally {
+      if (before === undefined) delete process.env.SSH_AUTH_SOCK;
+      else process.env.SSH_AUTH_SOCK = before;
+    }
+  });
+
   it('stays short enough to be a unix socket path', () => {
     // a socket path has about a hundred characters, and an error about exceeding it is one nobody
     // reads correctly

@@ -68,8 +68,11 @@ import * as pulumi from '@pulumi/pulumi';
  * - **2** — Samba reads the file rather than `testparm`; `SshKey` owns both halves' mode and
  *   ownership; `AptPackage` and `AptPackages` mark what they declare as manual; seven `delete`
  *   methods read their layout path from state; `Directory` takes `setgid` and `sticky`.
+ * - **3** — the control socket's name includes `SSH_AUTH_SOCK`, so swapping agents between runs
+ *   cannot reuse a master authenticated by the previous one. Folded in before revision 2 had been
+ *   deployed anywhere, so it costs one update cycle rather than two.
  */
-export const TRANSPORT = 2;
+export const TRANSPORT = 3;
 
 /**
  * Whether this resource's state was written before the current transport.
