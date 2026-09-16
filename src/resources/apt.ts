@@ -1,6 +1,7 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
+import { markManualCommand, parseManual } from '../aptmark.ts';
 
 /**
  * A package that should be installed.
@@ -33,6 +34,16 @@ interface AptPackageState {
   update: boolean;
   /** What is actually installed, which is how a version bump shows up in a diff without being asked for. */
   version: string;
+  /**
+   * Whether apt holds it as manually installed rather than as somebody else's dependency.
+   *
+   * This resource mostly gets it for free: `apt-get install` on an already-installed package prints
+   * *"set to manually installed"* and does exactly that. What it does not cover is the package that
+   * was already there when the resource adopted it and never needed installing — present, agreed
+   * with, and still removable by an `apt autoremove` aimed at something else. So it is read rather
+   * than assumed. See `aptmark.ts`.
+   */
+  manual: boolean;
 }
 
 /**
@@ -57,6 +68,12 @@ export async function readPackage(host: Target, name: string): Promise<string | 
   return parseDpkgStatus(asked.out);
 }
 
+/** Whether apt holds this one as manually installed. */
+export async function readManual(host: Target, name: string): Promise<boolean> {
+  const asked = await ask(host, `apt-mark showmanual ${shellQuote(name)} 2>/dev/null || true`);
+  return parseManual(asked.out).includes(name.split(':')[0] ?? name);
+}
+
 function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackageArgs, AptPackageState> {
   const install = async (args: AptPackageArgs): Promise<string> => {
     const refresh = args.update ? 'apt-get update -qq && ' : '';
@@ -70,10 +87,18 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackageAr
     return version;
   };
 
+  /** Make apt hold it as asked for rather than as somebody else's dependency. */
+  const markManual = async (name: string): Promise<boolean> => {
+    if (await readManual(host, name)) return true;
+    const mark = markManualCommand([name]);
+    if (mark !== null) await must(host, escalate(host, mark));
+    return readManual(host, name);
+  };
+
   return {
     async create(args) {
       const version = await install(args);
-      return { id: args.name, outs: { name: args.name, update: args.update ?? false, version } };
+      return { id: args.name, outs: { name: args.name, update: args.update ?? false, version, manual: await markManual(args.name) } };
     },
 
     async read(id, state) {
@@ -82,19 +107,33 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackageAr
       if (version === null) return { id: undefined, props: undefined };
       // `state` is absent when a resource is being imported rather than refreshed, so every field
       // has to stand on its own here rather than leaning on what Pulumi already knew
-      return { id, props: { update: state?.update ?? false, ...state, name: id, version } };
+      return {
+        id,
+        props: {
+          update: state?.update ?? false,
+          ...state,
+          name: id,
+          version,
+          // from the machine rather than from what was remembered: an `apt-mark auto` somebody ran,
+          // or a package this adopted without ever installing, both show up only by asking
+          manual: await readManual(host, id),
+        },
+      };
     },
 
     async update(id, old, args) {
       // the only thing that can change in place is whether the lists are refreshed first; the name
       // is the identity and a different name is a different package
       const version = (await readPackage(host, id)) ?? (await install(args));
-      return { outs: { ...old, update: args.update ?? false, version } };
+      return { outs: { ...old, update: args.update ?? false, version, manual: await markManual(id) } };
     },
 
     async diff(_id, old, args) {
       return {
         changes: transportChanged(old)
+          // auto-marked is present and still removable by an autoremove aimed at something else,
+          // so the declaration is weaker than it reads until it is fixed
+          || old.manual === false
           || old.name !== args.name || old.update !== (args.update ?? false),
         replaces: old.name !== args.name ? ['name'] : [],
         stables: [],
@@ -115,8 +154,10 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackageAr
 export class AptPackage extends pulumi.dynamic.Resource {
   declare readonly name: pulumi.Output<string>;
   declare readonly version: pulumi.Output<string>;
+  /** Whether apt holds it as asked for rather than as somebody else's dependency. */
+  declare readonly manual: pulumi.Output<boolean>;
 
   constructor(name: string, host: Target, args: AptPackageArgs, opts?: pulumi.CustomResourceOptions) {
-    super(stamped(providerFor(host)), name, { version: undefined, update: false, ...args }, withLegacyAlias(opts), 'homelab', 'AptPackage');
+    super(stamped(providerFor(host)), name, { version: undefined, manual: undefined, update: false, ...args }, withLegacyAlias(opts), 'homelab', 'AptPackage');
   }
 }

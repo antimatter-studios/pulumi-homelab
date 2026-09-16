@@ -52,7 +52,8 @@ export {
   removeFromFstab,
   type FstabEntryArgs,
 } from './resources/fstab.ts';
-export { AptPackage, readPackage, parseDpkgStatus, type AptPackageArgs } from './resources/apt.ts';
+export { AptPackage, readPackage, readManual, parseDpkgStatus, type AptPackageArgs } from './resources/apt.ts';
+export { parseManual, autoMarked, markManualCommand } from './aptmark.ts';
 export { DebPackage, installScript, type DebPackageArgs } from './resources/deb.ts';
 export {
   Archive,
@@ -105,6 +106,10 @@ export {
   parseInstalled,
   parseSimulatedRemovals,
   missingFrom,
+  readPackageState,
+  parsePackageState,
+  presentCommands,
+  packagesChanged,
   type AptPackagesArgs,
 } from './resources/packages.ts';
 export { SystemdUnit, readUnit, parseShow, actsNeeded, type SystemdUnitArgs } from './resources/systemd.ts';
