@@ -145,6 +145,8 @@ export {
   resolveTunnel,
   unitNameFor,
   unitPath,
+  writeCommand,
+  unitRefusal,
   RESTART_FLOOR,
   type SshTunnelArgs,
   type Forward,

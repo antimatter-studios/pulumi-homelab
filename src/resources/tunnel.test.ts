@@ -13,6 +13,8 @@ import {
   tunnelUnit,
   unitNameFor,
   unitPath,
+  unitRefusal,
+  writeCommand,
 } from './tunnel.ts';
 
 const tunnel = {
@@ -333,5 +335,100 @@ describe('settling the declaration', () => {
 
   it('is the same answer every time', () => {
     expect(resolveTunnel(minimal)).toEqual(resolveTunnel(minimal));
+  });
+});
+
+/**
+ * The defect that shipped in the first version: the heredoc terminator and the rest of the shell
+ * command landed inside the unit file, systemd said `Missing '=', ignoring line` four times per start
+ * attempt, and the tunnel never ran. The third rung caught it — the process carried no forwards —
+ * but the write should not have been able to produce it.
+ */
+describe('installing the unit without installing a broken one', () => {
+  const file = tunnelUnit(tunnel);
+  const command = writeCommand('autossh-b-22', '/etc/systemd/system/autossh-b-22.service', file);
+
+  it('never leaves the terminator sharing a line with a command', () => {
+    const lines = command.split('\n');
+    expect(lines.some((line) => line === 'PULUMI_EOF')).toBe(true);
+    expect(lines.filter((line) => line.startsWith('PULUMI_EOF') && line !== 'PULUMI_EOF')).toEqual([]);
+  });
+
+  it('writes the unit body verbatim, with nothing of the command in it', () => {
+    const body = command.split('\n').slice(1, -2).join('\n');
+    expect(`${body}\n`).toBe(file);
+    expect(body).not.toContain('systemctl');
+    expect(body).not.toContain('install -m');
+  });
+
+  it('stages, verifies, installs, then reloads, in that order', () => {
+    // the same order SudoRule uses with visudo -c: a unit systemd cannot read fails at every start
+    // rather than at the write, so a candidate is checked before anything is installed
+    const at = (text: string) => command.indexOf(text);
+    expect(at('mktemp -d')).toBeLessThan(at('systemd-analyze verify'));
+    expect(at('systemd-analyze verify')).toBeLessThan(at('install -m 0644'));
+    expect(at('install -m 0644')).toBeLessThan(at('systemctl daemon-reload'));
+  });
+
+  it('writes to a private staging directory rather than over the live unit', () => {
+    expect(command).toContain('mktemp -d');
+    expect(command).toContain('cat > "$dir/autossh-b-22.service"');
+    // the live path appears only as install's destination
+    expect(command.match(/\/etc\/systemd\/system/g)).toHaveLength(1);
+  });
+
+  it('cleans the staging directory up whether or not it succeeded', () => {
+    expect(command).toContain("trap 'rm -rf \"$dir\"' EXIT");
+  });
+
+  it('groups the verify, since && and || associate left to right', () => {
+    // ungrouped, a failed `cat` falls through the `||` into the verify instead of stopping the chain
+    expect(command).toContain('{ ! command -v systemd-analyze >/dev/null || systemd-analyze verify');
+    expect(command).toContain('; }');
+  });
+
+  it('requires the verify where systemd-analyze exists and skips it where it does not', () => {
+    // optional-and-silent would be no check at all; mandatory-everywhere would break a machine
+    // without the tooling
+    expect(command).toContain('! command -v systemd-analyze');
+    expect(command).toContain('systemd-analyze verify');
+  });
+
+  it('does not enable or restart anything, which cannot follow a terminator', () => {
+    expect(command).not.toContain('systemctl enable');
+    expect(command).not.toContain('systemctl restart');
+  });
+
+  it('quotes the destination path', () => {
+    expect(writeCommand('u', "/etc/it's.service", 'a\n')).toContain(String.raw`'/etc/it'\''s.service'`);
+  });
+
+  it('is the same string every time', () => {
+    expect(writeCommand('u', '/p', 'a\n')).toBe(writeCommand('u', '/p', 'a\n'));
+  });
+});
+
+describe('refusing a unit name that is not one', () => {
+  it('accepts what systemd accepts', () => {
+    expect(unitRefusal('autossh-b-22')).toBeNull();
+    expect(unitRefusal('tunnel@host')).toBeNull();
+  });
+
+  it('refuses the suffix, which is added', () => {
+    expect(unitRefusal('x.service')).toMatch(/should not carry/);
+  });
+
+  it('refuses anything that would become shell syntax in a path', () => {
+    // the name reaches a shell as part of the staging path, so this is a correctness check and the
+    // reason a declared name cannot inject
+    for (const bad of ['a b', 'a;rm -rf /', 'a$(id)', "a'b", 'a/b', 'a`id`']) {
+      expect(unitRefusal(bad), bad).not.toBeNull();
+    }
+  });
+
+  it('is raised when the declaration settles, not at each use', () => {
+    expect(() => resolveTunnel({
+      to: 'a@b', identity: '/k', runAs: 'u', forwards: [{ remote: 1, local: 2 }], unit: 'a b',
+    })).toThrow(/systemd unit name/);
   });
 });

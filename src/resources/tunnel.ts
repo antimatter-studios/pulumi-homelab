@@ -1,5 +1,5 @@
 import * as pulumi from '@pulumi/pulumi';
-import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
+import { escalate, ask, heredocInto, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 import { parseShow } from './systemd.ts';
 
@@ -150,6 +150,20 @@ export function forwardsRefusal(forwards: Forward[]): string | null {
 
 const inRange = (port: number) => Number.isInteger(port) && port > 0 && port < 65536;
 
+/**
+ * Why a unit name is refused, or null when it is usable.
+ *
+ * systemd takes a limited alphabet, and this name also reaches a shell as part of a path — so the
+ * check is both a correctness one and the reason a declared name cannot become shell syntax.
+ */
+export function unitRefusal(unit: string): string | null {
+  if (/^[A-Za-z0-9_@.-]+$/.test(unit) && !unit.endsWith('.service')) return null;
+  if (unit.endsWith('.service')) {
+    return `unit '${unit}' should not carry the .service suffix — it is added.`;
+  }
+  return `unit '${unit}' is not a systemd unit name: letters, digits, and _ @ . - only.`;
+}
+
 /** A unit name derived from where the tunnel goes, when one was not given. */
 export function unitNameFor(to: string, port: number): string {
   const host = to.includes('@') ? to.slice(to.indexOf('@') + 1) : to;
@@ -275,7 +289,10 @@ export function parseTunnel(out: string): { active: boolean; restarts: number; r
 export function resolveTunnel(args: SshTunnelArgs): Omit<SshTunnelState, 'file' | 'active' | 'running' | 'restarts'> {
   const port = args.port ?? DEFAULTS.port;
   const restartSec = args.restartSec ?? DEFAULTS.restartSec;
-  const refusal = restartRefusal(restartSec) ?? forwardsRefusal(args.forwards ?? []);
+  const unit = args.unit ?? unitNameFor(args.to, port);
+  const refusal = restartRefusal(restartSec)
+    ?? forwardsRefusal(args.forwards ?? [])
+    ?? unitRefusal(unit);
   if (refusal !== null) throw new Error(refusal);
   return {
     to: args.to,
@@ -284,13 +301,44 @@ export function resolveTunnel(args: SshTunnelArgs): Omit<SshTunnelState, 'file' 
     runAs: args.runAs,
     forwards: args.forwards,
     restartSec,
-    unit: args.unit ?? unitNameFor(args.to, port),
+    unit,
     directory: args.directory ?? DEFAULTS.directory,
   };
 }
 
 /** The path the unit file goes to. */
 export const unitPath = (unit: string, directory = UNITS) => `${directory}/${unit}.service`;
+
+/**
+ * The command that writes the unit, and does not install one systemd cannot read.
+ *
+ * **Staged, verified, then installed — the same order `SudoRule` uses with `visudo -c`, and for the
+ * same reason.** A unit file that is syntactically wrong does not fail at the write; it fails at
+ * every start attempt, with `Missing '=', ignoring line` in the journal and a service that never
+ * runs. Checking a candidate first turns that into a failed deployment with systemd's own complaint
+ * attached.
+ *
+ * Everything after the write is chained on the heredoc's **command line**, before the body. A
+ * heredoc's terminator must stand alone on its line, so appending ` && …` to a finished heredoc puts
+ * `PULUMI_EOF && chmod …` on one line and the rest of the command becomes file content. That
+ * shipped once and produced exactly the broken unit described above.
+ *
+ * `systemd-analyze verify` is required where it exists and skipped where it does not, rather than
+ * being made optional: `! command -v … || verify` passes on a machine without it and demands success
+ * on a machine with it.
+ */
+export function writeCommand(unit: string, path: string, file: string): string {
+  const service = `${unit}.service`;
+  const staged = `"$dir/${service}"`;
+  return `dir=$(mktemp -d) && trap 'rm -rf "$dir"' EXIT && `
+    + heredocInto(staged, file, [
+      // braced, because `&&` and `||` have equal precedence and associate left to right: ungrouped,
+      // a failed `cat` would fall through the `||` into the verify rather than stopping the chain
+      `{ ! command -v systemd-analyze >/dev/null || systemd-analyze verify ${staged}; }`,
+      `install -m 0644 -o root -g root ${staged} ${shellQuote(path)}`,
+      'systemctl daemon-reload',
+    ]);
+}
 
 /** What the machine says about the tunnel, or null when the unit is not there. */
 export async function readTunnel(
@@ -369,16 +417,34 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SshTunnelArg
     // restarted when the file changed, and also when the process is carrying forwards the file no
     // longer describes — which is the whole reason the third rung is read
     const bounce = rewrite || !before.active || !sameForwards(before.running, wanted.forwards);
+    if (rewrite) {
+      const wrote = await ask(host, escalate(host, writeCommand(wanted.unit, path, file)));
+      if (wrote.code !== 0) {
+        throw new Error(
+          `could not install ${path} on ${describe(host)}: ${(wrote.err || wrote.out).trim()}\n`
+          + `Nothing was installed — the unit was checked in a temporary directory first, so the `
+          + `machine still has whatever it had before.`,
+        );
+      }
+    }
+    // separate from the write on purpose: enable and restart cannot be chained after a heredoc's
+    // terminator, and a failed write must not be followed by a restart of the old unit
     if (rewrite || bounce) {
-      await must(host, escalate(host, [
-        ...(rewrite ? [heredoc(path, file), `chmod 0644 ${shellQuote(path)}`, 'systemctl daemon-reload'] : []),
-        `systemctl enable ${service}`,
-        ...(bounce ? [`systemctl restart ${service}`] : []),
-      ].join(' && ')));
+      await must(host, escalate(host,
+        `systemctl enable ${service}${bounce ? ` && systemctl restart ${service}` : ''}`,
+      ));
     }
 
     const after = await readTunnel(host, wanted.unit, wanted.directory);
     if (after === null) throw new Error(`wrote ${path} on ${describe(host)} but it is not there`);
+    // the file is read back and compared, not assumed: a write that corrupted the file is invisible
+    // to the code that composed it, and every other check here would pass on the version it meant
+    if (after.file !== file) {
+      throw new Error(
+        `wrote ${path} on ${describe(host)} and it does not read back as written. `
+        + `Something else is editing the same file, or the write itself was malformed.`,
+      );
+    }
     if (!sameForwards(after.running, wanted.forwards)) {
       throw new Error(
         `started ${wanted.unit} on ${describe(host)} but the running process carries `

@@ -64,6 +64,52 @@ describe('writing a file through a here-document', () => {
   });
 });
 
+/**
+ * A heredoc's terminator must stand alone on its line. Appending ` && chmod …` to a finished heredoc
+ * puts `PULUMI_EOF && chmod …` on one line, bash never recognises the terminator, and the rest of
+ * the command becomes file content. That shipped once, as a systemd unit ending
+ * `PULUMI_EOF && chmod 0644 … && systemctl restart …` which systemd rejected with
+ * `Missing '=', ignoring line` and never started.
+ */
+describe('chaining commands onto a here-document', () => {
+  it('puts them on the command line, before the body', () => {
+    const doc = heredoc('/etc/x', 'body\n', ['chmod 0600 /etc/x', 'systemctl daemon-reload']);
+    const lines = doc.split('\n');
+    expect(lines[0]).toContain("<<'PULUMI_EOF' && chmod 0600 /etc/x && systemctl daemon-reload");
+    expect(lines[1]).toBe('body');
+  });
+
+  it('leaves the terminator alone on its line, whatever is chained', () => {
+    const doc = heredoc('/etc/x', 'body\n', ['a', 'b', 'c']);
+    const lines = doc.split('\n');
+    expect(lines.some((line) => line === 'PULUMI_EOF')).toBe(true);
+    // and no line STARTS with the terminator and carries anything else, which is the whole bug.
+    // The opening `<<'PULUMI_EOF'` is not a terminator line and is allowed to have more after it
+    expect(lines.filter((line) => line.startsWith('PULUMI_EOF') && line !== 'PULUMI_EOF')).toEqual([]);
+  });
+
+  it('chains nothing when nothing was given', () => {
+    expect(heredoc('/etc/x', 'body\n')).not.toContain('&&');
+  });
+
+  it('ends with a newline, so chaining by hand is a syntax error rather than a corrupt file', () => {
+    // the mistake is invisible to whoever makes it: the composed string looks right and the file it
+    // produces is wrong. A trailing newline turns it into `PULUMI_EOF\n && …`, which bash refuses
+    const misused = [heredoc('/etc/x', 'body\n'), 'chmod 0600 /etc/x'].join(' && ');
+    expect(misused).toContain('PULUMI_EOF\n && ');
+    expect(misused).not.toContain('PULUMI_EOF && ');
+  });
+
+  it('still expands nothing in the body', () => {
+    expect(heredoc('/etc/x', 'Exec=/bin/t $MAINPID\n', ['true'])).toContain('$MAINPID');
+    expect(heredoc('/etc/x', 'a\n', ['true'])).toContain("<<'PULUMI_EOF'");
+  });
+
+  it('quotes the path it writes to', () => {
+    expect(heredoc("/etc/it's", 'a\n')).toContain(String.raw`'/etc/it'\''s'`);
+  });
+});
+
 describe('running as root', () => {
   it('passes the whole command through as one argument', () => {
     const rooted = asRoot('rm -f /tmp/a && systemctl restart x');
