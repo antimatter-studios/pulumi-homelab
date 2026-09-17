@@ -13,6 +13,24 @@ breaking changes live.
 
 ### Added
 
+- **`SshTunnel`** — a machine behind NAT publishing ports on a bastion it can reach, declared rather
+  than assembled from a unit file by hand. Its read has three rungs: the unit file as text,
+  `systemctl show` for active state and restart count, and the `-R` flags on the **running process**
+  from `/proc/<pid>/cmdline`. The third catches what the others cannot — a unit whose file matches
+  the declaration while the process still carries the previous forwards because nobody restarted it.
+  One connection carries every forward rather than one unit per forward: each connection is a login,
+  and several tunnels reconnecting look like a brute-force attempt to a bastion running fail2ban,
+  where a ban takes out every tunnel and the route needed to fix them. `restartSec` under five
+  seconds is refused for the same reason — `ExitOnForwardFailure=yes` is right, but a port still held
+  by the previous connection then makes ssh exit and a tight restart loop is a self-inflicted ban.
+  Two preconditions are checked before the unit is written, since both otherwise fail silently:
+  `runAs` must be able to read `identity`, and must already trust the bastion's host key, with the
+  refusal carrying the `ssh-keyscan` that fixes it. `restarts` is reported and never compared, since
+  a restart is not drift and a rising count is the only available signal that the far end is refusing
+  a forward. There is deliberately no autossh-versus-ssh option, and no `GatewayPorts` field — whether
+  a forward binds loopback or every interface is the bastion's configuration, so a `bind` address is
+  passed through and the far end decides.
+
 - **`ManagedLine`** — one line in a file this stack does not own. `ManagedFile` owns whole files, and
   the case that keeps coming up is a file that must not be owned: a shell rc file, a packaged default
   that takes local additions. Owning one to add a single line means the next hand edit gets reverted,

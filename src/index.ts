@@ -131,6 +131,25 @@ export {
 } from './resources/packages.ts';
 export { SystemdUnit, readUnit, parseShow, actsNeeded, type SystemdUnitArgs } from './resources/systemd.ts';
 export {
+  SshTunnel,
+  readTunnel,
+  tunnelUnit,
+  execStart,
+  forwardFlag,
+  forwardsRefusal,
+  restartRefusal,
+  parseForwards,
+  sameForwards,
+  parseTunnel,
+  preconditionRefusal,
+  resolveTunnel,
+  unitNameFor,
+  unitPath,
+  RESTART_FLOOR,
+  type SshTunnelArgs,
+  type Forward,
+} from './resources/tunnel.ts';
+export {
   SystemdInstance,
   readInstance,
   escapeInstance,
