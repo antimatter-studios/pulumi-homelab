@@ -322,6 +322,7 @@ Pulumi once did.
 | **`ManagedFile`** | `path` `content` `mode?` `owner?` `group?` `reloadSystemd?` | `stat` and `cat` |
 | **`Directory`** | `path` `mode?` `owner?` `group?` `setgid?` `sticky?` | `stat` |
 | **`Symlink`** | `path` `target` | `readlink`, then `stat` |
+| **`ManagedLine`** | `path` `line` `marker` `position?` `anchor?` `comment?` | the marked line in the file, and whether it is still placed |
 | **`FstabEntry`** | `source` `target` `type` `options?` `dump?` `pass?` `mount?` | the line in `/etc/fstab`, plus `findmnt` |
 
 `Directory` makes parents on the way up and removes only the leaf on the way down, with
@@ -349,6 +350,40 @@ faithfully with `mode: '4755'`.
 elsewhere, **something real at that path**, and nothing. The third throws rather than
 replacing, because `/var/log/journal` being a real directory instead of a link means journald
 writes to the SD card silently and for ever.
+
+**`ManagedLine` owns one line in a file that must not be owned.** `ManagedFile` owns whole files,
+and the interesting case is the other one: a shell rc file, a packaged default that takes local
+additions, a config somebody has tuned by hand. Reproducing one of those in a program to add a
+single line means the program owns it, and the next time a person edits it the deployment reverts
+them. That is the two-writer failure, and it has already bitten a real machine twice through one
+file — `gh auth setup-git` writing a credential helper into a file Pulumi owned, then an agent
+adding a second helper to it. Both presented as intermittent authentication breakage with nothing
+pointing at the cause.
+
+The marker **is** matched on, unlike `FstabEntry`'s. An fstab entry has a natural key so its comment
+is only an annotation; a line in a `.bashrc` has no key at all, and matching the literal text would
+make a hand-edited line a *second* line rather than the same one — which is how every append-only
+script that has ever touched a shell rc file grows it on each run.
+
+**Position is part of the requirement and is read back.** The case it was built for is a line that
+must precede Debian's early return in `.bashrc`:
+
+```
+# If not running interactively, don't do anything
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+```
+
+A line after that is present, correct and **dead** — `ssh host 'cmd'` sources the file and never
+reaches it. So the read reports whether the line is still where it was asked to be, a line somebody
+moved past its anchor is drift, and a missing anchor is refused rather than appended to the end. A
+resource that checked only for presence would report success for a file that does not work.
+
+It refuses a file that does not exist rather than creating one — that is `ManagedFile`'s job, and
+creating it here would hide the mistake. `delete` removes its own line and leaves everything else,
+the same stance `PosixAcl` takes about entries it did not grant.
 
 `FstabEntry` is keyed on the mount point, never regenerates the file, and writes the line
 without mounting it — mounting over a directory that has contents hides them, and a deployment
