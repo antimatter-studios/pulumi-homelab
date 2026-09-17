@@ -1,0 +1,9 @@
+# .github-guard — declarations github-guard reads (see the github-guard skill:
+# https://github.com/antimatter-studios/agent-skills/blob/main/.claude/skills/github-guard/README.md).
+# git-config format: check with `git config -f .github-guard --list`, and
+# double-quote any value containing # or ;.
+
+# What must pass before main takes a merge. Read from the default branch by
+# github-guard, which requires these by check-run name.
+[checks]
+	required = CI
