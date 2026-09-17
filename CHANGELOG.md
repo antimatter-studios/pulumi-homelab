@@ -13,6 +13,19 @@ breaking changes live.
 
 ### Added
 
+- **`ManagedLine`** — one line in a file this stack does not own. `ManagedFile` owns whole files, and
+  the case that keeps coming up is a file that must not be owned: a shell rc file, a packaged default
+  that takes local additions. Owning one to add a single line means the next hand edit gets reverted,
+  which is the two-writer failure that has already broken one machine twice through the same file.
+  The marker is written into the line as a trailing comment and *is* matched on, unlike
+  `FstabEntry`'s annotation, because a line in a `.bashrc` has no natural key and matching the
+  literal text makes a hand-edited line a second line rather than the same one. Position is part of
+  the requirement and is read back: `before`/`after` take an `anchor`, a missing anchor is refused
+  rather than appended to the end, and a line somebody moved past its anchor reads as drift — a line
+  after Debian's `case $- in` early return is present, correct and never executed. A line above its
+  anchor but not adjacent to it is left where somebody put it, since it works there. Refuses a file
+  that does not exist rather than creating one, and `delete` removes its own line and nothing else.
+
 - **`Archive`** — software installed once from a checksum-verified tarball or zip and thereafter
   left alone. It asks whether the thing is installed and nothing else: no version is declared,
   stored as a pin, or compared, because software that ships its own updater would otherwise sit in

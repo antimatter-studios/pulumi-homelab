@@ -43,6 +43,23 @@ export { ManagedFile, readFile, writeFile, parseFileStat, type FileArgs } from '
 export { Directory, readDirectory, parseStat, resolveMode, type DirectoryArgs } from './resources/directory.ts';
 export { Symlink, readSymlink, interpretSymlink, type SymlinkArgs } from './resources/symlink.ts';
 export {
+  ManagedLine,
+  readFileLine,
+  readLine,
+  markLine,
+  markerOf,
+  findMarked,
+  findAnchor,
+  placementRefusal,
+  insertionPoint,
+  correctlyPlaced,
+  upsertLine,
+  removeLine,
+  resolveLine,
+  type ManagedLineArgs,
+  type LinePosition,
+} from './resources/line.ts';
+export {
   FstabEntry,
   readFstabEntry,
   fstabLine,
