@@ -457,6 +457,63 @@ install that with `Archive` — which turns an unrepeatable afternoon into a ver
 |---|---|---|
 | **`SystemdUnit`** | `name` `unit` `enabled?` `started?` `mode?` | `systemctl show` and the unit file |
 | **`SystemdInstance`** | `template` `instance` `enabled?` `started?` `suffix?` | `systemctl is-enabled` and `is-active` |
+| **`SshTunnel`** | `to` `port?` `identity` `runAs` `forwards` `restartSec?` `unit?` `directory?` | the unit file, `systemctl show`, **and the `-R` flags on the running process** |
+
+**`SshTunnel`** is a machine behind NAT publishing ports on a bastion it can reach:
+
+```ts
+new SshTunnel('tunnel-bastion', host, {
+  to: 'tunnel@bastion.example.com',
+  port: 10022,
+  identity: '/home/chris/.ssh/id_ed25519',
+  runAs: 'chris',
+  forwards: [
+    { remote: 20022, local: 22,  what: 'ssh' },
+    { remote: 20080, local: 80,  what: 'k3s ingress' },
+    { remote: 20443, local: 443, what: 'k3s ingress, tls' },
+  ],
+});
+```
+
+**Its read has three rungs, and the third is why it is a resource rather than a module.** The unit
+file compares as text; `systemctl show` gives the active state and the restart count; and then the
+forwards are read from the **running process**, out of `/proc/<pid>/cmdline`. That last one catches
+what the first two cannot — a unit whose file says one thing while the process still carries the
+previous forwards, because nobody restarted it after an edit. `systemctl cat` agrees with the
+declaration and the machine is doing something else. The unit file is what you control; the process's
+forwards are what you care about.
+
+**One connection carries every forward, and that is not an optimisation.** Each connection is a
+login, and a bastion running fail2ban counts them: several tunnels reconnecting together look like a
+brute-force attempt, and a ban takes out every tunnel *and* the route needed to fix them. A resource
+that generated a unit per forward would reproduce that, so it does not.
+
+For the same reason `restartSec` under five seconds is **refused**. `ExitOnForwardFailure=yes` is
+right — without it a tunnel sits connected and forwards nothing, which is the failure that looks
+healthiest — but a port still held by a previous connection then makes ssh exit, systemd restarts
+it, and a tight loop is a login attempt every second until the ban.
+
+Two preconditions are checked before the unit is written, because both otherwise fail *silently* —
+the unit starts, ssh exits, systemd restarts it for ever, and the only trace is a rising count and a
+journal nobody is reading. `runAs` must be able to read `identity`, and `runAs` must already trust
+the bastion's host key; the refusal carries the `ssh-keyscan` that fixes the second.
+
+**`restarts` is reported and never compared.** A restart is not drift, and a rising count is the only
+signal that the far end is refusing a forward — the one thing the resource cannot read directly. A
+tunnel that flaps is neither up nor down, and calling it healthy would be the most useful kind of
+lie.
+
+Two things it deliberately does not do. There is **no choice between autossh and plain ssh**: autossh
+with `ServerAliveInterval` is what makes this a tunnel rather than a connection that dies on the
+first network blip, and an option there would be an option to build the broken one. And it does
+**not** manage `GatewayPorts` — whether a forward binds loopback or every interface is the bastion's
+configuration, not this side's, so a `bind` address is passed through and the far end decides. With
+`GatewayPorts yes` set there, a port you expected on loopback is on the public internet. Check
+`sshd -T | grep gatewayports` on the bastion rather than trusting this resource about it.
+
+Changing a forward restarts the tunnel, and for the ssh forward that is the route the deployment is
+standing on. Nothing here can solve that: add the new port as a second forward, prove it, then remove
+the old one — two deployments, and the first is the one that keeps you connected.
 
 `SystemdUnit` holds the unit file and the running state together because they are one thought.
 `SystemdInstance` is for template units — `avahi-alias@photos.example.local` — which have no
