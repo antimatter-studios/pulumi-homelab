@@ -493,6 +493,13 @@ right — without it a tunnel sits connected and forwards nothing, which is the 
 healthiest — but a port still held by a previous connection then makes ssh exit, systemd restarts
 it, and a tight loop is a login attempt every second until the ban.
 
+The unit is **staged, verified with `systemd-analyze verify`, then installed** — the same order
+`SudoRule` uses with `visudo -c`, and for the same reason: a unit systemd cannot read does not fail
+at the write, it fails at every start attempt, with `Missing '=', ignoring line` in the journal and a
+service that never runs. The file is then read back and compared byte for byte, because a write that
+corrupted the file is invisible to the code that composed it and every other check would pass on the
+version it meant.
+
 Two preconditions are checked before the unit is written, because both otherwise fail *silently* —
 the unit starts, ssh exits, systemd restarts it for ever, and the only trace is a rising count and a
 journal nobody is reading. `runAs` must be able to read `identity`, and `runAs` must already trust

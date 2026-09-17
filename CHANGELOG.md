@@ -97,6 +97,23 @@ breaking changes live.
 
 ### Fixed
 
+- **`SshTunnel` wrote a unit file with the shell command inside it.** The heredoc terminator and
+  everything chained after it landed as file content — `PULUMI_EOF && chmod 0644 … && systemctl
+  restart …` on one line — so systemd reported `Missing '=', ignoring line` four times per start
+  attempt and the tunnel never ran. A here-document's terminator must stand alone on its line, and
+  appending ` && …` to a finished heredoc puts it in company. `heredoc`/`heredocInto` now take the
+  commands that must follow as an argument and chain them on the **command line**, before the body,
+  which is both correct and short-circuits properly; and they end with a newline so a caller who
+  chains by hand anyway gets a bash syntax error rather than a silently corrupted file. The unit is
+  additionally staged, checked with `systemd-analyze verify` where that exists, installed only if it
+  passes, and then read back and compared byte for byte — the `visudo -c` pattern, which is the
+  check that catches this whole family. A caller-supplied `unit` is also validated, since it reaches
+  a shell as part of the staging path.
+
+  Worth recording that the resource's own third rung caught this in the field: the error named the
+  running process as carrying no forwards rather than the declared ones, and pointed at the journal.
+  A resource comparing only the file it intended to write would have reported success.
+
 - **The control socket's name includes `SSH_AUTH_SOCK`.** `ControlPath` already hashed the route and
   the declared identity, for the same reason in both cases: a master opened one way must not be
   reused by a declaration asking for another, or the second silently inherits the first's

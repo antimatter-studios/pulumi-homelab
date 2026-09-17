@@ -438,8 +438,8 @@ export function shellQuote(text: string): string {
  * `$` in a systemd unit or a config file would be replaced by the empty string on the way in, and
  * the file would arrive subtly wrong rather than obviously broken.
  */
-export function heredoc(path: string, content: string): string {
-  return heredocInto(shellQuote(path), content);
+export function heredoc(path: string, content: string, after: string[] = []): string {
+  return heredocInto(shellQuote(path), content, after);
 }
 
 /**
@@ -450,10 +450,19 @@ export function heredoc(path: string, content: string): string {
  * Anything that writes to a temporary file it made with `mktemp` needs this one, and takes on the
  * job of quoting the destination itself.
  */
-export function heredocInto(target: string, content: string): string {
+export function heredocInto(target: string, content: string, after: string[] = []): string {
   const edge = 'PULUMI_EOF';
   const body = content.endsWith('\n') ? content : `${content}\n`;
-  return `cat > ${target} <<'${edge}'\n${body}${edge}`;
+  // anything that must run after the write is chained on the COMMAND line, before the body. A
+  // heredoc's terminator has to stand alone on its line, so `${heredoc(…)} && chmod …` puts
+  // `PULUMI_EOF && chmod …` on one line, bash never recognises the terminator, and the rest of the
+  // command becomes file content. That shipped once: a unit file ending
+  // `PULUMI_EOF && chmod 0644 … && systemctl restart …`, which systemd rejected with
+  // "Missing '=', ignoring line" and never started.
+  const chain = after.length > 0 ? ` && ${after.join(' && ')}` : '';
+  // and a trailing newline, so a caller who chains with ` && ` anyway gets a bash syntax error
+  // rather than a silently corrupted file — loud beats subtle for a mistake this invisible
+  return `cat > ${target} <<'${edge}'${chain}\n${body}${edge}\n`;
 }
 
 
