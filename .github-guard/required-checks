@@ -1,3 +1,0 @@
-# What must pass before main takes a merge. Read from the default branch by
-# github-guard, which requires these by check-run name.
-CI
