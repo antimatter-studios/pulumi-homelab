@@ -36,6 +36,23 @@ export {
   type SpecialBits,
 } from './mode.ts';
 export { FluxApp, ignoreRules, type FluxAppArgs } from './flux/index.ts';
+export {
+  t3code,
+  AGENT_DEFAULTS,
+  T3_DEFAULT,
+  type AgentSpec,
+  type T3CodeArgs,
+  type T3Code,
+} from './t3code/index.ts';
+export {
+  claudeProfile,
+  sharedTarget,
+  profileRefusal,
+  SHARED_DEFAULTS,
+  type ClaudeProfileArgs,
+  type ClaudeProfile,
+  type SharedEntry,
+} from './claude/index.ts';
 export { fluxReady, fluxReason, type FluxCheckArgs } from './flux/ready.ts';
 export { providerChanged, withLegacyAlias } from './upgrade.ts';
 export { mountedAt } from './checks.ts';
