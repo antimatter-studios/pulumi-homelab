@@ -77,15 +77,29 @@ export const SHARED_DEFAULTS: SharedEntry[] = [
   { name: 'settings.json', kind: 'file' },
 ];
 
-export interface ClaudeProfileArgs {
-  /** The account that owns all of it. */
+export interface ClaudeSharedArgs {
   account: string;
   /** The shared backend — `~/.claude`, which is also the default profile. */
-  shared: string;
-  /** This profile's directory — `~/.claude-work`. What `CLAUDE_CONFIG_DIR` is set to. */
-  dir: string;
+  path: string;
   /** Defaults to {@link SHARED_DEFAULTS}. */
   entries?: SharedEntry[];
+  group?: string;
+  mode?: string;
+}
+
+export interface ClaudeShared {
+  path: string;
+  entries: SharedEntry[];
+  /** Everything a profile has to exist after, passed to `claudeProfile` as `shared`. */
+  resources: pulumi.Resource[];
+}
+
+export interface ClaudeProfileArgs {
+  account: string;
+  /** The backend this profile links into, from {@link claudeShared}. */
+  shared: ClaudeShared;
+  /** This profile's directory — `~/.claude-work`. What `CLAUDE_CONFIG_DIR` is set to. */
+  dir: string;
   group?: string;
   /** The profile directory's own mode. */
   mode?: string;
@@ -113,16 +127,57 @@ export function sharedTarget(shared: string, entry: string): string {
 /**
  * The refusal for a profile that would link a directory to itself.
  *
- * `claudeProfile` called with `dir` equal to `shared` produces, for each entry, a symlink whose
- * target is the path the symlink is at. The loop that creates them succeeds. What follows is a
- * program that opens `projects`, follows a link to `projects`, and gets ELOOP — reported as a
- * corrupt installation rather than as a description that asked for something impossible.
+ * A profile whose `dir` is the backend produces, for each entry, a symlink whose target is the path
+ * the symlink is at. The loop that creates them succeeds. What follows is a program that opens
+ * `projects`, follows a link to `projects`, and gets ELOOP — reported as a corrupt installation
+ * rather than as a description that asked for something impossible.
  */
-export function profileRefusal(args: ClaudeProfileArgs): string | undefined {
-  const shared = args.shared.replace(/\/+$/, '');
+export function profileRefusal(args: { shared: { path: string }; dir: string }): string | undefined {
+  const shared = args.shared.path.replace(/\/+$/, '');
   const dir = args.dir.replace(/\/+$/, '');
   if (shared === dir) return `claudeProfile: dir and shared are the same directory (${dir}); a profile has to be somewhere else`;
   return undefined;
+}
+
+/**
+ * The backend every profile links into, declared once.
+ *
+ * Separate from `claudeProfile` for one reason, and it is the failure this package keeps meeting:
+ * two profiles each declaring `~/.claude` would be two resources owning one path, re-applying
+ * different answers on alternate runs with both reporting success. The backend has one owner and
+ * the profiles depend on it.
+ *
+ * It is also the default profile. Nothing here is specific to being *shared* — a machine with one
+ * login has exactly this and no `claudeProfile` at all.
+ */
+export function claudeShared(host: Target, name: string, args: ClaudeSharedArgs, opts?: pulumi.CustomResourceOptions): ClaudeShared {
+  const entries = args.entries ?? SHARED_DEFAULTS;
+  const group = args.group ?? args.account;
+
+  const root = new Directory(name, host, {
+    path: args.path, owner: args.account, group, mode: args.mode ?? '0775',
+  }, opts);
+
+  /**
+   * The entry directories, declared so a link cannot dangle.
+   *
+   * A symlink to a directory that does not exist is created happily and fails on first use, and the
+   * failure names the profile rather than the missing target. Claude makes these itself on first
+   * run — but only for whichever profile runs first, and every other one is broken until then.
+   *
+   * A `file` entry is not created: an empty `settings.json` is not the same as no `settings.json`,
+   * and writing one would be this module having an opinion about the program's defaults.
+   */
+  const made = entries
+    .filter((entry) => entry.kind === 'directory')
+    .map((entry) => new Directory(`${name}-${entry.name}`, host, {
+      path: sharedTarget(args.path, entry.name),
+      owner: args.account,
+      group,
+      mode: entry.mode ?? '0700',
+    }, { ...opts, dependsOn: [root] }));
+
+  return { path: args.path, entries, resources: [root, ...made] };
 }
 
 /** A Claude Code profile: its own credentials, the shared account's work. */
@@ -130,37 +185,16 @@ export function claudeProfile(host: Target, name: string, args: ClaudeProfileArg
   const refusal = profileRefusal(args);
   if (refusal) throw new Error(refusal);
 
-  const entries = args.entries ?? SHARED_DEFAULTS;
   const group = args.group ?? args.account;
 
-  /**
-   * The shared side, declared so a link cannot dangle.
-   *
-   * A symlink to a directory that does not exist is created happily and fails on first use, and the
-   * failure names the profile rather than the missing target. Claude makes these itself on first
-   * run — but only for whichever profile runs first, and the others are broken until then.
-   */
-  const sharedRoot = new Directory(`dir-${name}-shared`, host, {
-    path: args.shared, owner: args.account, group, mode: '0775',
-  }, opts);
-
-  const shared = entries
-    .filter((entry) => entry.kind === 'directory')
-    .map((entry) => new Directory(`dir-${name}-shared-${entry.name}`, host, {
-      path: sharedTarget(args.shared, entry.name),
-      owner: args.account,
-      group,
-      mode: entry.mode ?? '0700',
-    }, { ...opts, dependsOn: [sharedRoot] }));
-
-  const dir = new Directory(`dir-${name}`, host, {
+  const dir = new Directory(name, host, {
     path: args.dir, owner: args.account, group, mode: args.mode ?? '0775',
   }, opts);
 
-  const links = entries.map((entry) => new Symlink(`link-${name}-${entry.name}`, host, {
+  const links = args.shared.entries.map((entry) => new Symlink(`${name}-${entry.name}`, host, {
     path: sharedTarget(args.dir, entry.name),
-    target: sharedTarget(args.shared, entry.name),
-  }, { ...opts, dependsOn: [dir, sharedRoot, ...shared] }));
+    target: sharedTarget(args.shared.path, entry.name),
+  }, { ...opts, dependsOn: [dir, ...args.shared.resources] }));
 
   return { dir: args.dir, configDir: args.dir, links };
 }

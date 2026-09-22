@@ -26,7 +26,7 @@ describe('where a shared entry lives', () => {
  * corrupt installation rather than about a description that asked for something impossible.
  */
 describe('refusing a profile that is its own backend', () => {
-  const base = { account: 'agent', shared: '/home/agent/.claude', dir: '/home/agent/.claude-work' };
+  const base = { shared: { path: '/home/agent/.claude' }, dir: '/home/agent/.claude-work' };
 
   it('accepts a profile beside the backend', () => {
     expect(profileRefusal(base)).toBeUndefined();

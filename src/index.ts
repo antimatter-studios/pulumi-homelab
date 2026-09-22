@@ -45,10 +45,13 @@ export {
   type T3Code,
 } from './t3code/index.ts';
 export {
+  claudeShared,
   claudeProfile,
   sharedTarget,
   profileRefusal,
   SHARED_DEFAULTS,
+  type ClaudeSharedArgs,
+  type ClaudeShared,
   type ClaudeProfileArgs,
   type ClaudeProfile,
   type SharedEntry,
