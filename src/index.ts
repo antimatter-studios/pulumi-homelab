@@ -246,6 +246,16 @@ export {
 } from './resources/sudo.ts';
 export { Precondition, readPrecondition, checkCommand, type PreconditionArgs } from './resources/precondition.ts';
 export {
+  ProtectedFile,
+  substituteArgv,
+  sourceRefusal,
+  needsMaterial,
+  SEEDED,
+  type ProtectedFileArgs,
+  type Source,
+  type Enforcement,
+} from './resources/protected.ts';
+export {
   PosixAcl,
   readAcl,
   parseGetfacl,
