@@ -73,6 +73,16 @@ export interface T3CodeArgs {
 
 export interface T3Code {
   account: string;
+  /**
+   * The account itself, so a consumer can order against it.
+   *
+   * `account` is a plain string and creates no dependency, which matters more here than it looks:
+   * a `PosixAcl` naming this user, declared in the stack rather than in this module, is applied by
+   * `setfacl` — and `setfacl` for a user that does not exist yet fails rather than waiting.
+   */
+  user: User;
+  /** `~/.local/bin` as a resource, for anything the consumer wants to put in it. */
+  binDirectory: Directory;
   home: string;
   /** `~/.local/bin`, for anything the consumer wants to put beside the launchers. */
   bin: string;
@@ -630,6 +640,8 @@ WantedBy=multi-user.target
 
   return {
     account: account_,
+    user: account,
+    binDirectory: bin,
     home: HOME,
     bin: BIN,
     opt: OPT,
