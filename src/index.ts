@@ -100,9 +100,7 @@ export {
   archiveAct,
   chownCommand,
   ownershipChanged,
-  // deb.ts already exports an `installScript`, and the two compose different things: apt against a
-  // downloaded file, and an unpack into a staging directory. Named apart rather than shadowed.
-  installScript as archiveInstallScript,
+  archiveInstallScript,
   probeCommand,
   parseProbe,
   parseVersion,
@@ -285,9 +283,7 @@ export {
   entrySatisfied,
   formatEntry,
   formatRemoval,
-  // fstab.ts already exports a `findEntry` for the line describing a mount point. Named apart
-  // rather than shadowed.
-  findEntry as findAclEntry,
+  findAclEntry,
   unsatisfied,
   abandoned,
   setfaclCommand,
@@ -312,7 +308,7 @@ export {
   readBootConfig,
   parseBootSections,
   applyToSection,
-  removeFromSection as removeFromBootSection,
+  removeFromBootSection,
   parseVcgencmd,
   renderSettings,
   readOverlays,
@@ -325,7 +321,7 @@ export {
 export {
   KernelCmdline,
   readCmdline,
-  merge as mergeCmdline,
+  mergeCmdline,
   bootedWith,
   CANDIDATES,
   type KernelCmdlineArgs,

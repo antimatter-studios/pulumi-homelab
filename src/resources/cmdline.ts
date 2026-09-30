@@ -69,7 +69,7 @@ const keyOf = (parameter: string) => parameter.split('=', 1)[0] ?? parameter;
  * Replacing in place rather than appending keeps whatever ordering the image was written with, and
  * keeps the result stable across runs: merging twice gives the same line as merging once.
  */
-export function merge(current: string, flags: string[]): string {
+export function mergeCmdline(current: string, flags: string[]): string {
   const parameters = current.trim().split(/\s+/).filter(Boolean);
   const wanted = new Map(flags.map((flag) => [keyOf(flag), flag]));
   const replaced = new Set<string>();
@@ -106,7 +106,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<KernelCmdlin
       const looked = args.path ?? CANDIDATES.join(' or ');
       throw new Error(`no kernel command line file at ${looked} on ${describe(host)}: this is not an image that boots that way`);
     }
-    const cmdline = merge(found.cmdline, args.flags);
+    const cmdline = mergeCmdline(found.cmdline, args.flags);
     if (cmdline !== found.cmdline) {
       // the bootloader reads one line and stops, so the file has to stay one line. It is also on a
       // vfat partition, where the ownership and mode a ManagedFile would set mean nothing — which is
@@ -138,7 +138,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<KernelCmdlin
       // compared against what is actually on the line rather than against the argument list:
       // somebody adding an unrelated parameter by hand is not drift this resource should undo, and
       // reporting it as a change every time would train everybody to ignore the diff
-      const wanted = merge(old.cmdline, args.flags);
+      const wanted = mergeCmdline(old.cmdline, args.flags);
       return {
         changes: transportChanged(old) || wanted !== old.cmdline,
         replaces: [],

@@ -209,7 +209,7 @@ export function extractCommand(format: ArchiveFormat, file: string, into: string
  *  5. clean up through a trap, so a rejected download is not left behind to be found later and
  *     trusted.
  */
-export function installScript(args: {
+export function archiveInstallScript(args: {
   url: string;
   sha256: string;
   prefix: string;
@@ -470,7 +470,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<ArchiveArgs,
       return { ...wanted, installed: before.installed, owner: before.owner, group: before.group, version: before.version };
     }
     await must(host, escalate(host, act === 'install'
-      ? installScript(wanted)
+      ? archiveInstallScript(wanted)
       : chownCommand(wanted.prefix, wanted.owner, wanted.group)));
 
     const after = await readArchive(host, wanted);

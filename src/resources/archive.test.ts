@@ -6,7 +6,7 @@ import {
   extractCommand,
   formatOf,
   installNeeded,
-  installScript,
+  archiveInstallScript,
   ownershipChanged,
   parseProbe,
   parseVersion,
@@ -88,29 +88,29 @@ describe('unpacking', () => {
  */
 describe('composing the install', () => {
   it('verifies before it unpacks', () => {
-    const script = installScript(source);
+    const script = archiveInstallScript(source);
     expect(script.indexOf('sha256sum -c')).toBeLessThan(script.indexOf('tar '));
   });
 
   it('stops the whole command when verification fails', () => {
     // without set -e the failing checksum is a non-zero exit in the middle of a list, and the unpack
     // on the next line runs anyway
-    expect(installScript(source).startsWith('set -e')).toBe(true);
+    expect(archiveInstallScript(source).startsWith('set -e')).toBe(true);
   });
 
   it('downloads into a private directory rather than a predictable path', () => {
-    const script = installScript(source);
+    const script = archiveInstallScript(source);
     expect(script).toContain('mktemp -d');
     expect(script).not.toMatch(/-o ['"]?\/tmp\/[a-z]/);
   });
 
   it('removes the download whether or not it was accepted', () => {
     // a rejected archive left on disk is one somebody finds later and assumes was fine
-    expect(installScript(source)).toContain('trap');
+    expect(archiveInstallScript(source)).toContain('trap');
   });
 
   it('unpacks to a staging directory and moves it, so a half-extracted tree is never visible', () => {
-    const script = installScript(source);
+    const script = archiveInstallScript(source);
     expect(script.indexOf('-C "$dir/unpacked"')).toBeLessThan(script.indexOf('mv "$dir/unpacked"'));
     // unpacking straight into the prefix would leave a partial tree at the path everything refers
     // to for as long as extraction takes, and for ever if it fails halfway
@@ -118,44 +118,44 @@ describe('composing the install', () => {
   });
 
   it('moves the link last, because that is the step anything else can see', () => {
-    const script = installScript(source);
+    const script = archiveInstallScript(source);
     expect(script.indexOf('mv "$dir/unpacked"')).toBeLessThan(script.indexOf('ln -sfn'));
   });
 
   it('relinks with -n, so a link at a directory is replaced rather than written inside it', () => {
     // ln -sf onto an existing symlink-to-directory creates the new link *under* the target, and the
     // old version stays live while a link appears somewhere nobody looks
-    expect(installScript(source)).toContain('ln -sfn');
+    expect(archiveInstallScript(source)).toContain('ln -sfn');
   });
 
   it('leaves the link step out when there is no link', () => {
-    expect(installScript({ ...source, link: '' })).not.toContain('ln -s');
-    expect(installScript({ ...source, link: undefined })).not.toContain('ln -s');
+    expect(archiveInstallScript({ ...source, link: '' })).not.toContain('ln -s');
+    expect(archiveInstallScript({ ...source, link: undefined })).not.toContain('ln -s');
   });
 
   it('passes the staging paths as shell variables rather than as quoted literals', () => {
     // $dir comes from mktemp at run time; single-quoting it would unpack into a directory literally
     // called $dir in the working directory
-    const script = installScript(source);
+    const script = archiveInstallScript(source);
     expect(script).toContain('-C "$dir/unpacked"');
     expect(script).not.toContain("'$dir");
   });
 
   it('quotes the url, so a query string cannot become shell syntax', () => {
-    const script = installScript({ ...source, url: 'https://example.com/a.tar.gz?x=1&y=2' });
+    const script = archiveInstallScript({ ...source, url: 'https://example.com/a.tar.gz?x=1&y=2' });
     expect(script).toContain("'https://example.com/a.tar.gz?x=1&y=2'");
     // unquoted, the & backgrounds curl and the checksum runs against a file that has not arrived
     expect(script).not.toMatch(/curl [^']*&y=2/);
   });
 
   it('quotes the checksum and the prefix', () => {
-    const script = installScript({ ...source, prefix: "/opt/it's" });
+    const script = archiveInstallScript({ ...source, prefix: "/opt/it's" });
     expect(script).toContain(`'${'a'.repeat(64)}'`);
     expect(script).toContain(String.raw`'/opt/it'\''s'`);
   });
 
   it('is the same string every time, so a refresh does not look like a change', () => {
-    expect(installScript(source)).toBe(installScript(source));
+    expect(archiveInstallScript(source)).toBe(archiveInstallScript(source));
   });
 });
 
@@ -293,7 +293,7 @@ describe('who owns the unpacked tree', () => {
   });
 
   it('chowns after the move, so the tree is owned before anything points at it', () => {
-    const script = installScript({ ...source, owner: 'svc', group: 'svc' });
+    const script = archiveInstallScript({ ...source, owner: 'svc', group: 'svc' });
     expect(script.indexOf('mv "$dir/unpacked"')).toBeLessThan(script.indexOf('chown -R'));
     expect(script.indexOf('chown -R')).toBeLessThan(script.indexOf('ln -sfn'));
   });
@@ -301,19 +301,19 @@ describe('who owns the unpacked tree', () => {
   it('chowns the link itself rather than what it points at', () => {
     // -h, or the chown follows the link to the prefix that was just chowned anyway — and to the
     // wrong prefix entirely once an upgrade has repointed it
-    const script = installScript({ ...source, owner: 'svc', group: 'svc' });
+    const script = archiveInstallScript({ ...source, owner: 'svc', group: 'svc' });
     expect(script).toContain("chown -h 'svc:svc' '/opt/widget/current'");
   });
 
   it('defaults to root, so nothing declared before the field existed changes', () => {
-    expect(installScript(source)).toContain("chown -R 'root:root'");
+    expect(archiveInstallScript(source)).toContain("chown -R 'root:root'");
   });
 
   it('does not let the archive choose who owns files on the machine', () => {
     // tar run as root restores the uids recorded in the archive by default, which makes ownership
     // depend on how somebody else packed the tarball rather than on what was declared
     expect(extractCommand('tar.gz', '/t/a', '/t/u')).toContain('--no-same-owner');
-    expect(installScript(source)).toContain('--no-same-owner');
+    expect(archiveInstallScript(source)).toContain('--no-same-owner');
   });
 
   it('reports a prefix owned by somebody else as changed', () => {
