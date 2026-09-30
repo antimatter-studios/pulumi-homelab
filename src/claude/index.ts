@@ -90,13 +90,13 @@ export interface ClaudeSharedArgs {
 export interface ClaudeShared {
   path: string;
   entries: SharedEntry[];
-  /** Everything a profile has to exist after, passed to `claudeProfile` as `shared`. */
+  /** Everything a profile has to exist after, passed to `claudeProfileResource` as `shared`. */
   resources: pulumi.Resource[];
 }
 
 export interface ClaudeProfileArgs {
   account: string;
-  /** The backend this profile links into, from {@link claudeShared}. */
+  /** The backend this profile links into, from {@link claudeSharedResource}. */
   shared: ClaudeShared;
   /** This profile's directory — `~/.claude-work`. What `CLAUDE_CONFIG_DIR` is set to. */
   dir: string;
@@ -135,22 +135,22 @@ export function sharedTarget(shared: string, entry: string): string {
 export function profileRefusal(args: { shared: { path: string }; dir: string }): string | undefined {
   const shared = args.shared.path.replace(/\/+$/, '');
   const dir = args.dir.replace(/\/+$/, '');
-  if (shared === dir) return `claudeProfile: dir and shared are the same directory (${dir}); a profile has to be somewhere else`;
+  if (shared === dir) return `claudeProfileResource: dir and shared are the same directory (${dir}); a profile has to be somewhere else`;
   return undefined;
 }
 
 /**
  * The backend every profile links into, declared once.
  *
- * Separate from `claudeProfile` for one reason, and it is the failure this package keeps meeting:
+ * Separate from `claudeProfileResource` for one reason, and it is the failure this package keeps meeting:
  * two profiles each declaring `~/.claude` would be two resources owning one path, re-applying
  * different answers on alternate runs with both reporting success. The backend has one owner and
  * the profiles depend on it.
  *
  * It is also the default profile. Nothing here is specific to being *shared* — a machine with one
- * login has exactly this and no `claudeProfile` at all.
+ * login has exactly this and no `claudeProfileResource` at all.
  */
-export function claudeShared(host: Target, name: string, args: ClaudeSharedArgs, opts?: pulumi.CustomResourceOptions): ClaudeShared {
+export function claudeSharedResource(host: Target, name: string, args: ClaudeSharedArgs, opts?: pulumi.CustomResourceOptions): ClaudeShared {
   const entries = args.entries ?? SHARED_DEFAULTS;
   const group = args.group ?? args.account;
 
@@ -181,7 +181,7 @@ export function claudeShared(host: Target, name: string, args: ClaudeSharedArgs,
 }
 
 /** A Claude Code profile: its own credentials, the shared account's work. */
-export function claudeProfile(host: Target, name: string, args: ClaudeProfileArgs, opts?: pulumi.CustomResourceOptions): ClaudeProfile {
+export function claudeProfileResource(host: Target, name: string, args: ClaudeProfileArgs, opts?: pulumi.CustomResourceOptions): ClaudeProfile {
   const refusal = profileRefusal(args);
   if (refusal) throw new Error(refusal);
 

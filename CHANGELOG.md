@@ -13,7 +13,7 @@ breaking changes live.
 
 ### Added
 
-- **`t3code()` unit limits** — `unit.limits` (`memoryHigh`, `memoryMax`, `cpuWeight`, `ioWeight`)
+- **`t3codeResource()` unit limits** — `unit.limits` (`memoryHigh`, `memoryMax`, `cpuWeight`, `ioWeight`)
   and `unit.tmpDir`, each written into the service file only when set, so a unit that asks for none
   of them is byte for byte what it was. Agents run builds and test suites as children of this unit,
   and uncapped on a machine that also serves things they starve those services: memory runs out,

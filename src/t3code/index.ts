@@ -251,7 +251,7 @@ export const AGENT_DEFAULTS: AgentSpec[] = [
  * its installer would leave two owners of one service, which is the failure that had
  * a service rewritten on every deployment for weeks before anyone noticed.
  */
-export function t3code(host: Target, args: T3CodeArgs): T3Code {
+export function t3codeResource(host: Target, args: T3CodeArgs): T3Code {
   const account_ = args.account ?? DEFAULT_ACCOUNT;
   const HOME = args.home;
   const WORKSPACE = args.workspace;

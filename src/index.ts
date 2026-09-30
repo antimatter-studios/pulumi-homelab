@@ -37,7 +37,7 @@ export {
 } from './mode.ts';
 export { FluxApp, ignoreRules, type FluxAppArgs } from './flux/index.ts';
 export {
-  t3code,
+  t3codeResource,
   AGENT_DEFAULTS,
   T3_DEFAULT,
   type AgentSpec,
@@ -45,8 +45,8 @@ export {
   type T3Code,
 } from './t3code/index.ts';
 export {
-  claudeShared,
-  claudeProfile,
+  claudeSharedResource,
+  claudeProfileResource,
   sharedTarget,
   profileRefusal,
   SHARED_DEFAULTS,
