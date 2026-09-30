@@ -68,7 +68,65 @@ export interface T3CodeArgs {
    * boundary.
    */
   sudo?: { file?: string };
-  unit?: { name?: string };
+  unit?: UnitArgs;
+}
+
+export interface UnitArgs {
+  name?: string;
+  /**
+   * How much of the machine the agents may take. Unset, they may take all of it.
+   *
+   * Agents run test suites, builds and installs in parallel, and each of those is a child of this
+   * unit. On a machine that also serves things around the clock, an uncapped agent workload is the
+   * thing that takes those services down: memory runs out, the kernel stalls every process on reclaim,
+   * and the cluster's API stops answering long before anything is killed.
+   *
+   * `memoryHigh` throttles and reclaims; `memoryMax` is where the kernel kills, and it kills inside
+   * this unit rather than choosing a victim across the machine. The weights only matter under
+   * contention: an idle machine still gives the agents everything.
+   */
+  limits?: UnitLimits;
+  /**
+   * `TMPDIR` for everything the harness spawns.
+   *
+   * Where `/tmp` is a tmpfs, what agents write there is memory that cannot be reclaimed while the
+   * file exists, and agents leave a lot behind. A directory on disk turns that into disk usage.
+   * This module does not declare the directory, for the same reason it does not declare the
+   * workspace: where it lives and how it is aged is a fact about the machine.
+   */
+  tmpDir?: string;
+}
+
+export interface UnitLimits {
+  /** systemd `MemoryHigh=`, e.g. `6G`. */
+  memoryHigh?: string;
+  /** systemd `MemoryMax=`, e.g. `8G`. */
+  memoryMax?: string;
+  /** systemd `CPUWeight=`, 1–10000; the default is 100. */
+  cpuWeight?: number;
+  /** systemd `IOWeight=`, 1–10000; the default is 100. */
+  ioWeight?: number;
+}
+
+/**
+ * The `[Service]` lines for the limits and `TMPDIR`, or an empty string when neither is set, so a
+ * unit that asks for nothing is byte for byte what it was before these options existed.
+ */
+export function unitResourceLines(unit: UnitArgs = {}): string {
+  const lines: string[] = [];
+  const limits = unit.limits ?? {};
+  for (const [name, value] of [['CPUWeight', limits.cpuWeight], ['IOWeight', limits.ioWeight]] as const) {
+    if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 10000)) {
+      throw new Error(`${name} must be an integer from 1 to 10000, not ${value}`);
+    }
+  }
+  if (limits.memoryHigh) lines.push(`MemoryHigh=${limits.memoryHigh}`);
+  if (limits.memoryMax) lines.push(`MemoryMax=${limits.memoryMax}`);
+  if (limits.cpuWeight !== undefined) lines.push(`CPUWeight=${limits.cpuWeight}`);
+  if (limits.ioWeight !== undefined) lines.push(`IOWeight=${limits.ioWeight}`);
+  if (unit.tmpDir) lines.push(`Environment=TMPDIR=${unit.tmpDir}`);
+  if (!lines.length) return '';
+  return `\n# What the agents may take of the machine, and where their scratch goes. Declared by the stack.\n${lines.join('\n')}\n`;
 }
 
 export interface T3Code {
@@ -629,7 +687,7 @@ NoNewPrivileges=no
 
 Restart=always
 RestartSec=5
-
+${unitResourceLines(args.unit)}
 StandardOutput=journal
 StandardError=journal
 

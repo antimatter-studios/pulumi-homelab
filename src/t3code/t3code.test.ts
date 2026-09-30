@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_DEFAULTS, T3_DEFAULT } from './index.ts';
+import { AGENT_DEFAULTS, T3_DEFAULT, unitResourceLines } from './index.ts';
 
 describe('the harness release this package was tested against', () => {
   it('pins a version and the checksum for it together', () => {
@@ -58,5 +58,31 @@ describe('the agent CLIs installed by default', () => {
     for (const agent of AGENT_DEFAULTS.filter((a) => a.key !== 'codex')) {
       expect(agent.strip, agent.key).toBe(1);
     }
+  });
+});
+
+describe('what the agents may take of the machine', () => {
+  it('adds nothing when nothing is asked for, so existing units are unchanged', () => {
+    expect(unitResourceLines()).toBe('');
+    expect(unitResourceLines({ name: 't3code', limits: {} })).toBe('');
+  });
+
+  it('writes each limit and TMPDIR as a [Service] line', () => {
+    const lines = unitResourceLines({
+      limits: { memoryHigh: '6G', memoryMax: '8G', cpuWeight: 20, ioWeight: 20 },
+      tmpDir: '/mnt/storage/t3code/tmp',
+    });
+    expect(lines).toContain('\nMemoryHigh=6G\n');
+    expect(lines).toContain('\nMemoryMax=8G\n');
+    expect(lines).toContain('\nCPUWeight=20\n');
+    expect(lines).toContain('\nIOWeight=20\n');
+    expect(lines).toContain('\nEnvironment=TMPDIR=/mnt/storage/t3code/tmp\n');
+  });
+
+  it('refuses a weight systemd would reject', () => {
+    // systemd ignores an invalid weight with a log line, so the unit starts with no weight at all
+    expect(() => unitResourceLines({ limits: { cpuWeight: 0 } })).toThrow(/CPUWeight/);
+    expect(() => unitResourceLines({ limits: { ioWeight: 20000 } })).toThrow(/IOWeight/);
+    expect(() => unitResourceLines({ limits: { cpuWeight: 2.5 } })).toThrow(/CPUWeight/);
   });
 });
