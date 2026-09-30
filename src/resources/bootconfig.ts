@@ -312,7 +312,7 @@ function firstHeader(lines: string[]): number {
 }
 
 /** Take exactly these lines out of one section, and nothing else with them. */
-export function removeFromSection(
+export function removeFromBootSection(
   text: string,
   section: string,
   settings: Record<string, string>,
@@ -466,7 +466,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<BootConfigAr
       // removing every line in a section would take the ones somebody else put there
       const [path = ''] = id.split('#');
       const current = await must(host, escalate(host, `cat ${shellQuote(path)}`));
-      const without = removeFromSection(current, state.section, state.settings ?? {}, state.overlays ?? []);
+      const without = removeFromBootSection(current, state.section, state.settings ?? {}, state.overlays ?? []);
       await must(host, escalate(host, heredoc(path, without)));
     },
   };

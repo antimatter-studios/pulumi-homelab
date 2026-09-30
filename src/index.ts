@@ -36,6 +36,26 @@ export {
   type SpecialBits,
 } from './mode.ts';
 export { FluxApp, ignoreRules, type FluxAppArgs } from './flux/index.ts';
+export {
+  t3codeResource,
+  AGENT_DEFAULTS,
+  T3_DEFAULT,
+  type AgentSpec,
+  type T3CodeArgs,
+  type T3Code,
+} from './t3code/index.ts';
+export {
+  claudeSharedResource,
+  claudeProfileResource,
+  sharedTarget,
+  profileRefusal,
+  SHARED_DEFAULTS,
+  type ClaudeSharedArgs,
+  type ClaudeShared,
+  type ClaudeProfileArgs,
+  type ClaudeProfile,
+  type SharedEntry,
+} from './claude/index.ts';
 export { fluxReady, fluxReason, type FluxCheckArgs } from './flux/ready.ts';
 export { providerChanged, withLegacyAlias } from './upgrade.ts';
 export { mountedAt } from './checks.ts';
@@ -80,9 +100,7 @@ export {
   archiveAct,
   chownCommand,
   ownershipChanged,
-  // deb.ts already exports an `installScript`, and the two compose different things: apt against a
-  // downloaded file, and an unpack into a staging directory. Named apart rather than shadowed.
-  installScript as archiveInstallScript,
+  archiveInstallScript,
   probeCommand,
   parseProbe,
   parseVersion,
@@ -246,6 +264,16 @@ export {
 } from './resources/sudo.ts';
 export { Precondition, readPrecondition, checkCommand, type PreconditionArgs } from './resources/precondition.ts';
 export {
+  ProtectedFile,
+  substituteArgv,
+  sourceRefusal,
+  needsMaterial,
+  SEEDED,
+  type ProtectedFileArgs,
+  type Source,
+  type Enforcement,
+} from './resources/protected.ts';
+export {
   PosixAcl,
   readAcl,
   parseGetfacl,
@@ -255,9 +283,7 @@ export {
   entrySatisfied,
   formatEntry,
   formatRemoval,
-  // fstab.ts already exports a `findEntry` for the line describing a mount point. Named apart
-  // rather than shadowed.
-  findEntry as findAclEntry,
+  findAclEntry,
   unsatisfied,
   abandoned,
   setfaclCommand,
@@ -282,7 +308,7 @@ export {
   readBootConfig,
   parseBootSections,
   applyToSection,
-  removeFromSection as removeFromBootSection,
+  removeFromBootSection,
   parseVcgencmd,
   renderSettings,
   readOverlays,
@@ -295,7 +321,7 @@ export {
 export {
   KernelCmdline,
   readCmdline,
-  merge as mergeCmdline,
+  mergeCmdline,
   bootedWith,
   CANDIDATES,
   type KernelCmdlineArgs,

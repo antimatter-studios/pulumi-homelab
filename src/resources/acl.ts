@@ -183,7 +183,7 @@ export function parseGetfacl(out: string): { access: AclEntry[]; defaults: AclEn
 }
 
 /** What the machine says about one declared entry, or an absent one when it has nothing to say. */
-export function findEntry(actual: AclEntry[], wanted: AclEntryArgs): AclEntry {
+export function findAclEntry(actual: AclEntry[], wanted: AclEntryArgs): AclEntry {
   const found = actual.find((entry) => entryKey(entry) === entryKey(wanted));
   // absent and present-with-nothing are different states, and `---` would conflate them
   return found ?? { type: wanted.type, name: wanted.name ?? '', perms: '', effective: '' };
@@ -208,7 +208,7 @@ export function unsatisfied(
   scope: AclScope,
 ): { entry: AclEntryArgs; scope: AclScope; found: AclEntry }[] {
   return wanted
-    .map((entry) => ({ entry, scope, found: findEntry(actual, entry) }))
+    .map((entry) => ({ entry, scope, found: findAclEntry(actual, entry) }))
     .filter(({ entry, found }) => !entrySatisfied(found, entry));
 }
 
@@ -295,8 +295,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<PosixAclArgs
 
     const after = await readAcl(host, args.path);
     if (after === null) throw new Error(`${args.path} on ${describe(host)} disappeared while its ACL was being set`);
-    const actual = wanted.entries.map((entry) => findEntry(after.access, entry));
-    const defaultActual = wanted.defaultEntries.map((entry) => findEntry(after.defaults, entry));
+    const actual = wanted.entries.map((entry) => findAclEntry(after.access, entry));
+    const defaultActual = wanted.defaultEntries.map((entry) => findAclEntry(after.defaults, entry));
 
     const stillWrong = [
       ...wanted.entries.filter((entry, at) => !entrySatisfied(actual[at]!, entry)).map((e) => formatEntry(e, 'access')),
@@ -344,8 +344,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<PosixAclArgs
           entries,
           defaultEntries,
           // the two that come from the machine rather than from what was remembered
-          actual: entries.map((entry) => findEntry(actual.access, entry)),
-          defaultActual: defaultEntries.map((entry) => findEntry(actual.defaults, entry)),
+          actual: entries.map((entry) => findAclEntry(actual.access, entry)),
+          defaultActual: defaultEntries.map((entry) => findAclEntry(actual.defaults, entry)),
         },
       };
     },

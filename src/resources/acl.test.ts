@@ -4,7 +4,7 @@ import {
   entryKey,
   entryRefusal,
   entrySatisfied,
-  findEntry,
+  findAclEntry,
   formatEntry,
   formatRemoval,
   normalisePerms,
@@ -149,7 +149,7 @@ describe('an entry the machine has nothing to say about', () => {
   const actual = parseGetfacl(POOL).access;
 
   it('comes back absent rather than missing', () => {
-    const found = findEntry(actual, { type: 'user', name: 'nobody', perms: 'rwx' });
+    const found = findAclEntry(actual, { type: 'user', name: 'nobody', perms: 'rwx' });
     expect(found.perms).toBe('');
     expect(found.effective).toBe('');
   });
@@ -157,12 +157,12 @@ describe('an entry the machine has nothing to say about', () => {
   it('is not the same as an entry granting nothing', () => {
     // `---` is a decision somebody made and `` is an entry that was never set; conflating them
     // would make a revoked grant look like one that was never asked for
-    expect(findEntry(actual, { type: 'user', name: 'nobody', perms: 'rwx' }).perms)
+    expect(findAclEntry(actual, { type: 'user', name: 'nobody', perms: 'rwx' }).perms)
       .not.toBe(normalisePerms('---'));
   });
 
   it('is never satisfied', () => {
-    expect(entrySatisfied(findEntry(actual, { type: 'user', name: 'nobody', perms: 'rwx' }),
+    expect(entrySatisfied(findAclEntry(actual, { type: 'user', name: 'nobody', perms: 'rwx' }),
       { type: 'user', name: 'nobody', perms: 'rwx' })).toBe(false);
   });
 });

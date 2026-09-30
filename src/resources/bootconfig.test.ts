@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyToSection, keyOf, parseBootSections, parseVcgencmd, removeFromSection, renderSettings, overlayNameOf, unknownOverlays,
+  applyToSection, keyOf, parseBootSections, parseVcgencmd, removeFromBootSection, renderSettings, overlayNameOf, unknownOverlays,
 } from './bootconfig.ts';
 
 /**
@@ -116,14 +116,14 @@ describe('putting lines into one section', () => {
 
 describe('taking lines out again', () => {
   it('removes only what was named, from only the section named', () => {
-    const without = removeFromSection(REAL, 'all', {}, ['dtparam=pciex1']);
+    const without = removeFromBootSection(REAL, 'all', {}, ['dtparam=pciex1']);
     expect(parseBootSections(without).get('all')).not.toContain('dtparam=pciex1');
     expect(parseBootSections(without).get('all')).toContain('dtoverlay=vc4-kms-v3d');
     expect(parseBootSections(without).get('cm5')).toContain('dtoverlay=dwc2,dr_mode=host');
   });
 
   it('leaves the comments behind, because a note outlives the line it explains', () => {
-    const without = removeFromSection(REAL, 'all', {}, ['dtparam=pciex1']);
+    const without = removeFromBootSection(REAL, 'all', {}, ['dtparam=pciex1']);
     expect(without).toContain('# NOTE: on the previous card these lived under [cm5]');
   });
 });
