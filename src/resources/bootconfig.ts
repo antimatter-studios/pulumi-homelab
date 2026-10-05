@@ -2,6 +2,7 @@ import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredoc, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 import { disagreeing } from '../resolved.ts';
+import { sameJson } from '../same.ts';
 
 /**
  * Lines in a Raspberry Pi's `config.txt`, inside one conditional filter section.
@@ -451,7 +452,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<BootConfigAr
       return {
         changes: transportChanged(old)
           || old.section !== section
-          || JSON.stringify(old.settings) !== JSON.stringify(settings)
+          || !sameJson(old.settings, settings)
           || old.overlays.join('\n') !== overlays.join('\n'),
         // a different section is a different fact about a different board, and the old one has to
         // be taken out rather than left applying to something nothing describes
