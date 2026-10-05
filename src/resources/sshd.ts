@@ -2,6 +2,7 @@ import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, heredocInto, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 import { disagreeing } from '../resolved.ts';
+import { sameJson } from '../same.ts';
 
 /**
  * A drop-in for sshd, never an edit to `sshd_config`.
@@ -320,8 +321,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SshdConfigAr
       const match = args.match ?? {};
       return {
         changes: transportChanged(old)
-          || JSON.stringify(old.settings) !== JSON.stringify(settings)
-          || JSON.stringify(old.match) !== JSON.stringify(match)
+          || !sameJson(old.settings, settings)
+          || !sameJson(old.match, match)
           || old.file !== (args.file ?? old.file),
         replaces: old.file !== (args.file ?? old.file) ? ['file'] : [],
         stables: [],

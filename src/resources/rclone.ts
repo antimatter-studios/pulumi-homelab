@@ -1,6 +1,7 @@
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
+import { sameJson } from '../same.ts';
 
 /**
  * An rclone remote — a named backend in rclone's config file.
@@ -187,9 +188,9 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<RcloneRemote
           || old.type !== args.type
           || old.remote !== args.remote
           || old.config !== (args.config ?? DEFAULTS.config)
-          || JSON.stringify(old.settings) !== JSON.stringify(settings)
+          || !sameJson(old.settings, settings)
           // compared in plaintext on both sides, which is the whole point
-          || JSON.stringify(old.secrets) !== JSON.stringify(secrets),
+          || !sameJson(old.secrets, secrets),
         replaces: old.remote !== args.remote ? ['remote'] : [],
         stables: [],
         deleteBeforeReplace: true,
