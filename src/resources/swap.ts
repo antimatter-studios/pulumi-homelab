@@ -23,6 +23,12 @@ import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
  * zram is **reported and not managed**. A machine using it has made a different choice about the
  * whole question, and half-managing that choice is worse than describing it accurately and leaving
  * it to whoever made it.
+ *
+ * `otherSwap: 'allow'` is how such a machine says so. Off then means this resource's own share of
+ * the question — the package masked, the swapfile it knows about gone — and leaves zram and any
+ * swap declared elsewhere running. Without it, a machine that boots from an SD card and swaps to
+ * zram and NVMe cannot be described at all: `enabled: false` would `swapoff -a` on the first
+ * refresh, and `enabled: true` would put a swapfile on the card.
  */
 export interface SwapArgs {
   /**
@@ -47,7 +53,18 @@ export interface SwapArgs {
   unit?: string;
   /** Which fstab to edit. */
   fstab?: string;
+  /**
+   * What `enabled: false` does to swap this resource did not provide.
+   *
+   * `'forbid'`, the default, is the original meaning: no swap of any kind — `swapoff -a`, and every
+   * swap line in fstab commented. `'allow'` narrows it to the declared `path` and the unit: that file
+   * off and out of fstab, the unit masked, and everything else left alone. Ignored when `enabled`
+   * is true.
+   */
+  otherSwap?: 'forbid' | 'allow';
 }
+
+type OtherSwap = NonNullable<SwapArgs['otherSwap']>;
 
 interface ActiveSwap {
   path: string;
@@ -71,9 +88,11 @@ interface SwapState {
   dphys: string | null;
   /** Reported so a machine using it is described honestly, never managed. */
   zram: boolean;
+  /** Absent from state written before the option existed, which meant `'forbid'`. */
+  otherSwap?: OtherSwap;
 }
 
-const DEFAULTS = { path: '/var/swap' } as const;
+const DEFAULTS = { path: '/var/swap', otherSwap: 'forbid' } as const;
 const DPHYS = 'dphys-swapfile';
 const FSTAB = '/etc/fstab';
 
@@ -159,13 +178,19 @@ export async function readSwap(
  * and swap that is on now with nothing in fstab will be gone after a reboot — so `alreadyOff`
  * requires the unit to be masked or absent as well, because a merely-disabled `dphys-swapfile` is
  * re-enabled by an `apt upgrade` of the package.
+ *
+ * With `otherSwap: 'allow'` only the declared path counts towards "on": zram and swap declared
+ * elsewhere are somebody else's decision, and reading them as drift would `swapoff` them.
  */
 export function swapAction(
   before: { active: { path: string; sizeMb: number }[]; fstab: string[]; dphys: string | null },
-  wanted: { enabled: boolean; sizeMb?: number; path: string },
+  wanted: { enabled: boolean; sizeMb?: number; path: string; otherSwap?: OtherSwap },
 ): 'enable' | 'disable' | 'nothing' {
-  const alreadyOff = before.active.length === 0
-    && before.fstab.length === 0
+  const counted = (wanted.otherSwap ?? DEFAULTS.otherSwap) === 'allow'
+    ? { active: before.active.filter((swap) => swap.path === wanted.path), fstab: fstabLinesFor(before.fstab, wanted.path) }
+    : before;
+  const alreadyOff = counted.active.length === 0
+    && counted.fstab.length === 0
     && (before.dphys === null || before.dphys === 'masked');
   const alreadyOn = before.active.some((swap) => swap.path === wanted.path)
     && before.fstab.length > 0
@@ -176,13 +201,31 @@ export function swapAction(
   return alreadyOff ? 'nothing' : 'disable';
 }
 
-/** Turn all of it off, in both tenses. */
-async function disable(host: Target, state: Pick<SwapState, 'dphys'>, unit = DPHYS, fstab = FSTAB): Promise<void> {
+/** The fstab swap lines whose source is `path`, out of lines `parseFstabSwap` already kept. */
+export function fstabLinesFor(lines: string[], path: string): string[] {
+  return lines.filter((line) => line.split(/\s+/)[0] === path);
+}
+
+/**
+ * Turn it off, in both tenses: all swap, or with `otherSwap: 'allow'` only the declared path.
+ *
+ * The narrow form matches the fstab line on its first field, exactly as `fstabLinesFor` reads it,
+ * so what this comments out is what the next read stops counting.
+ */
+async function disable(
+  host: Target,
+  state: Pick<SwapState, 'dphys'>,
+  unit = DPHYS,
+  fstab = FSTAB,
+  only?: string,
+): Promise<void> {
   const steps = [
-    'swapoff -a || true',
+    only === undefined ? 'swapoff -a || true' : `swapoff ${shellQuote(only)} 2>/dev/null || true`,
     // comment the swap lines rather than remove them: the machine keeps the record of what it used
-    // to do, and a person reading fstab later sees a decision instead of an absence
-    `awk 'BEGIN{OFS=FS=" "} /^[[:space:]]*#/ {print; next} $3 == "swap" {print "#" $0; next} {print}' ` +
+    // to do, and a person reading fstab later sees a decision instead of an absence. The path goes
+    // in with -v rather than into the program text, so no quoting of it can change the program
+    `awk -v only=${shellQuote(only ?? '')} ` +
+    `'BEGIN{OFS=FS=" "} /^[[:space:]]*#/ {print; next} $3 == "swap" && (only == "" || $1 == only) {print "#" $0; next} {print}' ` +
     `${shellQuote(fstab)} > ${shellQuote(`${fstab}.pulumi`)} && mv ${shellQuote(`${fstab}.pulumi`)} ${shellQuote(fstab)}`,
   ];
   if (state.dphys !== null) {
@@ -237,15 +280,16 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SwapArgs, Sw
     const unit = args.unit ?? DPHYS;
     const fstab = args.fstab ?? FSTAB;
     const before = await readSwap(host, path, unit, fstab);
-    const action = swapAction(before, { enabled: args.enabled, sizeMb: args.sizeMb, path });
+    const otherSwap = args.otherSwap ?? DEFAULTS.otherSwap;
+    const action = swapAction(before, { enabled: args.enabled, sizeMb: args.sizeMb, path, otherSwap });
     if (action === 'enable') {
       if (args.sizeMb === undefined) throw new Error('swap that is enabled needs a sizeMb');
       await enable(host, path, args.sizeMb, before.dphys, unit, fstab);
     } else if (action === 'disable') {
-      await disable(host, before, unit, fstab);
+      await disable(host, before, unit, fstab, otherSwap === 'allow' ? path : undefined);
     }
     const after = await readSwap(host, path, unit, fstab);
-    return { ...after, unit, fstabFile: fstab, enabled: args.enabled, sizeMb: args.sizeMb ?? null };
+    return { ...after, unit, fstabFile: fstab, enabled: args.enabled, sizeMb: args.sizeMb ?? null, otherSwap };
   };
 
   return {
@@ -267,6 +311,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SwapArgs, Sw
           ...actual,
           unit: state?.unit ?? DPHYS,
           fstabFile: state?.fstabFile ?? FSTAB,
+          otherSwap: state?.otherSwap ?? DEFAULTS.otherSwap,
         },
       };
     },
@@ -277,8 +322,13 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SwapArgs, Sw
 
     async diff(_id, old, args) {
       const path = args.path ?? DEFAULTS.path;
-      const activeNow = old.active.length > 0;
-      const comingBack = old.fstab.length > 0 || old.dphys === 'enabled';
+      const otherSwap = args.otherSwap ?? DEFAULTS.otherSwap;
+      // with 'allow', zram and swap declared elsewhere are not this resource's to count
+      const allowed = otherSwap === 'allow';
+      const active = allowed ? old.active.filter((swap) => swap.path === path) : old.active;
+      const fstab = allowed ? fstabLinesFor(old.fstab, path) : old.fstab;
+      const activeNow = active.length > 0;
+      const comingBack = fstab.length > 0 || old.dphys === 'enabled';
       // the comparison is against the machine in both tenses rather than against the last arguments:
       // this is the resource where 'what I asked for last time' is the least useful thing to know
       const satisfied = args.enabled
@@ -287,6 +337,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SwapArgs, Sw
       return {
         changes: transportChanged(old)
           || !satisfied || old.enabled !== args.enabled || old.path !== path
+          || (old.otherSwap ?? DEFAULTS.otherSwap) !== otherSwap
           || (args.enabled && args.sizeMb !== undefined && old.sizeMb !== args.sizeMb),
         replaces: old.path !== path ? ['path'] : [],
         stables: [],
@@ -321,6 +372,7 @@ export class Swap extends pulumi.dynamic.Resource {
       path: DEFAULTS.path,
       unit: DPHYS,
       fstabFile: FSTAB,
+      otherSwap: DEFAULTS.otherSwap,
       ...args,
     }, withLegacyAlias(opts), 'homelab', 'Swap');
   }
