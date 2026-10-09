@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseFstabSwap, parseProcSwaps, swapAction } from './swap.ts';
+import { fstabLinesFor, parseFstabSwap, parseProcSwaps, swapAction } from './swap.ts';
 
 /**
  * The whole design of this resource is that what is active now and what will be active after a
@@ -118,5 +118,59 @@ describe('deciding whether anything needs doing', () => {
 
   it('accepts any size when none was asked for', () => {
     expect(swapAction(on, { enabled: true, path: '/var/swap' })).toBe('nothing');
+  });
+});
+
+/**
+ * A machine that boots from an SD card and swaps to zram and NVMe: off has to mean "never on the
+ * card", not "never at all". Reading the other swap as drift would `swapoff` it on the first
+ * refresh, which on a machine under memory pressure pulls gigabytes back into RAM at once.
+ */
+describe('leaving swap declared elsewhere alone', () => {
+  const elsewhere = {
+    active: [{ path: '/dev/zram0', sizeMb: 8192 }, { path: '/mnt/storage/swap/swap-1', sizeMb: 1024 }],
+    fstab: ['/mnt/storage/swap/swap-1 none swap pri=10,nofail 0 0'],
+    dphys: 'masked',
+  };
+  const allow = { enabled: false, path: '/var/swap', otherSwap: 'allow' as const };
+
+  it('does nothing when only other swap is running and the unit is masked', () => {
+    expect(swapAction(elsewhere, allow)).toBe('nothing');
+  });
+
+  it('still reads the same machine as swap to switch off without the option', () => {
+    // the default is unchanged: an existing declaration keeps meaning no swap of any kind
+    expect(swapAction(elsewhere, { enabled: false, path: '/var/swap' })).toBe('disable');
+  });
+
+  it('disables when the declared path is swapping', () => {
+    expect(swapAction({ ...elsewhere, active: [...elsewhere.active, { path: '/var/swap', sizeMb: 100 }] }, allow))
+      .toBe('disable');
+  });
+
+  it('disables when fstab will bring the declared path back', () => {
+    expect(swapAction({ ...elsewhere, fstab: [...elsewhere.fstab, '/var/swap none swap sw 0 0'] }, allow))
+      .toBe('disable');
+  });
+
+  it('disables when the unit is only disabled, so an upgrade could put swap on the card', () => {
+    expect(swapAction({ ...elsewhere, dphys: 'disabled' }, allow)).toBe('disable');
+  });
+
+  it('is ignored when swap is enabled', () => {
+    expect(swapAction({ ...elsewhere, active: [{ path: '/var/swap', sizeMb: 2048 }], fstab: ['/var/swap none swap sw 0 0'] },
+      { enabled: true, sizeMb: 2048, path: '/var/swap', otherSwap: 'allow' })).toBe('nothing');
+  });
+});
+
+describe('finding the fstab lines for one path', () => {
+  const lines = ['/var/swap none swap sw 0 0', '/var/swap2 none swap sw 0 0', 'UUID=abcd none swap sw 0 0'];
+
+  it('matches the source field exactly, not as a prefix', () => {
+    expect(fstabLinesFor(lines, '/var/swap')).toEqual(['/var/swap none swap sw 0 0']);
+  });
+
+  it('finds nothing for a path fstab does not mention', () => {
+    expect(fstabLinesFor(lines, '/swapfile')).toEqual([]);
   });
 });

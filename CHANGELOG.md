@@ -13,6 +13,12 @@ breaking changes live.
 
 ### Added
 
+- **`Swap` `otherSwap: 'allow'`** — `enabled: false` narrowed to this resource's own share: the
+  declared path off and out of fstab, the unit masked, and zram and swap declared elsewhere left
+  running. Without it a machine that boots from an SD card and swaps to zram and NVMe cannot be
+  described: `enabled: false` runs `swapoff -a` on the first refresh, which under memory pressure
+  pulls gigabytes back into RAM at once. The default, `'forbid'`, keeps the original meaning, so no
+  existing declaration changes; recorded without a revision bump for the same reason.
 - **`t3codeResource()` unit limits** — `unit.limits` (`memoryHigh`, `memoryMax`, `cpuWeight`, `ioWeight`)
   and `unit.tmpDir`, each written into the service file only when set, so a unit that asks for none
   of them is byte for byte what it was. Agents run builds and test suites as children of this unit,
