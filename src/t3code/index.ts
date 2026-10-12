@@ -102,6 +102,25 @@ export interface UnitLimits {
   memoryHigh?: string;
   /** systemd `MemoryMax=`, e.g. `8G`. */
   memoryMax?: string;
+  /**
+   * systemd `MemorySwapMax=`, e.g. `32G`. Unset, the agents may take all of the machine's swap.
+   *
+   * `memoryMax` caps RAM only. Over it the kernel does not kill: it pushes the unit's pages out to
+   * swap, so on a machine with a lot of swap a runaway process sails past `memoryMax` and grows into
+   * all of it. That happened on 2026-10-12: a test binary in an agent's worktree took 89 GB of swap
+   * in two hours, the machine ran out of swap and RAM together, and btrfs aborted a transaction for
+   * want of memory and forced the array read-only. With this set, the kill happens inside the unit
+   * at `memoryMax` + `memorySwapMax`, and the rest of the machine keeps its swap.
+   */
+  memorySwapMax?: string;
+  /**
+   * systemd `OOMPolicy=`: what happens to the unit when the kernel kills one of its processes.
+   *
+   * systemd's default for a service is `stop`, which takes the whole harness and every agent in it
+   * down because one test ran out of memory. `continue` lets the kernel kill the one process and
+   * leaves the rest running, which is what a memory cap on a unit full of unrelated agents is for.
+   */
+  oomPolicy?: 'continue' | 'stop' | 'kill';
   /** systemd `CPUWeight=`, 1–10000; the default is 100. */
   cpuWeight?: number;
   /** systemd `IOWeight=`, 1–10000; the default is 100. */
@@ -122,6 +141,8 @@ export function unitResourceLines(unit: UnitArgs = {}): string {
   }
   if (limits.memoryHigh) lines.push(`MemoryHigh=${limits.memoryHigh}`);
   if (limits.memoryMax) lines.push(`MemoryMax=${limits.memoryMax}`);
+  if (limits.memorySwapMax) lines.push(`MemorySwapMax=${limits.memorySwapMax}`);
+  if (limits.oomPolicy) lines.push(`OOMPolicy=${limits.oomPolicy}`);
   if (limits.cpuWeight !== undefined) lines.push(`CPUWeight=${limits.cpuWeight}`);
   if (limits.ioWeight !== undefined) lines.push(`IOWeight=${limits.ioWeight}`);
   if (unit.tmpDir) lines.push(`Environment=TMPDIR=${unit.tmpDir}`);
