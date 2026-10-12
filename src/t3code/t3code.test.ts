@@ -79,6 +79,18 @@ describe('what the agents may take of the machine', () => {
     expect(lines).toContain('\nEnvironment=TMPDIR=/mnt/storage/t3code/tmp\n');
   });
 
+  it('caps swap and keeps the unit running when one of its processes is killed', () => {
+    const lines = unitResourceLines({ limits: { memoryMax: '8G', memorySwapMax: '32G', oomPolicy: 'continue' } });
+    expect(lines).toContain('\nMemorySwapMax=32G\n');
+    expect(lines).toContain('\nOOMPolicy=continue\n');
+  });
+
+  it('leaves swap and the OOM policy to systemd when they are not asked for', () => {
+    const lines = unitResourceLines({ limits: { memoryMax: '8G' } });
+    expect(lines).not.toContain('MemorySwapMax');
+    expect(lines).not.toContain('OOMPolicy');
+  });
+
   it('refuses a weight systemd would reject', () => {
     // systemd ignores an invalid weight with a log line, so the unit starts with no weight at all
     expect(() => unitResourceLines({ limits: { cpuWeight: 0 } })).toThrow(/CPUWeight/);
