@@ -1,4 +1,5 @@
 import * as pulumi from '@pulumi/pulumi';
+import { modeRefusal, normaliseMode } from '../mode.ts';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
 
@@ -58,6 +59,11 @@ export interface AclEntryArgs {
  * and the read can prove it. For files that are already there, do it once by hand:
  * `sudo setfacl -R -m u:svc:rwX /path`, with the capital `X` so existing files do not all become
  * executable.
+ *
+ * **`normalise` is the one thing that does walk the tree, and only when the ACL is applied.** A
+ * directory created with an explicit mode gets a mask from that mode, which can cap the entries it
+ * inherited: `2755` leaves `group:rwgroup:rwx` reading `#effective:r-x`. It corrects that one known
+ * mode and is verified at the moment it runs. A refresh never walks anything.
  */
 export interface PosixAclArgs {
   /** The path the entries are on. This is the resource's identity. */
@@ -66,6 +72,38 @@ export interface PosixAclArgs {
   entries?: AclEntryArgs[];
   /** Entries inherited by children created inside it from now on. Directories only. */
   defaultEntries?: AclEntryArgs[];
+  /** A correction to directories already under this path, made whenever this ACL is applied. */
+  normalise?: AclNormaliseArgs;
+}
+
+/**
+ * One mode to correct on directories that already exist, and where not to look for it.
+ *
+ * It runs when the resource is created, and again whenever the entries or this rule change. The
+ * first run is what repairs a tree that went wrong before the rule existed. Nothing is undone when
+ * the resource is deleted, because no record is kept of which directories it changed.
+ *
+ * **The mode is matched exactly, and that is the safety.** A rule forcing every directory to one
+ * mode would open up a `0700` directory somebody made private on purpose, with no record left of
+ * what it was. Matching only the mode that identifies the fault leaves those alone without anybody
+ * having to name them in advance.
+ *
+ * Files are never touched. A walk cannot tell which ones are meant to be private or executable.
+ */
+export interface AclNormaliseArgs {
+  /** Only directories owned by this group are looked at. */
+  group: string;
+  /** The exact mode being corrected, such as '2755'. */
+  from: string;
+  /** The mode it becomes, such as '2775'. */
+  to: string;
+  /**
+   * Paths relative to `path` the walk does not enter, for trees that keep their own permissions.
+   *
+   * A service's data, read-only snapshots, private homes. Exact paths rather than patterns, so what
+   * is skipped can be read straight off the declaration.
+   */
+  ignore?: string[];
 }
 
 /** An entry as the machine reports it. */
@@ -89,6 +127,10 @@ interface PosixAclState {
   /** Every declared entry as the machine reports it, including the ones that are not there. */
   actual: AclEntry[];
   defaultActual: AclEntry[];
+  /** The rule as last applied. */
+  normalise?: AclNormaliseArgs;
+  /** How many directories the last run corrected. */
+  normalised?: number;
 }
 
 /**
@@ -256,6 +298,69 @@ export function resolveEntries(args: PosixAclArgs): { entries: AclEntryArgs[]; d
   };
 }
 
+/** Why a rule cannot be applied, or null when it can. */
+export function normaliseRefusal(rule: AclNormaliseArgs): string | null {
+  if (rule.group.trim() === '') return 'normalise needs the group whose directories it corrects';
+  const badMode = modeRefusal(rule.from) ?? modeRefusal(rule.to);
+  if (badMode !== null) return badMode;
+  if (normaliseMode(rule.from) === normaliseMode(rule.to)) {
+    return `normalise from and to are both ${normaliseMode(rule.to)}, so it would change nothing`;
+  }
+  for (const ignored of rule.ignore ?? []) {
+    const parts = ignored.split('/').filter((part) => part !== '');
+    if (ignored.startsWith('/') || parts.length === 0 || parts.includes('.') || parts.includes('..')) {
+      return `normalise ignore entry '${ignored}' must be a path relative to the ACL's own path`;
+    }
+  }
+  return null;
+}
+
+/**
+ * A rule in one spelling, so reordering a list or writing `2755` two ways is not a change.
+ *
+ * A change here means walking the whole tree again, which is worth not doing by accident.
+ */
+export function resolveNormalise(rule: AclNormaliseArgs): Required<AclNormaliseArgs> {
+  const refusal = normaliseRefusal(rule);
+  if (refusal !== null) throw new Error(refusal);
+  return {
+    group: rule.group,
+    from: normaliseMode(rule.from),
+    to: normaliseMode(rule.to),
+    ignore: (rule.ignore ?? []).map((ignored) => ignored.replace(/^\/+|\/+$/g, '')).sort(),
+  };
+}
+
+/** `find -path` takes a pattern, so a directory literally named `a[1]` has to be escaped. */
+function findPathLiteral(path: string): string {
+  return path.replace(/[\\*?[\]]/g, '\\$&');
+}
+
+/**
+ * Every directory the rule applies to, on one filesystem.
+ *
+ * `-xdev` because another mount or btrfs subvolume under the path, a snapshot most of all, is not
+ * part of this tree. `-prune` rather than filtering the output, because the point of ignoring a
+ * service's data is partly not having to walk it.
+ */
+function walkCommand(path: string, rule: AclNormaliseArgs, action: string): string {
+  const root = path.replace(/\/+$/, '');
+  const ignored = (rule.ignore ?? []).map((entry) => `-path ${shellQuote(findPathLiteral(`${root}/${entry}`))}`);
+  const prune = ignored.length === 0 ? '' : `\\( ${ignored.join(' -o ')} \\) -prune -o `;
+  return `find ${shellQuote(root)} -xdev ${prune}-type d -group ${shellQuote(rule.group)} `
+    + `-perm ${rule.from} -print${action} | wc -l`;
+}
+
+/** Correct the directories the rule applies to, printing how many there were. */
+export function normaliseCommand(path: string, rule: AclNormaliseArgs): string {
+  return walkCommand(path, rule, ` -exec chmod ${rule.to} {} +`);
+}
+
+/** How many directories the rule still applies to, which is zero once it has worked. */
+export function normaliseCheckCommand(path: string, rule: AclNormaliseArgs): string {
+  return walkCommand(path, rule, '');
+}
+
 /** The ACL on a path, or null when there is nothing at that path. */
 export async function readAcl(host: Target, path: string): Promise<{ access: AclEntry[]; defaults: AclEntry[] } | null> {
   const asked = await ask(host, escalate(host,
@@ -308,7 +413,20 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<PosixAclArgs
         + `grant it — a mask is suppressing it, which a chmod after this would explain`,
       );
     }
-    return { path: args.path, ...wanted, actual, defaultActual };
+
+    if (args.normalise === undefined) return { path: args.path, ...wanted, actual, defaultActual };
+
+    const normalise = resolveNormalise(args.normalise);
+    const changed = await must(host, escalate(host, normaliseCommand(args.path, normalise)));
+    // the pipe into wc hides a failed chmod, so what counts is whether any are left
+    const left = await must(host, escalate(host, normaliseCheckCommand(args.path, normalise)));
+    if (Number(left.trim()) !== 0) {
+      throw new Error(
+        `${left.trim()} directories under ${args.path} at ${describe(host)} are still ${normalise.from} `
+        + `after being set to ${normalise.to}`,
+      );
+    }
+    return { path: args.path, ...wanted, actual, defaultActual, normalise, normalised: Number(changed.trim()) };
   };
 
   return {
@@ -322,6 +440,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<PosixAclArgs
           }
         }
       }
+      const badRule = news.normalise === undefined ? null : normaliseRefusal(news.normalise);
+      if (badRule !== null) failures.push({ property: 'normalise', reason: badRule });
       // the declaration is wrong rather than the machine, so it is worth saying at preview
       return { inputs: news, failures };
     },
@@ -361,6 +481,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<PosixAclArgs
         changes: transportChanged(old)
           || declared(old.entries ?? []) !== declared(wanted.entries)
           || declared(old.defaultEntries ?? []) !== declared(wanted.defaultEntries)
+          || JSON.stringify(old.normalise ?? null)
+            !== JSON.stringify(args.normalise === undefined ? null : resolveNormalise(args.normalise))
           // what the machine grants, against what was asked for. This is where a chmod that
           // recomputed the mask and suppressed a named entry shows up
           || unsatisfied(old.actual ?? [], old.entries ?? [], 'access').length > 0
@@ -391,6 +513,8 @@ export class PosixAcl extends pulumi.dynamic.Resource {
   /** Each declared access entry as the machine reports it, effective permissions and all. */
   declare readonly actual: pulumi.Output<AclEntry[]>;
   declare readonly defaultActual: pulumi.Output<AclEntry[]>;
+  /** How many directories `normalise` corrected the last time it ran. */
+  declare readonly normalised: pulumi.Output<number | undefined>;
 
   constructor(name: string, host: Target, args: PosixAclArgs, opts?: pulumi.CustomResourceOptions) {
     super(stamped(providerFor(host)), name, {
@@ -398,6 +522,7 @@ export class PosixAcl extends pulumi.dynamic.Resource {
       defaultEntries: [],
       actual: undefined,
       defaultActual: undefined,
+      normalised: undefined,
       ...args,
     }, withLegacyAlias(opts), 'homelab', 'PosixAcl');
   }

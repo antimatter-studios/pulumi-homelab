@@ -13,6 +13,10 @@ breaking changes live.
 
 ### Added
 
+- **`PosixAcl` `normalise`** — corrects directories that already exist under the path when the ACL
+  is applied: one exact mode owned by one group, skipping the paths named in `ignore`. A directory
+  created as `2755` has a mask that caps the `rwx` it inherited, and default entries cannot reach it.
+  The result is verified as it runs, and a refresh never walks the tree.
 - **`Swap` `otherSwap: 'allow'`** — `enabled: false` narrowed to this resource's own share: the
   declared path off and out of fstab, the unit masked, and zram and swap declared elsewhere left
   running. Without it a machine that boots from an SD card and swaps to zram and NVMe cannot be
