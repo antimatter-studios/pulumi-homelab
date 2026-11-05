@@ -562,7 +562,7 @@ exist — and every command exits zero.
 
 | | Arguments | Reads from |
 |---|---|---|
-| **`PosixAcl`** | `path` `entries?` `defaultEntries?` | `getfacl -pc`, compared on **effective** permissions |
+| **`PosixAcl`** | `path` `entries?` `defaultEntries?` `normalise?` | `getfacl -pc`, compared on **effective** permissions |
 
 For the grant that ownership and group membership cannot express. A service account that needs
 write access to one directory inside a shared pool has no good answer in the two levers a mode
@@ -596,6 +596,26 @@ without reading is what this package refuses to do. `defaultEntries` is the decl
 child created from now on inherits it, and the read can prove it. For files already there, once, by
 hand: `sudo setfacl -R -m u:svc:rwX /path`, with the capital `X` so existing files do not all become
 executable.
+
+**`normalise` corrects one known mode on directories that already exist.** Anything creating a
+directory with an explicit `755` gets a mask that caps what it inherited, so `2755` leaves
+`group:rwgroup:rwx` reading `#effective:r-x`, and default entries cannot help because the directory
+already exists:
+
+```ts
+new PosixAcl('acl-pool', host, {
+  path: '/mnt/pool',
+  entries: [{ type: 'group', name: 'rwgroup', perms: 'rwx' }],
+  defaultEntries: [{ type: 'group', name: 'rwgroup', perms: 'rwx' }],
+  normalise: { group: 'rwgroup', from: '2755', to: '2775', ignore: ['var', 'k3s'] },
+});
+```
+
+It runs when the resource is created and whenever the entries or the rule change, and fails if any
+directory is still wrong afterwards. A refresh never walks the tree. The mode is matched exactly, so
+a `0700` directory stays private without being named. `ignore` is for whole trees that keep their own
+permissions, and those are not entered at all. Files are never touched, and nothing is undone on
+delete.
 
 The base entries (`user::`, `group::`, `other::`) are refused as *access* entries and allowed as
 *defaults*: as access entries they are the mode bits under another name and would fight `Directory`

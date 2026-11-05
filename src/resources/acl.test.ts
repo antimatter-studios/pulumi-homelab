@@ -7,9 +7,13 @@ import {
   findAclEntry,
   formatEntry,
   formatRemoval,
+  normaliseCheckCommand,
+  normaliseCommand,
   normalisePerms,
+  normaliseRefusal,
   parseGetfacl,
   resolveEntries,
+  resolveNormalise,
   setfaclCommand,
   unsatisfied,
   type AclEntry,
@@ -341,3 +345,91 @@ describe('settling the declaration', () => {
     expect(resolveEntries({ path: '/p' })).toEqual({ entries: [], defaultEntries: [] });
   });
 });
+
+describe('normaliseRefusal', () => {
+  const rule = { group: 'rwgroup', from: '2755', to: '2775' };
+
+  it('accepts a rule that changes a mode', () => {
+    expect(normaliseRefusal(rule)).toBeNull();
+    expect(normaliseRefusal({ ...rule, ignore: ['var', 'media/private/'] })).toBeNull();
+  });
+
+  it('refuses a rule with no group, which would match nothing useful', () => {
+    expect(normaliseRefusal({ ...rule, group: ' ' })).toMatch(/group/);
+  });
+
+  it('refuses a mode that is not a mode', () => {
+    expect(normaliseRefusal({ ...rule, from: 'rwx' })).toMatch(/not a mode/);
+    expect(normaliseRefusal({ ...rule, to: '9999' })).toMatch(/not a mode/);
+  });
+
+  it('refuses a rule that changes nothing, however the two are spelled', () => {
+    expect(normaliseRefusal({ group: 'g', from: '755', to: '0755' })).toMatch(/change nothing/);
+  });
+
+  it('refuses an ignore entry that could not be under the path', () => {
+    for (const ignore of ['/var', '../var', 'a/../b', './a', '', '/']) {
+      expect(normaliseRefusal({ ...rule, ignore: [ignore] })).toMatch(/relative/);
+    }
+  });
+});
+
+describe('resolveNormalise', () => {
+  it('settles a rule to one spelling, so a reorder does not walk the tree again', () => {
+    const forwards = resolveNormalise({ group: 'g', from: '755', to: '775', ignore: ['b', 'a/'] });
+    const backwards = resolveNormalise({ group: 'g', from: '0755', to: '0775', ignore: ['a', 'b'] });
+    expect(forwards).toEqual(backwards);
+    expect(forwards).toEqual({ group: 'g', from: '0755', to: '0775', ignore: ['a', 'b'] });
+  });
+
+  it('gives an empty ignore list rather than none, so absent and empty compare equal', () => {
+    expect(resolveNormalise({ group: 'g', from: '2755', to: '2775' }).ignore).toEqual([]);
+  });
+
+  it('raises the refusal', () => {
+    expect(() => resolveNormalise({ group: 'g', from: '2775', to: '2775' })).toThrow(/change nothing/);
+  });
+});
+
+describe('normaliseCommand', () => {
+  const rule = { group: 'rwgroup', from: '2755', to: '2775' };
+
+  it('matches the exact mode and group, on directories, on one filesystem', () => {
+    expect(normaliseCommand('/mnt/pool', rule)).toBe(
+      "find '/mnt/pool' -xdev -type d -group 'rwgroup' -perm 2755 -print -exec chmod 2775 {} + | wc -l",
+    );
+  });
+
+  it('prunes ignored paths so the walk never enters them', () => {
+    expect(normaliseCommand('/mnt/pool', { ...rule, ignore: ['var', 'data/k3s'] })).toBe(
+      "find '/mnt/pool' -xdev \\( -path '/mnt/pool/var' -o -path '/mnt/pool/data/k3s' \\) -prune -o "
+      + "-type d -group 'rwgroup' -perm 2755 -print -exec chmod 2775 {} + | wc -l",
+    );
+  });
+
+  it('treats an ignored name literally, since -path takes a pattern', () => {
+    expect(normaliseCommand('/p', { ...rule, ignore: ['a[1]*'] })).toContain("-path '/p/a\\[1\\]\\*'");
+  });
+
+  it('does not double the slash when the path ends in one', () => {
+    expect(normaliseCommand('/p/', { ...rule, ignore: ['a'] })).toContain("find '/p' -xdev \\( -path '/p/a'");
+  });
+
+  it('never leaves a name able to escape its quoting', () => {
+    expect(normaliseCommand('/p', { ...rule, ignore: ["it's"] })).toContain(shellQuoted("/p/it's"));
+  });
+});
+
+describe('normaliseCheckCommand', () => {
+  it('walks exactly what the correction walks, and changes nothing', () => {
+    const rule = { group: 'g', from: '2755', to: '2775', ignore: ['a'] };
+    const check = normaliseCheckCommand('/p', rule);
+    expect(check).not.toContain('chmod');
+    expect(normaliseCommand('/p', rule).replace(' -exec chmod 2775 {} +', '')).toBe(check);
+  });
+});
+
+/** The way shellQuote writes a single quote inside a quoted string. */
+function shellQuoted(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
