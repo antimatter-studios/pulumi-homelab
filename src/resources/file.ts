@@ -76,16 +76,44 @@ export async function readFile(host: Target, path: string): Promise<Omit<FileSta
   };
 }
 
+/**
+ * The commands that put a file there, in order.
+ *
+ * A file's content travels inside the ssh command, and Linux refuses any single argument over
+ * 128 KiB. Anything near that goes up as base64 in pieces and is moved into place only once it is
+ * whole, so a connection lost halfway leaves the old file as it was.
+ */
+export function writeCommands(args: Omit<FileState, 'reloadSystemd'> & { reloadSystemd?: boolean }): string[] {
+  const inlineBytes = 64 * 1024;
+  const pieceChars = 60 * 1024;
+  const path = shellQuote(args.path);
+  const parent = shellQuote(args.path.replace(/\/[^/]*$/, '') || '/');
+  const reload = args.reloadSystemd ? ' && systemctl daemon-reload' : '';
+  const attributes = (target: string) => `chmod ${args.mode} ${target} && chown ${args.owner}:${args.group} ${target}`;
+
+  if (Buffer.byteLength(args.content, 'utf8') <= inlineBytes) {
+    return [`mkdir -p ${parent} && ${heredoc(args.path, args.content)}\n${attributes(path)}${reload}`];
+  }
+
+  // the same trailing newline heredoc gives, so a file reads back identically however it was sent
+  const body = args.content.endsWith('\n') ? args.content : `${args.content}\n`;
+  const encoded = Buffer.from(body, 'utf8').toString('base64');
+  const staged = shellQuote(`${args.path}.pulumi-upload`);
+  const pieces = shellQuote(`${args.path}.pulumi-upload.b64`);
+  const commands = [`mkdir -p ${parent} && (umask 077 && : > ${pieces})`];
+  for (let start = 0; start < encoded.length; start += pieceChars) {
+    commands.push(`printf %s ${shellQuote(encoded.slice(start, start + pieceChars))} >> ${pieces}`);
+  }
+  commands.push(
+    `(umask 077 && base64 -d ${pieces} > ${staged}) && rm -f ${pieces} && ` +
+    `${attributes(staged)} && mv -f ${staged} ${path}${reload}`,
+  );
+  return commands;
+}
+
 /** Put it there, exactly as described. */
 export async function writeFile(host: Target, args: Omit<FileState, 'reloadSystemd'> & { reloadSystemd?: boolean }): Promise<void> {
-  const parent = args.path.replace(/\/[^/]*$/, '') || '/';
-  await must(host, escalate(host,
-    `mkdir -p ${shellQuote(parent)} && ` +
-    `${heredoc(args.path, args.content)}\n` +
-    `chmod ${args.mode} ${shellQuote(args.path)} && ` +
-    `chown ${args.owner}:${args.group} ${shellQuote(args.path)}` +
-    (args.reloadSystemd ? ' && systemctl daemon-reload' : ''),
-  ));
+  for (const command of writeCommands(args)) await must(host, escalate(host, command));
 }
 
 /**

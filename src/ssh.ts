@@ -41,7 +41,10 @@ function run(
       // the password goes down ssh's own stdin to `sudo -S`, so it never appears in the command
       // line and never shows up in `ps` on the machine being managed
       if (stdin !== undefined) child.stdin?.end(stdin);
-    }, reject);
+      // `.catch`, not a second argument to `then`: execFile throws synchronously when it cannot start
+      // the process (E2BIG for a command over Linux's 128 KiB argument limit), and a throw in this
+      // callback that nothing catches leaves the promise unsettled and the deployment hanging for ever
+    }).catch(reject);
   });
 }
 
@@ -370,7 +373,11 @@ async function askOver(host: Host, command: string): Promise<Ran> {
     const { stdout, stderr } = await run('ssh', args, { maxBuffer: 16 * 1024 * 1024 }, secret);
     return { code: 0, out: stdout, err: stderr };
   } catch (thrown) {
-    const failure = thrown as { code?: number; stdout?: string; stderr?: string; message?: string };
+    const failure = thrown as { code?: number | string; stdout?: string; stderr?: string; message?: string };
+    // a code that is a word (E2BIG, ENOENT) means ssh never started, so the machine has not answered
+    if (typeof failure.code === 'string') {
+      throw new Error(`could not run ssh for ${host.user}@${host.address}: ${failure.message ?? failure.code}`);
+    }
     // ssh itself failing to connect is never an answer to a question, so it is worth telling apart
     // from the command running and saying no. 255 is ssh's own "I could not do it" code.
     if (failure.code === 255) {

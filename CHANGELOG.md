@@ -11,6 +11,13 @@ breaking changes live.
 
 ## Unreleased
 
+### Fixed
+
+- **`ManagedFile` handles files over 128 KiB, and a command that cannot start now fails.** A file's
+  content went into one ssh argument, which Linux caps at 128 KiB. The resulting `E2BIG` was thrown
+  where nothing caught it, so `pulumi up` hung instead of failing. Large files now go up in pieces
+  and are moved into place once whole.
+
 ### Added
 
 - **`PosixAcl` `normalise`** — corrects directories that already exist under the path when the ACL
