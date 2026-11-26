@@ -179,7 +179,8 @@ const DEFAULT_ACCOUNT = 't3code';
  *
  * Preview builds are never offered as updates, so a preview install would sit on its bootstrap build
  * for ever — the exact outcome that not managing versions is meant to avoid. Stable publishes no
- * linux-arm64 asset at all.
+ * linux-arm64 asset at all, which is why this was forced on the Raspberry Pi; the x86_64 server it
+ * runs on now (2026-11-26) keeps the same channel.
  *
  * The checksum is from the release's own SHA256SUMS and recomputed from the downloaded file, so it
  * pins what was meant rather than merely what was got: https authenticates the server, not the
@@ -187,9 +188,9 @@ const DEFAULT_ACCOUNT = 't3code';
  */
 export const T3_DEFAULT = {
   version: '0.0.41-nightly.20260914.1707',
-  sha256: '06cb36d49a38fb8aab7e08faebd7a8d093347b3c60dbc1df2e6f8c66bddd3023',
+  sha256: 'ce9d72764a8942fecd6e7ed88d80dd318fb97f0b4fa2eb70904242ab34ee933c',
   url: (version: string) =>
-    `https://github.com/pingdotgg/t3code/releases/download/v${version}/t3-${version}-linux-arm64.tar.gz`,
+    `https://github.com/pingdotgg/t3code/releases/download/v${version}/t3-${version}-linux-x64.tar.gz`,
 };
 
 export const AGENT_DEFAULTS: AgentSpec[] = [
@@ -206,15 +207,15 @@ export const AGENT_DEFAULTS: AgentSpec[] = [
      * serves both the API and the transport rather than needing two.
      */
     key: 'gh', bin: 'bin/gh',
-    url: 'https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_arm64.tar.gz',
+    url: 'https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_amd64.tar.gz',
     // From the release's own gh_2.100.0_checksums.txt, reverified against the fetched file.
-    sha256: 'ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961',
+    sha256: 'e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be',
     strip: 1,
   },
   {
     key: 'claude', bin: 'claude',
-    url: 'https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.270.tgz',
-    sha256: '9c2c52fc53e97cc8e5e20848865c53425193251e6764c2abe975c6642587e9f3',
+    url: 'https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.270.tgz',
+    sha256: 'a2c0b69773f9da730b0616c19771094de51ffd23f0dfaa7c34ccead34eb76dd0',
     strip: 1,
   },
   {
@@ -233,16 +234,16 @@ export const AGENT_DEFAULTS: AgentSpec[] = [
      * The package carries bin/codex, bin/codex-code-mode-host, ripgrep, bwrap and a zsh.
      */
     key: 'codex', bin: 'bin/codex',
-    url: 'https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-package-aarch64-unknown-linux-musl.tar.gz',
+    url: 'https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-package-x86_64-unknown-linux-musl.tar.gz',
     // From the release's own codex-package_SHA256SUMS, reverified against the fetched file.
-    sha256: '97d93e11df72d3c26772db019e6ea8bb72c246500d46b98c760839f3240355e6',
+    sha256: 'fc6e3e3b85f2cf7d664520ee5c66a7fe4aa12bae7d46834f47e2f165fd0d6f78',
     // No top-level directory: bin/, codex-path/ and codex-resources/ sit at the root.
     strip: 0,
   },
   {
     key: 'opencode', bin: 'bin/opencode',
-    url: 'https://registry.npmjs.org/opencode-linux-arm64/-/opencode-linux-arm64-1.18.30.tgz',
-    sha256: '1e20b66e76afbb7c1e5cd9be7515d2744cb4ea3476ff57add1f7e9ad6fb3a32d',
+    url: 'https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.18.30.tgz',
+    sha256: 'aa31a7e68ce5c73cba302c6a4f31c2e308398db125e49d3dbea32f61862fe6de',
     strip: 1,
   },
 ];

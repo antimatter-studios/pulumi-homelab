@@ -10,7 +10,7 @@ describe('the harness release this package was tested against', () => {
 
   it('builds the url from the version, so the two cannot disagree', () => {
     expect(T3_DEFAULT.url('1.2.3-nightly.4.5')).toContain('/v1.2.3-nightly.4.5/');
-    expect(T3_DEFAULT.url('1.2.3-nightly.4.5')).toContain('t3-1.2.3-nightly.4.5-linux-arm64.tar.gz');
+    expect(T3_DEFAULT.url('1.2.3-nightly.4.5')).toContain('t3-1.2.3-nightly.4.5-linux-x64.tar.gz');
   });
 
   /**
