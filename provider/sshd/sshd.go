@@ -33,8 +33,13 @@ func KeywordFor(property string) string {
 }
 
 // Setting is one typed property and its value. The value is a bool, an int, a string or a
-// []string; nil means never set. The TypeScript takes an object and renders it in the object's
-// insertion order, so the Go takes an ordered list to keep the file byte-identical.
+// []string; nil means never set. The renderers take an ordered list and write it in that order,
+// which is what the TypeScript's own tests exercise. In production the TypeScript never saw the
+// declared order: settings reach a dynamic provider as resource inputs through a protobuf Struct,
+// whose keys arrive sorted, so the drop-ins on machines list the typed settings sorted by property
+// name, then new unchecked keywords sorted among themselves (one that repeats a typed keyword keeps
+// the typed one's place), then Match criteria sorted by key. The SshdConfig resource (#45) must
+// pass its lists in that order, or every drop-in changes at the switch.
 type Setting struct {
 	Property string
 	Value    any
@@ -129,8 +134,8 @@ func HasInclude(text, directory string) bool {
 	return false
 }
 
-// Criterion is one Match criterion, such as Address 10.0.0.0/24. The TypeScript takes an object
-// and joins its entries in insertion order, so the Go takes an ordered list.
+// Criterion is one Match criterion, such as Address 10.0.0.0/24, rendered in list order. In
+// production the criteria reached the TypeScript sorted by key (see Setting); #45 passes them so.
 type Criterion struct {
 	Key   string
 	Value string
