@@ -9,7 +9,7 @@
  * Pulumi, Garage or any machine. Definitions match the baseline on #31:
  * - `__provider` bytes: compact-JSON length of every `__provider` key, colon and value, in inputs
  *   and in outputs;
- * - dynamic: type starts with `pulumi-nodejs:dynamic`; plugin: `homelab:*` or `homelab-k3s:*`;
+ * - dynamic: type starts with `pulumi-nodejs:dynamic`; plugin: `homelab:*` or `homelabk3s:*` (the k3s plugin's package name);
  * - distinct blobs: distinct `__provider` values across the whole state.
  */
 import { readFileSync } from 'node:fs';
@@ -63,7 +63,7 @@ export function measureState(raw: string): StateMeasure {
     if (r.custom && r.type.startsWith('pulumi-nodejs:dynamic')) {
       dynamic++;
       dynamicTypes.add(r.type);
-    } else if (r.custom && (r.type.startsWith('homelab:') || r.type.startsWith('homelab-k3s:'))) {
+    } else if (r.custom && (r.type.startsWith('homelab:') || r.type.startsWith('homelabk3s:'))) {
       plugin++;
     }
     for (const side of [r.inputs, r.outputs]) {

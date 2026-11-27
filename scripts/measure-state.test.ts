@@ -30,4 +30,13 @@ describe('measuring a state export', () => {
     const c = measureState(JSON.stringify({ checkpoint: { latest: dep } }));
     expect(c).toMatchObject({ provider_bytes: 80, dynamic: 2, plugin: 1 });
   });
+
+  it('counts the k3s plugin under its package name, homelabk3s', () => {
+    const dep = JSON.parse(raw).deployment;
+    dep.resources.push(
+      { urn: 'urn:pulumi:s::p::homelabk3s:index:K3sServer::k3s', custom: true, type: 'homelabk3s:index:K3sServer' },
+      { urn: 'urn:pulumi:s::p::homelab-k3s:index:K3sServer::wrong', custom: true, type: 'homelab-k3s:index:K3sServer' },
+    );
+    expect(measureState(JSON.stringify({ deployment: dep }))).toMatchObject({ plugin: 2, other: 3 });
+  });
 });
