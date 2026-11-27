@@ -1,0 +1,108 @@
+name: Release
+
+# On every merge to main: work out the next semver version from the conventional-commit subjects
+# since the last v* tag (scripts/release.sh), and when one is due, turn CHANGELOG.md's Unreleased
+# section into that version, commit and tag it, build the plugin for each platform with the version
+# in its ldflags, and publish a GitHub release whose body is that changelog section. Nothing in here
+# names this repository; only BINARY does, so the same file serves pulumi-homelab-k3s.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  BINARY: pulumi-resource-homelab
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Next version
+        id: next
+        run: |
+          v="$(./scripts/release.sh next)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "next version: ${v:-none, no feat or fix since the last tag}"
+
+      - name: Changelog and tag
+        if: steps.next.outputs.version != ''
+        env:
+          V: ${{ steps.next.outputs.version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          ./scripts/release.sh changelog "$V"
+          git commit -am "Release v$V"
+          git tag "v$V"
+          git push origin HEAD:main "v$V"
+
+  build:
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [darwin-arm64, linux-amd64, linux-arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: provider/go.mod
+          cache-dependency-path: provider/go.sum
+
+      - name: Build
+        # pulumi-resource-<name>-v<version>-<os>-<arch>.tar.gz is the asset name Pulumi's github://
+        # plugin downloader asks for.
+        working-directory: provider
+        env:
+          V: ${{ needs.version.outputs.version }}
+          T: ${{ matrix.target }}
+          CGO_ENABLED: '0'
+        run: |
+          export GOOS="${T%-*}" GOARCH="${T#*-}"
+          module="$(go list -m)"
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X $module.Version=$V" -o "dist/$BINARY" ./cmd/$BINARY
+          tar -czf "$BINARY-v$V-$T.tar.gz" -C dist "$BINARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: provider/*.tar.gz
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          ./scripts/release.sh notes "$V" > notes.md
+          gh release create "v$V" dist/*.tar.gz --title "v$V" --notes-file notes.md --verify-tag

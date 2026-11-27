@@ -18,6 +18,10 @@ const Name = "homelab"
 // -ldflags "-X github.com/antimatter-studios/pulumi-homelab/provider.Version=<version>".
 var Version = "0.0.0-dev"
 
+// PluginDownloadURL is where Pulumi fetches the plugin: the assets of this repository's GitHub
+// releases, which .github/workflows/release.yml attaches.
+const PluginDownloadURL = "github://api.github.com/antimatter-studios"
+
 // Provider builds the provider the plugin serves.
 func Provider() p.Provider {
 	return infer.Provider(options())
@@ -30,6 +34,7 @@ func options() infer.Options {
 		WithNamespace("antimatter-studios").
 		WithRepository("https://github.com/antimatter-studios/pulumi-homelab").
 		WithLicense("MIT").
+		WithPluginDownloadURL(PluginDownloadURL).
 		WithKeywords("homelab", "linux", "ssh", "category/infrastructure").
 		BuildOptions()
 }
