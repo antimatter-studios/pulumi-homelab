@@ -41,6 +41,19 @@ func TestParseForwards(t *testing.T) {
 	t.Run("does not mistake a local forward for a reverse one", func(t *testing.T) {
 		eq(t, ParseForwards("-L\n8080:localhost:80"), []Forward{})
 	})
+	t.Run("trims what JavaScript trims: a NEL stays and spoils the argument", func(t *testing.T) {
+		eq(t, ParseForwards("-R\u0085\n20022:localhost:22"), []Forward{})
+		eq(t, ParseForwards("-R\n20022:localhost:22\u0085"), []Forward{})
+		eq(t, ParseForwards("\ufeff-R\u3000\n20022:localhost:22\u00a0"), []Forward{{Remote: 20022, Local: 22}})
+	})
+	t.Run("reads ports with Number(): radix prefixes count, Go-only spellings do not", func(t *testing.T) {
+		eq(t, ParseForwards("-R\n0x4e56:localhost:0o26"), []Forward{{Remote: 20054, Local: 22}})
+		eq(t, ParseForwards("-R\n20_022:localhost:22"), []Forward{})
+	})
+}
+
+func TestParseTunnelKeepsANelOnAProperty(t *testing.T) {
+	eq(t, ParseTunnel("ActiveState=active\u0085\n#pulumi-homelab#cmdline\n").Active, false)
 }
 
 func TestParseTunnel(t *testing.T) {

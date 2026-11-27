@@ -3,12 +3,10 @@
 package tunnel
 
 import (
-	"errors"
 	"math"
-	"strconv"
 	"strings"
-	"unicode"
 
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 	"github.com/antimatter-studios/pulumi-homelab/provider/systemd"
 )
 
@@ -20,55 +18,13 @@ type Forward struct {
 	Bind   string
 }
 
-func jsTrim(s string) string {
-	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || r == 0xFEFF })
-}
-
-// jsNumber converts text the way JavaScript's Number() does for the shapes these fields hold:
-// blank is 0, a 0x/0o/0b prefix is read in that base, anything else must be a decimal literal,
-// and NaN where Number() gives NaN.
-func jsNumber(text string) float64 {
-	text = jsTrim(text)
-	if text == "" {
-		return 0
-	}
-	if len(text) > 2 && text[0] == '0' {
-		base := 0
-		switch text[1] {
-		case 'x', 'X':
-			base = 16
-		case 'o', 'O':
-			base = 8
-		case 'b', 'B':
-			base = 2
-		}
-		if base != 0 {
-			n, err := strconv.ParseUint(text[2:], base, 64)
-			if err != nil {
-				return math.NaN()
-			}
-			return float64(n)
-		}
-	}
-	for _, r := range text {
-		if !strings.ContainsRune("0123456789+-.eE", r) {
-			return math.NaN()
-		}
-	}
-	n, err := strconv.ParseFloat(text, 64)
-	if err != nil && !errors.Is(err, strconv.ErrRange) {
-		return math.NaN()
-	}
-	return n
-}
-
 // port is the field as a port number; ok is false unless it is an integer in 1..65535. A missing
 // field is NaN, as Number(undefined) is.
 func port(parts []string, at int) (int, bool) {
 	if at >= len(parts) {
 		return 0, false
 	}
-	n := jsNumber(parts[at])
+	n := jscompat.Number(parts[at])
 	if n != math.Trunc(n) || n <= 0 || n >= 65536 {
 		return 0, false
 	}
@@ -80,7 +36,7 @@ func port(parts []string, at int) (int, bool) {
 func ParseForwards(cmdline string) []Forward {
 	args := []string{}
 	for _, arg := range strings.Split(cmdline, "\n") {
-		if arg = jsTrim(arg); arg != "" {
+		if arg = jscompat.Trim(arg); arg != "" {
 			args = append(args, arg)
 		}
 	}
@@ -130,7 +86,7 @@ func ParseTunnel(out string) Tunnel {
 	if value, ok := properties["NRestarts"]; ok {
 		restarts = value
 	}
-	n := jsNumber(restarts)
+	n := jscompat.Number(restarts)
 	if math.IsNaN(n) {
 		n = 0
 	}
