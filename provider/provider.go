@@ -104,7 +104,15 @@ func options(factory remote.Factory) infer.Options {
 		WithPluginDownloadURL(PluginDownloadURL).
 		// The npm name the generated SDK carries. Left unset, Pulumi names it @pulumi/homelab, which
 		// claims Pulumi's own scope for a package they do not publish.
-		WithLanguageMap(map[string]any{"nodejs": map[string]any{"packageName": "@antimatter-studios/homelab"}}).
+		WithLanguageMap(map[string]any{
+			"nodejs": map[string]any{"packageName": "@antimatter-studios/homelab"},
+			"go": map[string]any{
+				"importBasePath":       "github.com/antimatter-studios/pulumi-homelab/sdk/go",
+				"modulePath":           "github.com/antimatter-studios/pulumi-homelab/sdk/go",
+				"rootPackageName":      "homelab",
+				"respectSchemaVersion": true,
+			},
+		}).
 		WithKeywords("homelab", "linux", "ssh", "category/infrastructure").
 		BuildOptions()
 }
