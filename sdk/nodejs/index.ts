@@ -5,15 +5,50 @@ import * as pulumi from "@pulumi/pulumi";
 import * as utilities from "./utilities";
 
 // Export members:
+export { AptPackageArgs } from "./aptPackage";
+export type AptPackage = import("./aptPackage").AptPackage;
+export const AptPackage: typeof import("./aptPackage").AptPackage = null as any;
+utilities.lazyLoad(exports, ["AptPackage"], () => require("./aptPackage"));
+
+export { AptPackagesArgs } from "./aptPackages";
+export type AptPackages = import("./aptPackages").AptPackages;
+export const AptPackages: typeof import("./aptPackages").AptPackages = null as any;
+utilities.lazyLoad(exports, ["AptPackages"], () => require("./aptPackages"));
+
+export { ArchiveArgs } from "./archive";
+export type Archive = import("./archive").Archive;
+export const Archive: typeof import("./archive").Archive = null as any;
+utilities.lazyLoad(exports, ["Archive"], () => require("./archive"));
+
+export { DebPackageArgs } from "./debPackage";
+export type DebPackage = import("./debPackage").DebPackage;
+export const DebPackage: typeof import("./debPackage").DebPackage = null as any;
+utilities.lazyLoad(exports, ["DebPackage"], () => require("./debPackage"));
+
+export { GitCheckoutArgs } from "./gitCheckout";
+export type GitCheckout = import("./gitCheckout").GitCheckout;
+export const GitCheckout: typeof import("./gitCheckout").GitCheckout = null as any;
+utilities.lazyLoad(exports, ["GitCheckout"], () => require("./gitCheckout"));
+
 export { GroupArgs } from "./group";
 export type Group = import("./group").Group;
 export const Group: typeof import("./group").Group = null as any;
 utilities.lazyLoad(exports, ["Group"], () => require("./group"));
 
+export { OfficialInstallArgs } from "./officialInstall";
+export type OfficialInstall = import("./officialInstall").OfficialInstall;
+export const OfficialInstall: typeof import("./officialInstall").OfficialInstall = null as any;
+utilities.lazyLoad(exports, ["OfficialInstall"], () => require("./officialInstall"));
+
 export { ProviderArgs } from "./provider";
 export type Provider = import("./provider").Provider;
 export const Provider: typeof import("./provider").Provider = null as any;
 utilities.lazyLoad(exports, ["Provider"], () => require("./provider"));
+
+export { RcloneRemoteArgs } from "./rcloneRemote";
+export type RcloneRemote = import("./rcloneRemote").RcloneRemote;
+export const RcloneRemote: typeof import("./rcloneRemote").RcloneRemote = null as any;
+utilities.lazyLoad(exports, ["RcloneRemote"], () => require("./rcloneRemote"));
 
 
 // Export sub-modules:
@@ -29,8 +64,22 @@ const _module = {
     version: utilities.getVersion(),
     construct: (name: string, type: string, urn: string): pulumi.Resource => {
         switch (type) {
+            case "homelab:index:AptPackage":
+                return new AptPackage(name, <any>undefined, { urn })
+            case "homelab:index:AptPackages":
+                return new AptPackages(name, <any>undefined, { urn })
+            case "homelab:index:Archive":
+                return new Archive(name, <any>undefined, { urn })
+            case "homelab:index:DebPackage":
+                return new DebPackage(name, <any>undefined, { urn })
+            case "homelab:index:GitCheckout":
+                return new GitCheckout(name, <any>undefined, { urn })
             case "homelab:index:Group":
                 return new Group(name, <any>undefined, { urn })
+            case "homelab:index:OfficialInstall":
+                return new OfficialInstall(name, <any>undefined, { urn })
+            case "homelab:index:RcloneRemote":
+                return new RcloneRemote(name, <any>undefined, { urn })
             default:
                 throw new Error(`unknown resource type ${type}`);
         }

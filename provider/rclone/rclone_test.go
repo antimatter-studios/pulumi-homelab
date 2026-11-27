@@ -2,6 +2,7 @@ package rclone
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -32,4 +33,11 @@ func TestParseDump(t *testing.T) {
 			t.Errorf("got %#v", got)
 		}
 	})
+}
+
+func TestParseDumpOrdered(t *testing.T) {
+	settings, keys := ParseDumpOrdered(`{"demo":{"b":"first","2":"two","type":"local","a":"last","10":"ten","b":"second"}}`, "demo")
+	if strings.Join(keys, ",") != "2,10,b,type,a" || settings["b"] != "second" {
+		t.Fatalf("settings %v, keys %v", settings, keys)
+	}
 }

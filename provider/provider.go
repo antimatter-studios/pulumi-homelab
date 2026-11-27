@@ -59,7 +59,16 @@ func keepEngineVersion(prov p.Provider) p.Provider {
 func options(factory remote.Factory) infer.Options {
 	return infer.NewProviderBuilder().
 		WithConfig(infer.Config(&Config{factory: factory})).
-		WithResources(infer.Resource(Group{})).
+		WithResources(
+			infer.Resource(Group{}),
+			infer.Resource(AptPackage{}),
+			infer.Resource(AptPackages{}),
+			infer.Resource(DebPackage{}),
+			infer.Resource(Archive{}),
+			infer.Resource(OfficialInstall{}),
+			infer.Resource(GitCheckout{}),
+			infer.Resource(RcloneRemote{}),
+		).
 		WithDisplayName("homelab").
 		WithDescription("Desired state for a Linux machine you own.").
 		WithNamespace("antimatter-studios").

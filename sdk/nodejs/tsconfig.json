@@ -13,11 +13,18 @@
         "strict": true
     },
     "files": [
+        "aptPackage.ts",
+        "aptPackages.ts",
+        "archive.ts",
         "config/index.ts",
         "config/vars.ts",
+        "debPackage.ts",
+        "gitCheckout.ts",
         "group.ts",
         "index.ts",
+        "officialInstall.ts",
         "provider.ts",
+        "rcloneRemote.ts",
         "types/index.ts",
         "types/input.ts",
         "types/output.ts",
