@@ -43,6 +43,9 @@ const (
 	File Kind = "file"
 	// Dir is a directory (not a symlink to one), removed with everything in it.
 	Dir Kind = "dir"
+	// EmptyDir is a directory (not a symlink to one) removed with rmdir(2), so only while it is
+	// empty; one with anything in it is put back.
+	EmptyDir Kind = "emptydir"
 )
 
 // Expect is what the entry must be.
@@ -100,7 +103,7 @@ func Command(p string, want Expect) (string, error) {
 		return "", err
 	}
 	switch want.Kind {
-	case Symlink, File, Dir:
+	case Symlink, File, Dir, EmptyDir:
 	default:
 		return "", fmt.Errorf("unknown kind %q", want.Kind)
 	}
@@ -200,7 +203,7 @@ elsif ($kind eq "symlink") {
   else { my $t = readlink($cap); if (!defined $t) { $why = "its target cannot be read: $!"; } elsif ($t ne $target) { $why = "it points somewhere else"; } else { $match = 1; } }
 }
 elsif ($kind eq "file") { if (-l _ || !-f _) { $why = "it is not a regular file"; } else { $match = 1; } }
-elsif ($kind eq "dir") { if (-l _ || !-d _) { $why = "it is not a directory"; } else { $match = 1; } }
+elsif ($kind eq "dir" || $kind eq "emptydir") { if (-l _ || !-d _) { $why = "it is not a directory"; } else { $match = 1; } }
 if ($match && $dcmd ne "") {
   my $got = "";
   if (open(my $fh, "-|", "sh", "-c", $dcmd, "sh", $cap)) { local $/; $got = <$fh> // ""; close($fh); }
@@ -209,6 +212,8 @@ if ($match && $dcmd ne "") {
   if ($status != 0) { $match = 0; $why = "its digest could not be computed"; }
   elsif ($got ne $digest) { $match = 0; $why = "its content is not what was written"; }
 }
+if ($match && $kind eq "emptydir" && !rmdir($cap)) { $match = 0; $why = $!{ENOTEMPTY} || $!{EEXIST} ? "it is not empty" : "it could not be removed: $!"; }
+elsif ($match && $kind eq "emptydir") { rmdir($priv) or done("removed", $left, "the private directory could not be removed: $!"); done("removed", "", ""); }
 if ($match) {
   my $isdir = !-l $cap && -d _;
   my $ok = $isdir ? system("rm", "-rf", "--", $cap) == 0 : unlink($cap);

@@ -112,6 +112,18 @@ func TestRealShell(t *testing.T) {
 		}
 		b.sh(t, "test ! -e /srv/a/d")
 	})
+	t.Run("an empty directory is removed, and one with anything in it is restored", func(t *testing.T) {
+		b.sh(t, "mkdir -p /srv/a/e /srv/a/full && touch /srv/a/full/data")
+		if r := b.remove(t, "/srv/a/full", Expect{Kind: EmptyDir}); r.Outcome != Restored || r.Reason != "it is not empty" {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, "test -f /srv/a/full/data")
+		if r := b.remove(t, "/srv/a/e", Expect{Kind: EmptyDir}); r.Outcome != Removed || r.Path != "" {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, "test ! -e /srv/a/e")
+		noStaging(t, "/srv/a")
+	})
 	t.Run("a file is removed only when its digest matches", func(t *testing.T) {
 		b.sh(t, "echo content > /srv/a/f")
 		sum := strings.Fields(b.sh(t, "sha256sum /srv/a/f"))[0]
