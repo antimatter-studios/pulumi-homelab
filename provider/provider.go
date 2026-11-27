@@ -28,12 +28,12 @@ const PluginDownloadURL = "github://api.github.com/antimatter-studios"
 
 // Provider builds the provider the plugin serves.
 func Provider() p.Provider {
-	return keepEngineVersion(infer.Provider(options(nil)))
+	return markSecretsOnRead(keepEngineVersion(infer.Provider(options(nil))))
 }
 
 // ProviderWith builds the provider with an injected Runner factory, for tests.
 func ProviderWith(factory remote.Factory) p.Provider {
-	return keepEngineVersion(infer.Provider(options(factory)))
+	return markSecretsOnRead(keepEngineVersion(infer.Provider(options(factory))))
 }
 
 // keepEngineVersion puts the engine's "version" back into the checked configuration. A provider's
@@ -50,6 +50,31 @@ func keepEngineVersion(prov p.Provider) p.Provider {
 		}
 		if v, ok := req.Inputs.GetOk("version"); ok {
 			resp.Inputs = resp.Inputs.Set("version", v)
+		}
+		return resp, nil
+	}
+	return prov
+}
+
+// secretsOnRead names, per resource type, the fields that hold credentials. infer marks such a field
+// secret when it builds the value from declared inputs, but a Read that starts from an id alone (an
+// import) encodes what it found on the machine as plain values, and the engine stores them so.
+var secretsOnRead = map[string][]string{"homelab:index:RcloneRemote": {"secrets"}}
+
+func markSecretsOnRead(prov p.Provider) p.Provider {
+	read := prov.Read
+	prov.Read = func(ctx context.Context, req p.ReadRequest) (p.ReadResponse, error) {
+		resp, err := read(ctx, req)
+		if err != nil {
+			return resp, err
+		}
+		for _, key := range secretsOnRead[string(req.Urn.Type())] {
+			if v, ok := resp.Properties.GetOk(key); ok {
+				resp.Properties = resp.Properties.Set(key, v.WithSecret(true))
+			}
+			if v, ok := resp.Inputs.GetOk(key); ok {
+				resp.Inputs = resp.Inputs.Set(key, v.WithSecret(true))
+			}
 		}
 		return resp, nil
 	}

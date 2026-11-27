@@ -1,0 +1,1 @@
+- An import no longer stores credentials as plain values: an RcloneRemote import id names its credential keys (remote@key1,key2), which are read back as secrets, and a ManagedFile import leaves the file content out of the imported inputs.

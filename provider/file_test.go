@@ -219,10 +219,15 @@ func TestManagedFileLifecycle(t *testing.T) {
 		t.Fatal("an update that changed nothing rewrote the file")
 	}
 
-	// import: no inputs, so they come from the file as it is
+	// import: no inputs, so they come from the file as it is, except the content, which may be a
+	// secret; the digest stands for it, and a declaration of the same content diffs clean
 	imported, err := s.Read(p.ReadRequest{ID: path, Urn: fileURN})
-	if err != nil || imported.Inputs.Get("content").AsString() != "two\n" || imported.Inputs.Get("owner").AsString() != "www-data" {
+	if err != nil || imported.Inputs.Get("content").AsString() != "" || imported.Inputs.Get("owner").AsString() != "www-data" ||
+		imported.Properties.Get("digest").AsString() != digestOf([]byte("two\n")) {
 		t.Fatalf("import %+v %v", imported, err)
+	}
+	if diff, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: imported.Properties, Inputs: fileInputs(path, "two\n")}); err != nil || diff.HasChanges {
+		t.Fatalf("an import of the declared content diffs %+v %v", diff, err)
 	}
 
 	// delete removes the file; a read afterwards forgets the resource
