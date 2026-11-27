@@ -1,9 +1,15 @@
+export { DirectoryArgs } from "./directory";
+export type Directory = import("./directory").Directory;
+export declare const Directory: typeof import("./directory").Directory;
 export { GroupArgs } from "./group";
 export type Group = import("./group").Group;
 export declare const Group: typeof import("./group").Group;
 export { ProviderArgs } from "./provider";
 export type Provider = import("./provider").Provider;
 export declare const Provider: typeof import("./provider").Provider;
+export { SymlinkArgs } from "./symlink";
+export type Symlink = import("./symlink").Symlink;
+export declare const Symlink: typeof import("./symlink").Symlink;
 import * as config from "./config";
 import * as types from "./types";
 export { config, types, };
