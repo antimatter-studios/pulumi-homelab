@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Regenerates the TypeScript SDK in sdk/nodejs from the plugin's own schema. CI runs this and fails
-# when the committed SDK differs, so run it after any change to the provider's resources or config.
+# Regenerates the Node.js and Go SDKs from the plugin schema using Pulumi 3.150.0.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bin="$root/provider/bin/pulumi-resource-homelab"
@@ -8,6 +7,13 @@ bin="$root/provider/bin/pulumi-resource-homelab"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 pulumi package gen-sdk "$bin" --language nodejs --out "$out"
+pulumi package gen-sdk "$bin" --language go --out "$out"
+(
+  cd "$out/go"
+  go mod init github.com/antimatter-studios/pulumi-homelab/sdk/go
+  go mod edit -go=1.26.6 -require=github.com/pulumi/pulumi/sdk/v3@v3.278.0
+  go mod tidy
+)
 rm -rf "$root/sdk/nodejs"
 mkdir -p "$root/sdk"
 mv "$out/nodejs" "$root/sdk/nodejs"
@@ -47,3 +53,5 @@ p.main = "index.js"; p.types = "index.d.ts";
 require("fs").writeFileSync("bin/package.json", JSON.stringify(p, null, 4) + "\n");'
 
 )
+rm -rf "$root/sdk/go"
+mv "$out/go" "$root/sdk/go"
