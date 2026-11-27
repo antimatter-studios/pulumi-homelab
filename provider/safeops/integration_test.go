@@ -5,7 +5,9 @@ package safeops
 import (
 	"bytes"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -14,9 +16,11 @@ import (
 // point can stand for an entry on another filesystem.
 type box struct{ id string }
 
-func start(t *testing.T) box {
+func start(t *testing.T, opts ...string) box {
 	t.Helper()
-	out, err := exec.Command("docker", "run", "-d", "--rm", "--tmpfs", "/srv/mnt", "debian:trixie-slim", "sleep", "infinity").CombinedOutput()
+	args := append([]string{"run", "-d", "--rm", "--tmpfs", "/srv/mnt"}, opts...)
+	args = append(args, "debian:trixie-slim", "sleep", "infinity")
+	out, err := exec.Command("docker", args...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("docker run: %v\n%s", err, out)
 	}
@@ -124,6 +128,24 @@ func TestRealShell(t *testing.T) {
 		b.sh(t, "test ! -e /srv/a/e")
 		noStaging(t, "/srv/a")
 	})
+	t.Run("a directory is restored onto its absent name with renameat2", func(t *testing.T) {
+		b.sh(t, "mkdir -p /srv/a/tree/sub && echo keep > /srv/a/tree/sub/f")
+		if r := b.remove(t, "/srv/a/tree", Expect{Kind: Dir, DigestCommand: "echo other", Digest: "mine"}); r.Outcome != Restored || r.Path != "" {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, `test "$(cat /srv/a/tree/sub/f)" = keep`)
+		noStaging(t, "/srv/a")
+	})
+	t.Run("a directory restore never replaces an empty directory that appeared at the name", func(t *testing.T) {
+		// rename(2) would silently replace an empty directory here; renameat2 with
+		// RENAME_NOREPLACE refuses, so the tree stays in the private directory, reported
+		r := b.remove(t, "/srv/a/tree", Expect{Kind: Dir, DigestCommand: "mkdir /srv/a/tree; echo other", Digest: "mine"})
+		if r.Outcome != Kept || !strings.HasPrefix(r.Path, "/srv/a/.homelab-safeops.") || !strings.HasSuffix(r.Path, "/entry") || !strings.Contains(r.Reason, "File exists") {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, "test -d /srv/a/tree && test -z \"$(ls -A /srv/a/tree)\" && test \"$(cat "+r.Path+"/sub/f)\" = keep")
+		b.sh(t, "rm -r /srv/a/tree /srv/a/.homelab-safeops.*")
+	})
 	t.Run("a file is removed only when its digest matches", func(t *testing.T) {
 		b.sh(t, "echo content > /srv/a/f")
 		sum := strings.Fields(b.sh(t, "sha256sum /srv/a/f"))[0]
@@ -211,4 +233,21 @@ func TestRealShell(t *testing.T) {
 			t.Fatalf("exit %d", exit.ExitCode())
 		}
 	})
+}
+
+// Where renameat2 is unavailable (ENOSYS, as an old kernel or a seccomp filter answers), a
+// directory that is not the resource's is kept in the private directory and reported; it is never
+// put back with rename(2), which could replace an empty directory at the name.
+func TestDirectoryRestoreWithoutRenameat2(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "seccomp.json")
+	if err := os.WriteFile(profile, []byte(`{"defaultAction":"SCMP_ACT_ALLOW","syscalls":[{"names":["renameat2"],"action":"SCMP_ACT_ERRNO","errnoRet":38}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := start(t, "--security-opt", "seccomp="+profile)
+	b.sh(t, "mkdir -p /srv/a/tree && echo keep > /srv/a/tree/f")
+	r := b.remove(t, "/srv/a/tree", Expect{Kind: Dir, DigestCommand: "echo other", Digest: "mine"})
+	if r.Outcome != Kept || !strings.HasSuffix(r.Path, "/entry") || !strings.Contains(r.Reason, "Function not implemented") {
+		t.Fatalf("%+v", r)
+	}
+	b.sh(t, "test ! -e /srv/a/tree && test \"$(cat "+r.Path+"/f)\" = keep")
 }

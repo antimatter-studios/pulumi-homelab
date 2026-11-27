@@ -1,7 +1,8 @@
 # Rules for every Go resource
 
 Every resource in this provider follows these rules. They come from the reviews of #96 to #100
-(2026-11-27) and are kept on the tracking issue (#31). Every resource pull request says that it was
+(2026-11-27) and are kept on the tracking issue, in
+[#31's rules comment](https://github.com/antimatter-studios/pulumi-homelab/issues/31#issuecomment-7225605455). Every resource pull request says that it was
 checked against them.
 
 - **R1 Ownership.** Only Create and Update set what a later Delete may remove: the digest applied,

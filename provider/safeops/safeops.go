@@ -19,8 +19,11 @@
 //     compared exactly by readlink, and optionally a digest printed by a command the caller supplies.
 //  4. on a match removes it; on a mismatch restores it without clobbering, with link(2) and then
 //     unlink(2) for anything but a directory (link fails with EEXIST rather than replace, and does
-//     not follow a symlink), and renameat2(RENAME_NOREPLACE) for a directory. What cannot be put back
-//     stays in the private directory, and its exact path is reported.
+//     not follow a symlink), and renameat2(AT_FDCWD, …, AT_FDCWD, …, RENAME_NOREPLACE) through perl's
+//     syscall for a directory, since link(2) cannot link one and rename(2) would replace an empty
+//     directory at the name (SYS_renameat2 is 316 on x86_64, 276 on aarch64, 382 on arm, 353 on
+//     i386). ENOSYS, EINVAL, EEXIST or an unknown architecture leaves the entry in the private
+//     directory; there is no fallback. What cannot be put back has its exact path reported.
 //
 // Every outcome is reported as a Result, never as a failure: the caller turns kept and refused into
 // warnings, so a delete that finds something unexpected keeps it, says so, and succeeds.
@@ -227,6 +230,9 @@ if (-d $cap && !-l $cap) {
   my $nr = $renameat2{$arch} // ($arch =~ /^arm/ ? 382 : undef);
   done("kept", $kept, "$why, and a directory cannot be put back without replacing on $arch") unless defined $nr;
   my ($from, $to) = ($cap, $name);
+  # renameat2(AT_FDCWD, from, AT_FDCWD, to, RENAME_NOREPLACE): never replaces, not even an empty
+  # directory, which rename(2) would. ENOSYS or EINVAL (no renameat2, or a filesystem without
+  # RENAME_NOREPLACE) keeps the tree where it is, reported; there is no fallback.
   syscall($nr, -100, $from, -100, $to, 1) == 0 or done("kept", $kept, "$why, and it could not be put back: $!");
 } else {
   link($cap, $name) or done("kept", $kept, "$why, and it could not be put back: $!");
