@@ -204,7 +204,15 @@ func (Symlink) Read(ctx context.Context, req infer.ReadRequest[SymlinkArgs, Syml
 	if accept == nil {
 		accept = req.Inputs.AcceptLauncherScript
 	}
-	actual, err := readSymlink(ctx, m, req.ID, deref(accept))
+	// An import has only the id, so a launcher script in place of the link would read as a file in
+	// the way. The id says the declaration accepts one with an @launcher suffix (path@launcher).
+	id := req.ID
+	importing := req.State.Path == "" && req.Inputs.Path == ""
+	if path, ok := strings.CutSuffix(id, "@launcher"); ok && importing {
+		yes := true
+		id, accept = path, &yes
+	}
+	actual, err := readSymlink(ctx, m, id, deref(accept))
 	if err != nil {
 		return infer.ReadResponse[SymlinkArgs, SymlinkState]{}, err
 	}
@@ -213,11 +221,14 @@ func (Symlink) Read(ctx context.Context, req infer.ReadRequest[SymlinkArgs, Syml
 	}
 	state := req.State
 	state.Path, state.Target = actual.Path, actual.Target
+	if importing {
+		state.AcceptLauncherScript = accept
+	}
 	inputs := req.Inputs
 	if inputs.Path == "" {
 		inputs = SymlinkArgs{Path: actual.Path, Target: actual.Target, AcceptLauncherScript: accept}
 	}
-	return infer.ReadResponse[SymlinkArgs, SymlinkState]{ID: req.ID, Inputs: inputs, State: state}, nil
+	return infer.ReadResponse[SymlinkArgs, SymlinkState]{ID: id, Inputs: inputs, State: state}, nil
 }
 
 // Update relinks under the id; a path change is a replacement, never an update.
