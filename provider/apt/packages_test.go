@@ -99,3 +99,19 @@ func TestParsePackageState(t *testing.T) {
 		eq(t, aptmark.AutoMarked([]string{"ovmf", "qemu-efi-arm"}, state.Installed, state.Manual), []string{"ovmf"})
 	})
 }
+
+// The TypeScript's answers under node for each case.
+func TestPackagesWhitespaceIsJavaScripts(t *testing.T) {
+	eq(t, ParseInstalled("a\u0085installed 1\nb\u00a0installed\u30002\n\ufeffc installed 3"), map[string]string{"b": "2", "c": "3"})
+	for in, want := range map[string][]string{
+		"Remv a\u00a0b":    {"a"},
+		"Remv\u00a0a":      {"a"},
+		"Remv\va":          {"a"},
+		"\u0085Remv a":     {},
+		"\ufeffRemv a [1]": {"a"},
+	} {
+		if got := ParseSimulatedRemovals(in); !reflect.DeepEqual(got, want) {
+			t.Errorf("ParseSimulatedRemovals(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

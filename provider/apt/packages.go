@@ -5,16 +5,10 @@ package apt
 import (
 	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/aptmark"
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
-
-// fields splits on whitespace the way JavaScript's trim() and split(/\s+/) do, which includes
-// the byte-order mark.
-func fields(text string) []string {
-	return strings.FieldsFunc(text, func(r rune) bool { return unicode.IsSpace(r) || r == 0xFEFF })
-}
 
 // ParseInstalled reads `dpkg-query -W -f='${binary:Package} ${db:Status-Status} ${Version}\n'`
 // into the installed packages and their versions. A package dpkg knows but has removed is left
@@ -22,7 +16,7 @@ func fields(text string) []string {
 func ParseInstalled(out string) map[string]string {
 	installed := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
-		words := append(fields(line), "", "", "")
+		words := append(jscompat.Fields(line), "", "", "")
 		name, status, version := words[0], words[1], words[2]
 		if name == "" {
 			continue
@@ -53,13 +47,13 @@ func ParsePackageState(out string) PackageState {
 	return PackageState{Installed: ParseInstalled(dpkg), Manual: aptmark.ParseManual(marked)}
 }
 
-var removal = regexp.MustCompile(`^Remv\s+(\S+)`)
+var removal = regexp.MustCompile(`^Remv` + jscompat.SpaceClass + `+(` + jscompat.NonSpaceClass + `+)`)
 
 // ParseSimulatedRemovals reads the packages an `apt-get -s purge` would remove off its Remv lines.
 func ParseSimulatedRemovals(out string) []string {
 	names := []string{}
 	for _, line := range strings.Split(out, "\n") {
-		if found := removal.FindStringSubmatch(strings.TrimFunc(line, func(r rune) bool { return unicode.IsSpace(r) || r == 0xFEFF })); found != nil && found[1] != "" {
+		if found := removal.FindStringSubmatch(jscompat.Trim(line)); found != nil && found[1] != "" {
 			names = append(names, found[1])
 		}
 	}
