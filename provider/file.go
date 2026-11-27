@@ -205,7 +205,9 @@ func (ManagedFile) Read(ctx context.Context, req infer.ReadRequest[ManagedFileAr
 	state.Digest = digestOf([]byte(actual.Content))
 	inputs := req.Inputs
 	if inputs.Path == "" {
-		inputs = ManagedFileArgs{Path: req.ID, Content: actual.Content, Mode: &state.Mode, Owner: &state.Owner,
+		// The content is left out: an import cannot know whether the program marks it secret, and
+		// the engine checkpoints these inputs as they are. The digest in the state is what Diff uses.
+		inputs = ManagedFileArgs{Path: req.ID, Mode: &state.Mode, Owner: &state.Owner,
 			Group: &state.Group, ReloadSystemd: state.ReloadSystemd}
 	}
 	return infer.ReadResponse[ManagedFileArgs, ManagedFileState]{ID: req.ID, Inputs: inputs, State: state}, nil

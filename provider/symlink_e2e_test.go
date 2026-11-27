@@ -200,3 +200,27 @@ func TestSymlinkPreviewRunsNothing(t *testing.T) {
 		t.Fatalf("preview ran %v", fake.Commands())
 	}
 }
+
+// An import of a launcher script names it with @launcher: it reads back as its program, keeps the
+// flag for later refreshes, and a declaration that accepts launcher scripts diffs clean. Without the
+// suffix the script is a file in the way, as it is for any read without the flag.
+func TestSymlinkImportsALauncherScript(t *testing.T) {
+	fake := remotetest.New().
+		On(journalRead, remotetest.Reply{Code: 8, Stdout: "regular file\n"}).
+		On(journalHead, remotetest.Reply{Stdout: "#!/bin/sh\nexec '/opt/t3/0.2/t3' \"$@\"\n"})
+	s := configured(t, fake)
+	read, err := s.Read(p.ReadRequest{ID: "/var/log/journal@launcher", Urn: symlinkURN})
+	if err != nil || read.ID != "/var/log/journal" || read.Properties.Get("target").AsString() != "/opt/t3/0.2/t3" ||
+		!read.Properties.Get("acceptLauncherScript").AsBool() {
+		t.Fatalf("read %+v %v", read, err)
+	}
+	declared := property.NewMap(map[string]property.Value{
+		"path": property.New("/var/log/journal"), "target": property.New("/opt/t3/0.2/t3"), "acceptLauncherScript": property.New(true),
+	})
+	if diff, err := s.Diff(p.DiffRequest{ID: read.ID, Urn: symlinkURN, State: read.Properties, Inputs: declared}); err != nil || diff.HasChanges {
+		t.Fatalf("diff %+v %v", diff, err)
+	}
+	if _, err := s.Read(p.ReadRequest{ID: "/var/log/journal", Urn: symlinkURN}); err == nil {
+		t.Fatal("an import without @launcher accepted a launcher script")
+	}
+}

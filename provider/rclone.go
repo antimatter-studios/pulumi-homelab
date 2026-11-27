@@ -195,6 +195,16 @@ func (RcloneRemote) Read(ctx context.Context, req infer.ReadRequest[RcloneRemote
 	if err != nil {
 		return infer.ReadResponse[RcloneRemoteArgs, RcloneRemoteState]{}, err
 	}
+	// An import has only the id. It cannot tell a credential from a setting by looking, so the id
+	// names the credential keys after an @ (remote@key1,key2), and they are read as secrets rather
+	// than landing in the plain settings.
+	id := req.ID
+	var importSecrets []string
+	if req.State.Remote == "" && req.Inputs.Remote == "" {
+		if at := strings.LastIndex(id, "@"); at > 0 {
+			id, importSecrets = id[:at], strings.Split(id[at+1:], ",")
+		}
+	}
 	state := req.State
 	if state.Config == "" {
 		state.Config = orDefault(req.Inputs.Config, rcloneDefaultConfig)
@@ -205,19 +215,23 @@ func (RcloneRemote) Read(ctx context.Context, req infer.ReadRequest[RcloneRemote
 	if state.Secrets == nil {
 		state.Secrets = req.Inputs.Secrets
 	}
-	actual, err := readRemote(ctx, m, req.ID, jscompat.SortedKeys(state.Secrets), state.Config)
+	secretKeys := jscompat.SortedKeys(state.Secrets)
+	if importSecrets != nil {
+		secretKeys = importSecrets
+	}
+	actual, err := readRemote(ctx, m, id, secretKeys, state.Config)
 	if err != nil || actual == nil {
 		return infer.ReadResponse[RcloneRemoteArgs, RcloneRemoteState]{}, err
 	}
 	secrets := maps.Clone(nonNil(state.Secrets))
 	maps.Copy(secrets, actual.Secrets)
-	state.Remote, state.Type, state.Settings, state.Secrets = req.ID, actual.Type, actual.Settings, secrets
+	state.Remote, state.Type, state.Settings, state.Secrets = id, actual.Type, actual.Settings, secrets
 	inputs := req.Inputs
 	if inputs.Remote == "" {
 		config := state.Config
-		inputs = RcloneRemoteArgs{Remote: req.ID, Type: actual.Type, Settings: actual.Settings, Secrets: secrets, Config: &config}
+		inputs = RcloneRemoteArgs{Remote: id, Type: actual.Type, Settings: actual.Settings, Secrets: secrets, Config: &config}
 	}
-	return infer.ReadResponse[RcloneRemoteArgs, RcloneRemoteState]{ID: req.ID, Inputs: inputs, State: state}, nil
+	return infer.ReadResponse[RcloneRemoteArgs, RcloneRemoteState]{ID: id, Inputs: inputs, State: state}, nil
 }
 
 // Update writes the remote again, under its id.
