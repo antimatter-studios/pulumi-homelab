@@ -8,6 +8,8 @@ package homelab
 import (
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/remote"
 )
 
 // Name is the package name: the plugin binary is pulumi-resource-homelab and every token starts
@@ -24,11 +26,18 @@ const PluginDownloadURL = "github://api.github.com/antimatter-studios"
 
 // Provider builds the provider the plugin serves.
 func Provider() p.Provider {
-	return infer.Provider(options())
+	return infer.Provider(options(nil))
 }
 
-func options() infer.Options {
+// ProviderWith builds the provider with an injected Runner factory, for tests.
+func ProviderWith(factory remote.Factory) p.Provider {
+	return infer.Provider(options(factory))
+}
+
+func options(factory remote.Factory) infer.Options {
 	return infer.NewProviderBuilder().
+		WithConfig(infer.Config(&Config{factory: factory})).
+		WithResources(infer.Resource(Group{})).
 		WithDisplayName("homelab").
 		WithDescription("Desired state for a Linux machine you own.").
 		WithNamespace("antimatter-studios").

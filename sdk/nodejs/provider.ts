@@ -2,6 +2,8 @@
 // *** Do not edit by hand unless you're certain you know what you are doing! ***
 
 import * as pulumi from "@pulumi/pulumi";
+import * as inputs from "./types/input";
+import * as outputs from "./types/output";
 import * as utilities from "./utilities";
 
 export class Provider extends pulumi.ProviderResource {
@@ -19,6 +21,38 @@ export class Provider extends pulumi.ProviderResource {
         return obj['__pulumiType'] === "pulumi:providers:" + Provider.__pulumiType;
     }
 
+    /**
+     * Address of the managed machine. Required.
+     */
+    public readonly address!: pulumi.Output<string | undefined>;
+    /**
+     * Path of the ssh agent socket. Exactly one of agentSocket and agentSocketEnv is required.
+     */
+    public readonly agentSocket!: pulumi.Output<string | undefined>;
+    /**
+     * Name of the environment variable holding the agent socket path, e.g. CHORE_AGENT_SOCK.
+     */
+    public readonly agentSocketEnv!: pulumi.Output<string | undefined>;
+    /**
+     * How commands become root: "sudo" (sudo -n), "none" (already root) or "sudo-password" (sudo -S with sudoPassword). Required.
+     */
+    public readonly escalation!: pulumi.Output<string | undefined>;
+    /**
+     * Project file holding the machine's host keys, in known_hosts format.
+     */
+    public readonly hostKeysFile!: pulumi.Output<string | undefined>;
+    /**
+     * Optional explicit private key to authenticate with.
+     */
+    public readonly identity!: pulumi.Output<string | undefined>;
+    /**
+     * The sudo password, required when escalation is "sudo-password" and refused otherwise.
+     */
+    public readonly sudoPassword!: pulumi.Output<string | undefined>;
+    /**
+     * User to connect as. Required.
+     */
+    public readonly user!: pulumi.Output<string | undefined>;
 
     /**
      * Create a Provider resource with the given unique name, arguments, and options.
@@ -31,8 +65,25 @@ export class Provider extends pulumi.ProviderResource {
         let resourceInputs: pulumi.Inputs = {};
         opts = opts || {};
         {
+            resourceInputs["address"] = args ? args.address : undefined;
+            resourceInputs["agentSocket"] = args ? args.agentSocket : undefined;
+            resourceInputs["agentSocketEnv"] = args ? args.agentSocketEnv : undefined;
+            resourceInputs["escalation"] = args ? args.escalation : undefined;
+            resourceInputs["hostKeys"] = pulumi.output(args ? args.hostKeys : undefined).apply(JSON.stringify);
+            resourceInputs["hostKeysFile"] = args ? args.hostKeysFile : undefined;
+            resourceInputs["identity"] = args?.identity ? pulumi.secret(args.identity) : undefined;
+            resourceInputs["jumps"] = pulumi.output(args ? args.jumps : undefined).apply(JSON.stringify);
+            resourceInputs["port"] = pulumi.output(args ? args.port : undefined).apply(JSON.stringify);
+            resourceInputs["readDefaultKeys"] = pulumi.output(args ? args.readDefaultKeys : undefined).apply(JSON.stringify);
+            resourceInputs["readKnownHosts"] = pulumi.output(args ? args.readKnownHosts : undefined).apply(JSON.stringify);
+            resourceInputs["readSshConfig"] = pulumi.output(args ? args.readSshConfig : undefined).apply(JSON.stringify);
+            resourceInputs["strictHostKeyChecking"] = pulumi.output(args ? args.strictHostKeyChecking : undefined).apply(JSON.stringify);
+            resourceInputs["sudoPassword"] = args?.sudoPassword ? pulumi.secret(args.sudoPassword) : undefined;
+            resourceInputs["user"] = args ? args.user : undefined;
         }
         opts = pulumi.mergeOptions(utilities.resourceOptsDefaults(), opts);
+        const secretOpts = { additionalSecretOutputs: ["identity", "sudoPassword"] };
+        opts = pulumi.mergeOptions(opts, secretOpts);
         super(Provider.__pulumiType, name, resourceInputs, opts);
     }
 }
@@ -41,4 +92,64 @@ export class Provider extends pulumi.ProviderResource {
  * The set of arguments for constructing a Provider resource.
  */
 export interface ProviderArgs {
+    /**
+     * Address of the managed machine. Required.
+     */
+    address?: pulumi.Input<string>;
+    /**
+     * Path of the ssh agent socket. Exactly one of agentSocket and agentSocketEnv is required.
+     */
+    agentSocket?: pulumi.Input<string>;
+    /**
+     * Name of the environment variable holding the agent socket path, e.g. CHORE_AGENT_SOCK.
+     */
+    agentSocketEnv?: pulumi.Input<string>;
+    /**
+     * How commands become root: "sudo" (sudo -n), "none" (already root) or "sudo-password" (sudo -S with sudoPassword). Required.
+     */
+    escalation?: pulumi.Input<string>;
+    /**
+     * Pinned host keys of the machine. Exactly one of hostKeys and hostKeysFile is required.
+     */
+    hostKeys?: pulumi.Input<pulumi.Input<string>[]>;
+    /**
+     * Project file holding the machine's host keys, in known_hosts format.
+     */
+    hostKeysFile?: pulumi.Input<string>;
+    /**
+     * Optional explicit private key to authenticate with.
+     */
+    identity?: pulumi.Input<string>;
+    /**
+     * Hops to go through, in order, each with its own address, port, user and pinned host keys.
+     */
+    jumps?: pulumi.Input<pulumi.Input<inputs.provider.JumpArgs>[]>;
+    /**
+     * ssh port of the managed machine. Required.
+     */
+    port?: pulumi.Input<number>;
+    /**
+     * Whether the default key files (~/.ssh/id_*) may be read. Required.
+     */
+    readDefaultKeys?: pulumi.Input<boolean>;
+    /**
+     * Whether ~/.ssh/known_hosts may be read. Required.
+     */
+    readKnownHosts?: pulumi.Input<boolean>;
+    /**
+     * Whether ~/.ssh/config may be read. Required.
+     */
+    readSshConfig?: pulumi.Input<boolean>;
+    /**
+     * Whether an unknown or changed host key is refused. Required.
+     */
+    strictHostKeyChecking?: pulumi.Input<boolean>;
+    /**
+     * The sudo password, required when escalation is "sudo-password" and refused otherwise.
+     */
+    sudoPassword?: pulumi.Input<string>;
+    /**
+     * User to connect as. Required.
+     */
+    user?: pulumi.Input<string>;
 }
