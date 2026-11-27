@@ -3,9 +3,10 @@
 package journald
 
 import (
-	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 // jsSpace is JavaScript's whitespace (trim, \s): Go's unicode.IsSpace plus U+FEFF, minus U+0085,
@@ -24,11 +25,10 @@ func jsTrim(s string) string { return strings.TrimFunc(s, jsSpace) }
 // sorted by key, whatever order the program declared them in. Rendering in any other order would
 // rewrite every one of them at the switch.
 func JournaldFile(settings map[string]string) string {
-	keys := make([]string, 0, len(settings))
-	for k := range settings {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	// the order the TypeScript wrote them in: settings reached it through a protobuf Struct, whose
+	// keys enumerate as jscompat.SortedKeys orders them (array-index keys numerically, the rest by
+	// UTF-16 code unit); sort.Strings differed for numeric and non-ASCII keys (review of #98)
+	keys := jscompat.SortedKeys(settings)
 	lines := make([]string, len(keys))
 	for i, k := range keys {
 		lines[i] = k + "=" + settings[k]

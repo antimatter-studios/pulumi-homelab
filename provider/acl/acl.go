@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 // EntryType is the kind of ACL entry: user, group, mask or other.
@@ -52,7 +54,7 @@ var (
 // NormalisePerms settles a permission spelling (rwx, rw, x, -, or an octal digit) on the three
 // characters getfacl prints. The conditional X and anything else are refused.
 func NormalisePerms(perms string) (string, error) {
-	text := strings.TrimSpace(perms)
+	text := jscompat.Trim(perms)
 	if octal.MatchString(text) {
 		bits := text[0] - '0'
 		return flag(bits&4 != 0, 'r') + flag(bits&2 != 0, 'w') + flag(bits&1 != 0, 'x'), nil
@@ -80,7 +82,7 @@ func flag(on bool, c byte) string {
 func ParseGetfacl(out string) (access, defaults []Entry) {
 	access, defaults = []Entry{}, []Entry{}
 	for _, raw := range strings.Split(out, "\n") {
-		line := strings.TrimSpace(raw)
+		line := jscompat.Trim(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -89,7 +91,7 @@ func ParseGetfacl(out string) (access, defaults []Entry) {
 		if len(parts) > 1 {
 			comment = parts[1]
 		}
-		fields := strings.Split(strings.TrimSpace(body), ":")
+		fields := strings.Split(jscompat.Trim(body), ":")
 		isDefault := fields[0] == "default"
 		if isDefault {
 			fields = fields[1:]
@@ -101,11 +103,11 @@ func ParseGetfacl(out string) (access, defaults []Entry) {
 		if kind != User && kind != Group && kind != Mask && kind != Other {
 			continue
 		}
-		effective := strings.TrimSpace(perms)
+		effective := jscompat.Trim(perms)
 		if strings.HasPrefix(comment, "effective:") {
-			effective = strings.TrimSpace(strings.TrimPrefix(comment, "effective:"))
+			effective = jscompat.Trim(strings.TrimPrefix(comment, "effective:"))
 		}
-		entry := Entry{Type: kind, Name: name, Perms: strings.TrimSpace(perms), Effective: effective}
+		entry := Entry{Type: kind, Name: name, Perms: jscompat.Trim(perms), Effective: effective}
 		if isDefault {
 			defaults = append(defaults, entry)
 		} else {

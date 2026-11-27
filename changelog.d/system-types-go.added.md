@@ -1,0 +1,1 @@
+- The Go provider now serves Precondition, User, SudoRule, AuthorizedKey, SshKey, SshdConfig, ManagedLine, KernelCmdline, SystemdUnit, SystemdInstance, Journald, Swap, FstabEntry, Hostname and BootConfig. Their lifecycle behavior follows the TypeScript resources. Read reconstructs inputs from observed state for imports.

@@ -297,3 +297,32 @@ func FileSetting(text, share, key string) (string, bool) {
 	}
 	return "", false
 }
+
+// SameKey reports whether two parameter names are the same to samba, which ignores case and runs
+// of whitespace inside a name.
+func SameKey(a, b string) bool { return sameKey(a, b) }
+
+// Entries is Object.entries over the settings as a JavaScript object holds them: integer-like keys
+// first, in numeric order, then the rest in insertion order.
+func (s Settings) Entries() Settings {
+	keys := make([]string, len(s))
+	for i, setting := range s {
+		keys[i] = setting.Key
+	}
+	values := s.Map()
+	out := Settings{}
+	for _, key := range jscompat.KeyOrder(keys) {
+		out = append(out, Setting{key, values[key]})
+	}
+	return out
+}
+
+// Find is Object.entries(s).find(([name]) => sameKey(name, key))?.[1].
+func (s Settings) Find(key string) (string, bool) {
+	for _, setting := range s.Entries() {
+		if sameKey(setting.Key, key) {
+			return setting.Value, true
+		}
+	}
+	return "", false
+}

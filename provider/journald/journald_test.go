@@ -87,3 +87,13 @@ func TestJsTrimKeepsNEL(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// Review of #98: keys in the order a protobuf Struct delivered them to the TypeScript, which
+// jscompat.SortedKeys reproduces: array-index keys numerically first, then UTF-16 order.
+func TestJournaldFileUsesTheStructKeyOrder(t *testing.T) {
+	got := JournaldFile(map[string]string{"b": "1", "10": "x", "2": "y", "Ａ": "w", "\U0001F600": "v", "A": "z"})
+	want := "# Managed by Pulumi. Hand edits show up as drift on the next `pulumi up --refresh`.\n[Journal]\n2=y\n10=x\nA=z\nb=1\n\U0001F600=v\nＡ=w\n"
+	if got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+}

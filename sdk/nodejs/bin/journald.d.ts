@@ -1,0 +1,76 @@
+import * as pulumi from "@pulumi/pulumi";
+/**
+ * A journald drop-in, with what journald actually ends up with reported beside it.
+ */
+export declare class Journald extends pulumi.CustomResource {
+    /**
+     * Get an existing Journald resource's state with the given name, ID, and optional extra
+     * properties used to qualify the lookup.
+     *
+     * @param name The _unique_ name of the resulting resource.
+     * @param id The _unique_ provider ID of the resource to lookup.
+     * @param opts Optional settings to control the behavior of the CustomResource.
+     */
+    static get(name: string, id: pulumi.Input<pulumi.ID>, opts?: pulumi.CustomResourceOptions): Journald;
+    /**
+     * Returns true if the given object is an instance of Journald.  This is designed to work even
+     * when multiple copies of the Pulumi SDK have been loaded into the same process.
+     */
+    static isInstance(obj: any): obj is Journald;
+    readonly content: pulumi.Output<string>;
+    readonly directory: pulumi.Output<string>;
+    /**
+     * What journald ends up with, every file merged.
+     */
+    readonly effective: pulumi.Output<{
+        [key: string]: string;
+    }>;
+    readonly file: pulumi.Output<string>;
+    readonly journal: pulumi.Output<string>;
+    /**
+     * What the journal path is: directory, absent, or a symlink's target.
+     */
+    readonly journalDir: pulumi.Output<string>;
+    /**
+     * Settings of this drop-in that another file overrides.
+     */
+    readonly overridden: pulumi.Output<string[]>;
+    /**
+     * Whether the journal directory exists, so logs survive a reboot.
+     */
+    readonly persistent: pulumi.Output<boolean>;
+    readonly settings: pulumi.Output<{
+        [key: string]: string;
+    } | undefined>;
+    /**
+     * Create a Journald resource with the given unique name, arguments, and options.
+     *
+     * @param name The _unique_ name of the resource.
+     * @param args The arguments to use to populate this resource's properties.
+     * @param opts A bag of options that control this resource's behavior.
+     */
+    constructor(name: string, args: JournaldArgs, opts?: pulumi.CustomResourceOptions);
+}
+/**
+ * The set of arguments for constructing a Journald resource.
+ */
+export interface JournaldArgs {
+    /**
+     * The drop-in directory, /etc/systemd/journald.conf.d by default.
+     */
+    directory?: pulumi.Input<string>;
+    /**
+     * The drop-in's name without .conf. Defaults to 90-<resource name>.
+     */
+    file?: pulumi.Input<string>;
+    /**
+     * The persistent journal directory reported on, /var/log/journal by default.
+     */
+    journal?: pulumi.Input<string>;
+    /**
+     * [Journal] settings, as journald.conf spells them. Written in key order.
+     */
+    settings: pulumi.Input<{
+        [key: string]: pulumi.Input<string>;
+    }>;
+}
