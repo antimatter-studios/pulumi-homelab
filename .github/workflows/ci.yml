@@ -69,11 +69,25 @@ jobs:
           go-version-file: provider/go.mod
           cache-dependency-path: provider/go.sum
 
+      # node for jscompat's differential test, which compares the package with JavaScript itself.
+      # Pinned, and required: without node that test would only skip, and nobody would notice.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+
       - name: Vet
         run: go vet ./...
 
       - name: Test
         run: go test -race ./...
+        env:
+          JSCOMPAT_REQUIRE_NODE: '1'
+
+      - name: jscompat against node
+        # The same test, shown: which node and Unicode it compared against, and that it ran.
+        env:
+          JSCOMPAT_REQUIRE_NODE: '1'
+        run: go test -v -count=1 -run TestAgainstNode ./jscompat/
 
       - name: Integration tests (Debian 13 sshd in Docker)
         run: go test -tags integration -run Debian13 ./transport/
