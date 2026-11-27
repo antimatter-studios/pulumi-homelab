@@ -180,10 +180,13 @@ func TestUnknownEscalationIsRefused(t *testing.T) {
 	}
 }
 
-// Without an injected factory, the provider says the transport is not built yet.
-func TestRealFactorySaysTransportIsNotBuilt(t *testing.T) {
+// Without an injected factory the provider uses the real ssh transport, and an agent socket env var
+// that is not set stops the deploy with an error naming the key, rather than looking elsewhere.
+func TestRealFactoryRefusesAnUnsetAgentSocketEnv(t *testing.T) {
+	t.Setenv("CHORE_AGENT_SOCK", "")
+	t.Setenv("SSH_AUTH_SOCK", "/tmp/booby-trap.sock")
 	err := configure(t, nil, homelabServerConfig())
-	if err == nil || !strings.Contains(err.Error(), "#34") {
+	if err == nil || !strings.Contains(err.Error(), "homelab:agentSocketEnv") || !strings.Contains(err.Error(), "CHORE_AGENT_SOCK") {
 		t.Fatalf("got %v", err)
 	}
 }
