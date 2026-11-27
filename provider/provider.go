@@ -35,6 +35,9 @@ func options() infer.Options {
 		WithRepository("https://github.com/antimatter-studios/pulumi-homelab").
 		WithLicense("MIT").
 		WithPluginDownloadURL(PluginDownloadURL).
+		// The npm name the generated SDK carries. Left unset, Pulumi names it @pulumi/homelab, which
+		// claims Pulumi's own scope for a package they do not publish.
+		WithLanguageMap(map[string]any{"nodejs": map[string]any{"packageName": "@antimatter-studios/homelab"}}).
 		WithKeywords("homelab", "linux", "ssh", "category/infrastructure").
 		BuildOptions()
 }
