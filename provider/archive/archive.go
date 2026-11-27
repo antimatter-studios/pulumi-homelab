@@ -43,13 +43,15 @@ func FormatOf(url string) Format {
 }
 
 // ParseVersion reads a version out of whatever the software printed: the first capture group of
-// pattern's first match, or "" when there is none or the pattern does not compile. An empty
-// pattern means DefaultVersionPattern.
+// pattern's first match, or "" when there is none or the pattern does not compile. The pattern is
+// used as given, as the TypeScript's parseVersion does; an empty pattern matches the empty string
+// with no group and so gives "". Defaulting to DefaultVersionPattern is the caller's job, for an
+// undeclared pattern only, as resolveArgs does with ??.
+//
+// The pattern is a JavaScript regular expression, so it is translated to Go's syntax first (see
+// jsPattern): RE2's \s and . are not JavaScript's.
 func ParseVersion(out string, pattern string) string {
-	if pattern == "" {
-		pattern = DefaultVersionPattern
-	}
-	re, err := regexp.Compile(pattern)
+	re, err := regexp.Compile(jsPattern(pattern))
 	if err != nil {
 		return ""
 	}
@@ -58,4 +60,57 @@ func ParseVersion(out string, pattern string) string {
 		return ""
 	}
 	return match[1]
+}
+
+// jsWhitespace is the contents of JavaScript's \s class.
+const jsWhitespace = `\t\n\v\f\r \x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}`
+
+// jsPattern rewrites the parts of a JavaScript pattern whose meaning differs in RE2, so a pattern
+// written for the TypeScript library matches the same text here:
+//
+//   - \s and \S: RE2's are ASCII only; JavaScript's include \v, NBSP, the Unicode spaces and U+FEFF.
+//     Inside a class \s becomes the same characters; \S inside a class has no RE2 spelling and is
+//     left as RE2's, which differs only for those non-ASCII spaces.
+//   - . outside a class: RE2's excludes only \n; JavaScript's also excludes \r, U+2028 and U+2029.
+//
+// Everything else is copied. Features RE2 lacks (lookaround, backreferences) still fail to
+// compile, and ParseVersion then answers "", as it does for a pattern that does not compile at all.
+func jsPattern(p string) string {
+	var b strings.Builder
+	inClass := false
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		switch {
+		case c == '\\' && i+1 < len(p):
+			next := p[i+1]
+			i++
+			switch {
+			case next == 's' && inClass:
+				b.WriteString(jsWhitespace)
+			case next == 's':
+				b.WriteString("[" + jsWhitespace + "]")
+			case next == 'S' && !inClass:
+				b.WriteString("[^" + jsWhitespace + "]")
+			default:
+				b.WriteByte('\\')
+				b.WriteByte(next)
+			}
+		case c == '[' && !inClass:
+			inClass = true
+			b.WriteByte(c)
+			// JavaScript closes a class at the first ], even straight after [ or [^, and so does this
+			if i+1 < len(p) && p[i+1] == '^' {
+				b.WriteByte('^')
+				i++
+			}
+		case c == ']' && inClass:
+			inClass = false
+			b.WriteByte(c)
+		case c == '.' && !inClass:
+			b.WriteString(`[^\n\r\x{2028}\x{2029}]`)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
