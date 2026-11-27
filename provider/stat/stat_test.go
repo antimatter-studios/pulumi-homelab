@@ -48,4 +48,13 @@ func TestParseFileStat(t *testing.T) {
 	t.Run("answers with empty strings rather than throwing on nothing", func(t *testing.T) {
 		eq(t, ParseFileStat(""), FileStat{Mode: "", Owner: "", Group: ""})
 	})
+	t.Run("splits on JavaScript's whitespace, so a NEL is part of a name", func(t *testing.T) {
+		eq(t, ParseFileStat("644 root\u0085root grp"), FileStat{Mode: "0644", Owner: "root\u0085root", Group: "grp"})
+		eq(t, ParseFileStat("\ufeff644\u00a0root\u3000grp\n"), FileStat{Mode: "0644", Owner: "root", Group: "grp"})
+	})
+}
+
+func TestParseStatTrimsAsJavaScriptDoes(t *testing.T) {
+	eq(t, ParseStat("directory|755|root|root\u0085").Group, "root\u0085")
+	eq(t, ParseStat("\ufeffdirectory|755|root|root\ufeff"), Stat{Kind: "directory", Mode: "0755", Owner: "root", Group: "root"})
 }
