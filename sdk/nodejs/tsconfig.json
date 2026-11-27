@@ -13,14 +13,29 @@
         "strict": true
     },
     "files": [
+        "authorizedKey.ts",
+        "bootConfig.ts",
         "config/index.ts",
         "config/vars.ts",
+        "fstabEntry.ts",
         "group.ts",
+        "hostname.ts",
         "index.ts",
+        "journald.ts",
+        "kernelCmdline.ts",
+        "managedLine.ts",
+        "precondition.ts",
         "provider.ts",
+        "sshKey.ts",
+        "sshdConfig.ts",
+        "sudoRule.ts",
+        "swap.ts",
+        "systemdInstance.ts",
+        "systemdUnit.ts",
         "types/index.ts",
         "types/input.ts",
         "types/output.ts",
+        "user.ts",
         "utilities.ts"
     ]
 }

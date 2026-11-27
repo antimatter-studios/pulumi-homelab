@@ -6,10 +6,77 @@ import * as inputs from "../types/input";
 import * as outputs from "../types/output";
 
 export namespace provider {
+    export interface BootSettingsArgs {
+        arm_64bit?: pulumi.Input<boolean>;
+        arm_boost?: pulumi.Input<boolean>;
+        audio?: pulumi.Input<string>;
+        auto_initramfs?: pulumi.Input<boolean>;
+        camera_auto_detect?: pulumi.Input<boolean>;
+        disable_fw_kms_setup?: pulumi.Input<boolean>;
+        disable_overscan?: pulumi.Input<boolean>;
+        disable_splash?: pulumi.Input<boolean>;
+        display_auto_detect?: pulumi.Input<boolean>;
+        display_rotate?: pulumi.Input<number>;
+        gpu_mem?: pulumi.Input<number>;
+        hdmi_drive?: pulumi.Input<number>;
+        hdmi_force_hotplug?: pulumi.Input<boolean>;
+        hdmi_group?: pulumi.Input<number>;
+        hdmi_mode?: pulumi.Input<number>;
+        max_framebuffers?: pulumi.Input<number>;
+        otg_mode?: pulumi.Input<boolean>;
+        sdram_freq?: pulumi.Input<number>;
+        usb_max_current_enable?: pulumi.Input<boolean>;
+    }
+
     export interface JumpArgs {
         address: pulumi.Input<string>;
         hostKeys?: pulumi.Input<pulumi.Input<string>[]>;
         port: pulumi.Input<number>;
         user: pulumi.Input<string>;
     }
+
+    export interface SshdMatchArgs {
+        Address?: pulumi.Input<string>;
+        Group?: pulumi.Input<string>;
+        Host?: pulumi.Input<string>;
+        LocalAddress?: pulumi.Input<string>;
+        LocalPort?: pulumi.Input<string>;
+        User?: pulumi.Input<string>;
+    }
+
+    export interface SshdSettingsArgs {
+        allowAgentForwarding?: pulumi.Input<boolean>;
+        allowGroups?: pulumi.Input<pulumi.Input<string>[]>;
+        allowTcpForwarding?: pulumi.Input<string>;
+        allowUsers?: pulumi.Input<pulumi.Input<string>[]>;
+        ciphers?: pulumi.Input<pulumi.Input<string>[]>;
+        clientAliveCountMax?: pulumi.Input<number>;
+        clientAliveInterval?: pulumi.Input<number>;
+        compression?: pulumi.Input<string>;
+        denyGroups?: pulumi.Input<pulumi.Input<string>[]>;
+        denyUsers?: pulumi.Input<pulumi.Input<string>[]>;
+        gatewayPorts?: pulumi.Input<string>;
+        ignoreRhosts?: pulumi.Input<boolean>;
+        kbdInteractiveAuthentication?: pulumi.Input<boolean>;
+        kexAlgorithms?: pulumi.Input<pulumi.Input<string>[]>;
+        listenAddress?: pulumi.Input<pulumi.Input<string>[]>;
+        logLevel?: pulumi.Input<string>;
+        loginGraceTime?: pulumi.Input<number>;
+        macs?: pulumi.Input<pulumi.Input<string>[]>;
+        maxAuthTries?: pulumi.Input<number>;
+        maxSessions?: pulumi.Input<number>;
+        maxStartups?: pulumi.Input<string>;
+        passwordAuthentication?: pulumi.Input<boolean>;
+        permitEmptyPasswords?: pulumi.Input<boolean>;
+        permitRootLogin?: pulumi.Input<string>;
+        port?: pulumi.Input<number>;
+        printMotd?: pulumi.Input<boolean>;
+        pubkeyAuthentication?: pulumi.Input<boolean>;
+        strictModes?: pulumi.Input<boolean>;
+        tcpKeepAlive?: pulumi.Input<boolean>;
+        useDNS?: pulumi.Input<boolean>;
+        usePAM?: pulumi.Input<boolean>;
+        x11Forwarding?: pulumi.Input<boolean>;
+    }
+
 }

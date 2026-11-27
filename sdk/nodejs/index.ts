@@ -5,15 +5,90 @@ import * as pulumi from "@pulumi/pulumi";
 import * as utilities from "./utilities";
 
 // Export members:
+export { AuthorizedKeyArgs } from "./authorizedKey";
+export type AuthorizedKey = import("./authorizedKey").AuthorizedKey;
+export const AuthorizedKey: typeof import("./authorizedKey").AuthorizedKey = null as any;
+utilities.lazyLoad(exports, ["AuthorizedKey"], () => require("./authorizedKey"));
+
+export { BootConfigArgs } from "./bootConfig";
+export type BootConfig = import("./bootConfig").BootConfig;
+export const BootConfig: typeof import("./bootConfig").BootConfig = null as any;
+utilities.lazyLoad(exports, ["BootConfig"], () => require("./bootConfig"));
+
+export { FstabEntryArgs } from "./fstabEntry";
+export type FstabEntry = import("./fstabEntry").FstabEntry;
+export const FstabEntry: typeof import("./fstabEntry").FstabEntry = null as any;
+utilities.lazyLoad(exports, ["FstabEntry"], () => require("./fstabEntry"));
+
 export { GroupArgs } from "./group";
 export type Group = import("./group").Group;
 export const Group: typeof import("./group").Group = null as any;
 utilities.lazyLoad(exports, ["Group"], () => require("./group"));
 
+export { HostnameArgs } from "./hostname";
+export type Hostname = import("./hostname").Hostname;
+export const Hostname: typeof import("./hostname").Hostname = null as any;
+utilities.lazyLoad(exports, ["Hostname"], () => require("./hostname"));
+
+export { JournaldArgs } from "./journald";
+export type Journald = import("./journald").Journald;
+export const Journald: typeof import("./journald").Journald = null as any;
+utilities.lazyLoad(exports, ["Journald"], () => require("./journald"));
+
+export { KernelCmdlineArgs } from "./kernelCmdline";
+export type KernelCmdline = import("./kernelCmdline").KernelCmdline;
+export const KernelCmdline: typeof import("./kernelCmdline").KernelCmdline = null as any;
+utilities.lazyLoad(exports, ["KernelCmdline"], () => require("./kernelCmdline"));
+
+export { ManagedLineArgs } from "./managedLine";
+export type ManagedLine = import("./managedLine").ManagedLine;
+export const ManagedLine: typeof import("./managedLine").ManagedLine = null as any;
+utilities.lazyLoad(exports, ["ManagedLine"], () => require("./managedLine"));
+
+export { PreconditionArgs } from "./precondition";
+export type Precondition = import("./precondition").Precondition;
+export const Precondition: typeof import("./precondition").Precondition = null as any;
+utilities.lazyLoad(exports, ["Precondition"], () => require("./precondition"));
+
 export { ProviderArgs } from "./provider";
 export type Provider = import("./provider").Provider;
 export const Provider: typeof import("./provider").Provider = null as any;
 utilities.lazyLoad(exports, ["Provider"], () => require("./provider"));
+
+export { SshKeyArgs } from "./sshKey";
+export type SshKey = import("./sshKey").SshKey;
+export const SshKey: typeof import("./sshKey").SshKey = null as any;
+utilities.lazyLoad(exports, ["SshKey"], () => require("./sshKey"));
+
+export { SshdConfigArgs } from "./sshdConfig";
+export type SshdConfig = import("./sshdConfig").SshdConfig;
+export const SshdConfig: typeof import("./sshdConfig").SshdConfig = null as any;
+utilities.lazyLoad(exports, ["SshdConfig"], () => require("./sshdConfig"));
+
+export { SudoRuleArgs } from "./sudoRule";
+export type SudoRule = import("./sudoRule").SudoRule;
+export const SudoRule: typeof import("./sudoRule").SudoRule = null as any;
+utilities.lazyLoad(exports, ["SudoRule"], () => require("./sudoRule"));
+
+export { SwapArgs } from "./swap";
+export type Swap = import("./swap").Swap;
+export const Swap: typeof import("./swap").Swap = null as any;
+utilities.lazyLoad(exports, ["Swap"], () => require("./swap"));
+
+export { SystemdInstanceArgs } from "./systemdInstance";
+export type SystemdInstance = import("./systemdInstance").SystemdInstance;
+export const SystemdInstance: typeof import("./systemdInstance").SystemdInstance = null as any;
+utilities.lazyLoad(exports, ["SystemdInstance"], () => require("./systemdInstance"));
+
+export { SystemdUnitArgs } from "./systemdUnit";
+export type SystemdUnit = import("./systemdUnit").SystemdUnit;
+export const SystemdUnit: typeof import("./systemdUnit").SystemdUnit = null as any;
+utilities.lazyLoad(exports, ["SystemdUnit"], () => require("./systemdUnit"));
+
+export { UserArgs } from "./user";
+export type User = import("./user").User;
+export const User: typeof import("./user").User = null as any;
+utilities.lazyLoad(exports, ["User"], () => require("./user"));
 
 
 // Export sub-modules:
@@ -29,8 +104,38 @@ const _module = {
     version: utilities.getVersion(),
     construct: (name: string, type: string, urn: string): pulumi.Resource => {
         switch (type) {
+            case "homelab:index:AuthorizedKey":
+                return new AuthorizedKey(name, <any>undefined, { urn })
+            case "homelab:index:BootConfig":
+                return new BootConfig(name, <any>undefined, { urn })
+            case "homelab:index:FstabEntry":
+                return new FstabEntry(name, <any>undefined, { urn })
             case "homelab:index:Group":
                 return new Group(name, <any>undefined, { urn })
+            case "homelab:index:Hostname":
+                return new Hostname(name, <any>undefined, { urn })
+            case "homelab:index:Journald":
+                return new Journald(name, <any>undefined, { urn })
+            case "homelab:index:KernelCmdline":
+                return new KernelCmdline(name, <any>undefined, { urn })
+            case "homelab:index:ManagedLine":
+                return new ManagedLine(name, <any>undefined, { urn })
+            case "homelab:index:Precondition":
+                return new Precondition(name, <any>undefined, { urn })
+            case "homelab:index:SshKey":
+                return new SshKey(name, <any>undefined, { urn })
+            case "homelab:index:SshdConfig":
+                return new SshdConfig(name, <any>undefined, { urn })
+            case "homelab:index:SudoRule":
+                return new SudoRule(name, <any>undefined, { urn })
+            case "homelab:index:Swap":
+                return new Swap(name, <any>undefined, { urn })
+            case "homelab:index:SystemdInstance":
+                return new SystemdInstance(name, <any>undefined, { urn })
+            case "homelab:index:SystemdUnit":
+                return new SystemdUnit(name, <any>undefined, { urn })
+            case "homelab:index:User":
+                return new User(name, <any>undefined, { urn })
             default:
                 throw new Error(`unknown resource type ${type}`);
         }

@@ -6,11 +6,60 @@ import * as inputs from "../types/input";
 import * as outputs from "../types/output";
 
 export namespace provider {
+    export interface HostnameEffective {
+        hostsLine: string;
+        namesHost: boolean;
+        static: string;
+        transient: string;
+    }
+
     export interface Jump {
         address: string;
         hostKeys?: string[];
         port: number;
         user: string;
+    }
+
+    export interface SshdSettings {
+        allowAgentForwarding?: boolean;
+        allowGroups?: string[];
+        allowTcpForwarding?: string;
+        allowUsers?: string[];
+        ciphers?: string[];
+        clientAliveCountMax?: number;
+        clientAliveInterval?: number;
+        compression?: string;
+        denyGroups?: string[];
+        denyUsers?: string[];
+        gatewayPorts?: string;
+        ignoreRhosts?: boolean;
+        kbdInteractiveAuthentication?: boolean;
+        kexAlgorithms?: string[];
+        listenAddress?: string[];
+        logLevel?: string;
+        loginGraceTime?: number;
+        macs?: string[];
+        maxAuthTries?: number;
+        maxSessions?: number;
+        maxStartups?: string;
+        passwordAuthentication?: boolean;
+        permitEmptyPasswords?: boolean;
+        permitRootLogin?: string;
+        port?: number;
+        printMotd?: boolean;
+        pubkeyAuthentication?: boolean;
+        strictModes?: boolean;
+        tcpKeepAlive?: boolean;
+        useDNS?: boolean;
+        usePAM?: boolean;
+        x11Forwarding?: boolean;
+    }
+
+    export interface SwapActive {
+        kind: string;
+        path: string;
+        priority: number;
+        sizeMb: number;
     }
 
 }
