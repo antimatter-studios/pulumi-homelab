@@ -54,7 +54,7 @@ func TestParseEffective(t *testing.T) {
 
 func TestJournaldFile(t *testing.T) {
 	t.Run("writes a [Journal] section and says who wrote it", func(t *testing.T) {
-		file := JournaldFile([]Setting{{"Storage", "volatile"}, {"SystemMaxUse", "200M"}})
+		file := JournaldFile(map[string]string{"Storage": "volatile", "SystemMaxUse": "200M"})
 		if !strings.Contains(file, "[Journal]\nStorage=volatile\nSystemMaxUse=200M\n") {
 			t.Errorf("got %q", file)
 		}
@@ -63,10 +63,27 @@ func TestJournaldFile(t *testing.T) {
 		}
 	})
 	t.Run("round-trips through the parser it will be read back with", func(t *testing.T) {
-		settings := []Setting{{"Storage", "volatile"}, {"MaxRetentionSec", "7day"}}
+		settings := map[string]string{"Storage": "volatile", "MaxRetentionSec": "7day"}
 		want := map[string]string{"Storage": "volatile", "MaxRetentionSec": "7day"}
 		if got := ParseEffective(JournaldFile(settings)); !reflect.DeepEqual(got, want) {
 			t.Errorf("got %v, want %v", got, want)
 		}
 	})
+}
+
+// The settings arrive at the TypeScript provider through protobuf with their keys sorted, so the
+// files on machines are in key order whatever order the program declared; the Go writes the same.
+func TestJournaldFileWritesSettingsInKeyOrder(t *testing.T) {
+	file := JournaldFile(map[string]string{"SystemMaxUse": "200M", "Storage": "volatile", "MaxRetentionSec": "7day"})
+	want := "[Journal]\nMaxRetentionSec=7day\nStorage=volatile\nSystemMaxUse=200M\n"
+	if !strings.HasSuffix(file, want) {
+		t.Errorf("got %q, want it to end %q", file, want)
+	}
+}
+
+// JavaScript's trim keeps U+0085 (NEL), where Go's unicode.IsSpace would strip it.
+func TestJsTrimKeepsNEL(t *testing.T) {
+	if got := jsTrim(" a\u0085"); got != "a\u0085" {
+		t.Errorf("got %q", got)
+	}
 }
