@@ -110,3 +110,46 @@ func TestSshKeyDeleteRefusesByDefault(t *testing.T) {
 		t.Fatalf("ran %v", fake.Commands())
 	}
 }
+
+// The #38 switch imports root-only checks (homelab-server's check-flux-source and
+// check-flux-applied) with an ID ending "@root": the check runs escalated, and the stored ID is the
+// check itself. Without the suffix it runs unescalated, as the TypeScript's import would.
+func TestPreconditionImportWithRoot(t *testing.T) {
+	const check = "test -r /root/flux"
+	fake := remotetest.New()
+	fake.When(func(c string) bool { return c == `sudo -n sh -c 'test -r /root/flux'` }, func(string) remotetest.Reply { return remotetest.Reply{} }, 0)
+	fake.When(func(c string) bool { return c == check }, func(string) remotetest.Reply { return remotetest.Reply{Code: 1} }, 0)
+	s := configured(t, fake)
+	urn := urnOf("Precondition", "check-flux-source")
+
+	imported, err := s.Read(p.ReadRequest{ID: check + "@root", Urn: urn})
+	if err != nil || imported.ID != check || !imported.Properties.Get("root").AsBool() {
+		t.Fatalf("import with @root: %+v %v", imported, err)
+	}
+	declared := property.NewMap(map[string]property.Value{"check": property.New(check), "message": property.New(check), "root": property.New(true)})
+	if d, err := s.Diff(p.DiffRequest{ID: imported.ID, Urn: urn, State: imported.Properties, Inputs: declared}); err != nil || d.HasChanges {
+		t.Fatalf("import diff %+v %v", d, err)
+	}
+	if gone, err := s.Read(p.ReadRequest{ID: check, Urn: urn}); err != nil || gone.ID != "" {
+		t.Fatalf("import without @root should run unescalated and find it missing: %+v %v", gone, err)
+	}
+}
+
+// homelab-server declares avahi-homelab.local and timer-agent-quota-5min disabled and stopped. An
+// import must find them (the template exists), where a refresh forgets such an instance as the
+// TypeScript does.
+func TestSystemdInstanceImportKeepsDisabledStopped(t *testing.T) {
+	fake := remotetest.New()
+	fake.When(func(c string) bool { return strings.Contains(c, "systemctl cat") }, func(string) remotetest.Reply {
+		return remotetest.Reply{Stdout: "disabled\n#pulumi-homelab#\ninactive\n"}
+	}, 0)
+	s := configured(t, fake)
+	urn := urnOf("SystemdInstance", "avahi")
+	imported, err := s.Read(p.ReadRequest{ID: "avahi-alias@homelab.local.service", Urn: urn})
+	if err != nil || imported.ID == "" || imported.Properties.Get("enabled").AsBool() || imported.Properties.Get("started").AsBool() {
+		t.Fatalf("import of a disabled, stopped instance: %+v %v", imported, err)
+	}
+	if gone, err := s.Read(p.ReadRequest{ID: imported.ID, Urn: urn, Properties: imported.Properties}); err != nil || gone.ID != "" {
+		t.Fatalf("a refresh should forget a disabled, stopped instance: %+v %v", gone, err)
+	}
+}

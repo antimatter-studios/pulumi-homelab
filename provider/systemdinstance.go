@@ -210,7 +210,10 @@ func (SystemdInstance) Read(ctx context.Context, req infer.ReadRequest[SystemdIn
 		state.Template, state.Instance, state.Suffix = template, instance, suffix
 	}
 	actual, err := readInstance(ctx, m, state.Template, req.ID, state.Suffix)
-	if err != nil || actual == nil || (!actual.enabled && !actual.started) {
+	// A refresh forgets an instance that is neither enabled nor started, as the TypeScript does.
+	// An import keeps it: a declaration of enabled=false, started=false is exactly that state, and
+	// forgetting it would refuse the import as "does not exist".
+	if err != nil || actual == nil || (!imported && !actual.enabled && !actual.started) {
 		return infer.ReadResponse[SystemdInstanceArgs, SystemdInstanceState]{}, err
 	}
 	state.Unit, state.Enabled, state.Started = req.ID, actual.enabled, actual.started

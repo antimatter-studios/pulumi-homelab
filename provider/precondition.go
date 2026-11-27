@@ -3,6 +3,7 @@ package homelab
 import (
 	"context"
 	"errors"
+	"strings"
 
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
@@ -99,11 +100,18 @@ func (Precondition) Read(ctx context.Context, req infer.ReadRequest[Precondition
 	if err != nil {
 		return infer.ReadResponse[PreconditionArgs, PreconditionState]{}, err
 	}
-	wanted := PreconditionState{Check: req.ID, Message: req.State.Message, Root: req.State.Root}
+	id := req.ID
+	wanted := PreconditionState{Check: id, Message: req.State.Message, Root: req.State.Root}
 	// only an import, which remembers nothing, falls back to the check as the message; a message
 	// declared empty stays empty, or an unchanged program would show an update
 	if req.State.Check == "" {
-		wanted.Message = req.ID
+		// An import cannot know whether the check needs root, and a root-only check run without
+		// escalation reads as missing. The import ID says so with a trailing "@root"; the stored
+		// ID is the check itself (the engine keeps the ID Read returns).
+		if check, ok := strings.CutSuffix(id, "@root"); ok {
+			id, wanted.Check, wanted.Root = check, check, true
+		}
+		wanted.Message = id
 	}
 	ok, err := readPrecondition(ctx, m, wanted.Check, wanted.Root)
 	if err != nil {
@@ -116,7 +124,7 @@ func (Precondition) Read(ctx context.Context, req infer.ReadRequest[Precondition
 	if inputs.Check == "" {
 		inputs = PreconditionArgs{Check: wanted.Check, Message: wanted.Message, Root: &wanted.Root}
 	}
-	return infer.ReadResponse[PreconditionArgs, PreconditionState]{ID: req.ID, Inputs: inputs, State: wanted}, nil
+	return infer.ReadResponse[PreconditionArgs, PreconditionState]{ID: id, Inputs: inputs, State: wanted}, nil
 }
 
 // Update asks again under the id.
