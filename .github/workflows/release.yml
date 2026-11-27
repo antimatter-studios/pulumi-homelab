@@ -135,10 +135,34 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+          path: src
+
+      - name: Node.js SDK
+        # The SDK as committed says version 0.0.0-dev, and a program using it asks Pulumi for the
+        # plugin of the SDK's version. The packed copy carries the release's version (package.json,
+        # and bin/package.json, which the compiled SDK reads), so it asks for the plugin published
+        # beside it. Projects pin it by URL: .../releases/download/vX.Y.Z/<package>-X.Y.Z.tgz.
+        working-directory: src/sdk/nodejs
+        env:
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            for (const file of ["package.json", "bin/package.json"]) {
+              const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+              pkg.version = process.env.V;
+              pkg.pulumi.version = process.env.V;
+              fs.writeFileSync(file, JSON.stringify(pkg, null, 4) + "\n");
+            }'
+          npm pack --pack-destination "$GITHUB_WORKSPACE/dist"
+
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           V: ${{ needs.version.outputs.version }}
         run: |
-          gh release create "v$V" dist/*.tar.gz --repo "$GITHUB_REPOSITORY" \
+          gh release create "v$V" dist/*.tar.gz dist/*.tgz --repo "$GITHUB_REPOSITORY" \
             --title "v$V" --notes-file dist/notes.md --verify-tag
