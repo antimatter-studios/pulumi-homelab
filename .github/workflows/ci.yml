@@ -73,7 +73,30 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
+
+      - name: Integration tests (Debian 13 sshd in Docker)
+        run: go test -tags integration -run Debian13 ./transport/
+
+      - uses: pulumi/actions@v6
+        with:
+          pulumi-version: 3.150.0
+
+      - name: SDK is up to date
+        # sdk/nodejs is generated from the plugin's schema and committed; regenerate it and fail when
+        # it differs, so a provider change cannot land without the SDK that consumers link.
+        working-directory: .
+        run: |
+          ./scripts/gen-sdk.sh
+          git diff --exit-code -- sdk/nodejs
+          test -z "$(git status --porcelain -- sdk/nodejs)"
+
+      - name: Release version dry run
+        # What the next merge to main would release, computed from the real history.
+        working-directory: .
+        run: |
+          git fetch --tags --unshallow --quiet || git fetch --tags --quiet
+          echo "next release: $(./scripts/release.sh next || true)"
 
   ci:
     # One always-run job for branch protection to require, so the jobs above can be renamed, split
