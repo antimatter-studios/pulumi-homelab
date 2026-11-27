@@ -1,0 +1,25 @@
+name: Release on green
+
+# Releases main once its CI has passed, and never otherwise: a red or cancelled CI run releases
+# nothing. "Run workflow" releases the head of main by hand, under the same rule for the version.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    uses: ./.github/workflows/release.yml
+    with:
+      binary: pulumi-resource-homelab
+      sha: ${{ github.event.workflow_run.head_sha || github.sha }}
