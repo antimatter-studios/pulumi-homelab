@@ -68,3 +68,14 @@ func TestEscapeInstance(t *testing.T) {
 		check(t, "", "")
 	})
 }
+
+// JavaScript's trim keeps U+0085 (NEL) where Go's unicode.IsSpace would strip it, and strips U+FEFF
+// where Go would keep it; ParseShow trims as JavaScript does.
+func TestParseShowTrimsAsJavaScriptDoes(t *testing.T) {
+	if got := ParseShow("ActiveState=active\u0085")["ActiveState"]; got != "active\u0085" {
+		t.Fatalf("NEL: got %q", got)
+	}
+	if got := ParseShow("ActiveState=active﻿")["ActiveState"]; got != "active" {
+		t.Fatalf("BOM: got %q", got)
+	}
+}
