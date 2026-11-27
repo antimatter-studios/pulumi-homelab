@@ -47,7 +47,8 @@ jobs:
           ./scripts/release.sh changelog "$V"
           git commit -am "Release v$V"
           git tag "v$V"
-          git push origin HEAD:main "v$V"
+          # Both or neither: a tag on a commit main refused would make every later version wrong.
+          git push --atomic origin HEAD:main "v$V"
 
   build:
     needs: version
