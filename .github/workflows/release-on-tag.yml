@@ -1,0 +1,24 @@
+name: Release on tag
+
+# A v* tag pushed by hand builds and publishes its release, with notes since the tag before it.
+# Tags the release workflow pushes itself do not start this (GitHub does not start workflows for
+# pushes made with the workflow's own token); that run publishes its release directly.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/release.yml
+    with:
+      binary: pulumi-resource-homelab
+      sha: ${{ github.sha }}
+      # the tag is vX.Y.Z; the workflow takes X.Y.Z
+      version: ${{ github.ref_name }}

@@ -20,6 +20,11 @@ on:
         description: The commit on main to release; its CI has passed.
         type: string
         required: true
+      version:
+        description: X.Y.Z of a tag that already exists (pushed by hand); empty to work it out and tag.
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -41,13 +46,32 @@ jobs:
           ref: main
           path: .release-tools
 
+      - name: The commit is on main and its CI passed
+        # Releases happen only from green main, whoever pushed the tag.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor "$SHA" origin/main || { echo "$SHA is not on main" >&2; exit 1; }
+          ci="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs?check_name=CI" --jq '[.check_runs[] | select(.conclusion == "success")] | length')"
+          [ "$ci" -gt 0 ] || { echo "CI has not passed on $SHA" >&2; exit 1; }
+
       - name: Next version and notes
         id: next
+        env:
+          GIVEN: ${{ inputs.version }}
         run: |
-          v="$(.release-tools/scripts/release.sh next)"
+          if [ -n "$GIVEN" ]; then
+            v="${GIVEN#v}"
+            # the tag exists already, so the notes run from the tag before it
+            export LAST="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "v$v^" 2>/dev/null || true)"
+          else
+            v="$(.release-tools/scripts/release.sh next)"
+          fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "next version: ${v:-none, no feat or fix since the last tag}"
-          # before the tag exists, so "since the last tag" means the previous release
+          echo "version: ${v:-none, no feat or fix since the last tag}"
+          # before tagging, so "since the last tag" means the previous release
           [ -z "$v" ] || .release-tools/scripts/release.sh notes > "$RUNNER_TEMP/notes.md"
 
       - uses: actions/upload-artifact@v4
@@ -57,7 +81,7 @@ jobs:
           path: ${{ runner.temp }}/notes.md
 
       - name: Tag
-        if: steps.next.outputs.version != ''
+        if: steps.next.outputs.version != '' && inputs.version == ''
         env:
           V: ${{ steps.next.outputs.version }}
         run: |

@@ -105,12 +105,14 @@ jobs:
           git diff --exit-code -- sdk/nodejs
           test -z "$(git status --porcelain -- sdk/nodejs)"
 
-      - name: Release version dry run
-        # What the next merge to main would release, computed from the real history.
+      - name: Release dry run
+        # What the next merge to main would release, computed from the real history, and its notes.
+        # A changelog.d fragment with a name the notes cannot place fails here, not at release time.
         working-directory: .
         run: |
           git fetch --tags --unshallow --quiet || git fetch --tags --quiet
           echo "next release: $(./scripts/release.sh next || true)"
+          ./scripts/release.sh notes
 
   ci:
     # One always-run job for branch protection to require, so the jobs above can be renamed, split
