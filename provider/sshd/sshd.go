@@ -44,8 +44,9 @@ func KeywordFor(property string) string {
 // declared order: settings reach a dynamic provider as resource inputs through a protobuf Struct,
 // whose keys arrive sorted, so the drop-ins on machines list the typed settings sorted by property
 // name, then new unchecked keywords sorted among themselves (one that repeats a typed keyword keeps
-// the typed one's place), then Match criteria sorted by key. The SshdConfig resource (#45) must
-// pass its lists in that order, or every drop-in changes at the switch.
+// the typed one's place), then Match criteria sorted by key. RenderSshdInput and MatchFromInput
+// produce that order from a resource's input maps; any other order rewrites every drop-in at the
+// switch.
 type Setting struct {
 	Property string
 	Value    any
@@ -91,6 +92,33 @@ func RenderSshd(settings []Setting, unchecked []Keyword) []Keyword {
 		set(keyword.Keyword, keyword.Value)
 	}
 	return rendered
+}
+
+// RenderSshdInput is RenderSshd for settings that arrive as a resource's inputs, in the order the
+// TypeScript actually rendered them. Inputs reach a dynamic provider through a protobuf Struct whose
+// keys arrive sorted, so the drop-ins on machines list the typed settings sorted by property name,
+// then the unchecked keywords sorted among themselves (one that repeats a typed keyword keeps the
+// typed one's place). The SshdConfig resource (#45) renders through this, not RenderSshd.
+func RenderSshdInput(settings map[string]any, unchecked map[string]string) []Keyword {
+	typed := make([]Setting, 0, len(settings))
+	for _, property := range jscompat.SortedKeys(settings) {
+		typed = append(typed, Setting{property, settings[property]})
+	}
+	extra := make([]Keyword, 0, len(unchecked))
+	for _, keyword := range jscompat.SortedKeys(unchecked) {
+		extra = append(extra, Keyword{keyword, unchecked[keyword]})
+	}
+	return RenderSshd(typed, extra)
+}
+
+// MatchFromInput is the Match criteria of a resource's inputs in the order the TypeScript saw them:
+// sorted by key, for the same reason as RenderSshdInput.
+func MatchFromInput(match map[string]string) []Criterion {
+	criteria := make([]Criterion, 0, len(match))
+	for _, key := range jscompat.SortedKeys(match) {
+		criteria = append(criteria, Criterion{key, match[key]})
+	}
+	return criteria
 }
 
 // jsString is String(value) for the values a setting can hold: numbers as JavaScript writes them
@@ -181,7 +209,7 @@ func HasInclude(text, directory string) bool {
 }
 
 // Criterion is one Match criterion, such as Address 10.0.0.0/24, rendered in list order. In
-// production the criteria reached the TypeScript sorted by key (see Setting); #45 passes them so.
+// production the criteria reached the TypeScript sorted by key; MatchFromInput builds them so.
 type Criterion struct {
 	Key   string
 	Value string

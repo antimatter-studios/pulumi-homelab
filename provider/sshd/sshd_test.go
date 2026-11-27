@@ -196,3 +196,32 @@ func TestParseSshdTTrimsWhatJavaScriptTrims(t *testing.T) {
 		t.Error("NEL is not whitespace in JavaScript, so this line is one word")
 	}
 }
+
+// Settings from a resource's inputs render in the order the TypeScript actually wrote them: typed
+// properties sorted, then unchecked keywords sorted. antimatter-vps's homelab-tunnel-sshd declares
+// AllowTcpForwarding, GatewayPorts, X11Forwarding, AllowAgentForwarding, ClientAliveInterval,
+// ClientAliveCountMax and an unchecked PermitTTY; its drop-in lists them as below.
+func TestRenderSshdInputUsesTheProductionOrder(t *testing.T) {
+	got := RenderSshdInput(map[string]any{
+		"allowTcpForwarding":   "remote",
+		"gatewayPorts":         "clientspecified",
+		"x11Forwarding":        false,
+		"allowAgentForwarding": false,
+		"clientAliveInterval":  30.0,
+		"clientAliveCountMax":  3.0,
+	}, map[string]string{"PermitTTY": "no"})
+	var order []string
+	for _, k := range got {
+		order = append(order, k.Keyword)
+	}
+	want := []string{"AllowAgentForwarding", "AllowTcpForwarding", "ClientAliveCountMax", "ClientAliveInterval", "GatewayPorts", "X11Forwarding", "PermitTTY"}
+	if strings.Join(order, ",") != strings.Join(want, ",") {
+		t.Fatalf("order %v, want %v", order, want)
+	}
+	// an unchecked keyword repeating a typed one keeps the typed one's place
+	over := RenderSshdInput(map[string]any{"gatewayPorts": "no", "allowTcpForwarding": "no"}, map[string]string{"GatewayPorts": "yes", "Banner": "none"})
+	if fmt := SshdDropIn(over, MatchFromInput(map[string]string{"User": "tunnel", "Address": "10.0.0.0/8"})); fmt !=
+		"# Managed by Pulumi. Hand edits show up as drift on the next `pulumi up --refresh`.\nMatch Address 10.0.0.0/8 User tunnel\n    AllowTcpForwarding no\n    GatewayPorts yes\n    Banner none\n" {
+		t.Fatalf("got %q", fmt)
+	}
+}
