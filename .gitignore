@@ -9,3 +9,6 @@ Pulumi.*.yaml
 # required checks from the default branch on the server rather than from the checkout.
 .githooks/*
 !.github-guard
+
+# The Go provider plugin, built locally.
+provider/bin/
