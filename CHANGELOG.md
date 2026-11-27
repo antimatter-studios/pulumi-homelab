@@ -20,6 +20,9 @@ breaking changes live.
 
 ### Added
 
+- **`OfficialInstall`** — a self-updating tool installed by its vendor's own installer, as the
+  account that uses it, and then left alone: missing or unable to run means install, anything else
+  is success, and the version is never enforced.
 - **`Symlink` `acceptLauncherScript`** — accept a small `exec` launcher script the software wrote in
   place of its link (T3 Code does, since 0.1.13), instead of refusing it as data.
 - **`User` `uid` and `group`** — pin the uid and primary group of an account whose files outlive the
