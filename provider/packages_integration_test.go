@@ -141,7 +141,7 @@ func TestDebian13Archive(t *testing.T) {
 	sum := strings.Fields(sh(t, m, "sha256sum /src/widget.tar.gz"))[0]
 	owner := "svc"
 	args := ArchiveArgs{
-		Name: "widget", URL: "file:///src/widget.tar.gz", Sha256: sum, Prefix: "/opt/widget/1.0",
+		Name: "widget", URL: strp("file:///src/widget.tar.gz"), Sha256: &sum, Prefix: "/opt/widget/1.0",
 		Link: strp("/opt/widget/current"), Binary: strp("bin/widget"), HealthCommand: strp("{}/bin/widget"),
 		VersionCommand: strp("{}/bin/widget"), Strip: intp(1), Owner: &owner, Group: &owner,
 	}
@@ -168,7 +168,7 @@ func TestDebian13Archive(t *testing.T) {
 
 	// a checksum that does not match never reaches the filesystem
 	bad := args
-	bad.Prefix, bad.Sha256, bad.Link = "/opt/bad", strings.Repeat("0", 64), nil
+	bad.Prefix, bad.Sha256, bad.Link = "/opt/bad", strp(strings.Repeat("0", 64)), nil
 	if _, err := settleArchive(ctx, m, bad, nil); err == nil || exists(t, m, "/opt/bad") {
 		t.Fatalf("installed a mismatched archive: %v", err)
 	}

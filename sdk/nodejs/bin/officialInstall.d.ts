@@ -19,8 +19,8 @@ export declare class OfficialInstall extends pulumi.CustomResource {
     static isInstance(obj: any): obj is OfficialInstall;
     readonly account: pulumi.Output<string>;
     readonly bin: pulumi.Output<string>;
-    readonly home: pulumi.Output<string>;
-    readonly installer: pulumi.Output<string>;
+    readonly home: pulumi.Output<string | undefined>;
+    readonly installer: pulumi.Output<string | undefined>;
     /**
      * What the tool said its version was when last read. Reported, never enforced.
      */

@@ -17,24 +17,24 @@ export declare class Archive extends pulumi.CustomResource {
      * when multiple copies of the Pulumi SDK have been loaded into the same process.
      */
     static isInstance(obj: any): obj is Archive;
-    readonly binary: pulumi.Output<string>;
-    readonly format: pulumi.Output<string>;
+    readonly binary: pulumi.Output<string | undefined>;
+    readonly format: pulumi.Output<string | undefined>;
     readonly group: pulumi.Output<string>;
-    readonly healthCommand: pulumi.Output<string>;
+    readonly healthCommand: pulumi.Output<string | undefined>;
     /**
      * Whether it is there: the read, and the only thing this resource acts on.
      */
     readonly installed: pulumi.Output<boolean>;
-    readonly link: pulumi.Output<string>;
+    readonly link: pulumi.Output<string | undefined>;
     readonly name: pulumi.Output<string>;
     /**
      * Who owns the prefix itself, as the machine reports it after a read and as declared after an apply.
      */
     readonly owner: pulumi.Output<string>;
     readonly prefix: pulumi.Output<string>;
-    readonly sha256: pulumi.Output<string>;
-    readonly strip: pulumi.Output<number>;
-    readonly url: pulumi.Output<string>;
+    readonly sha256: pulumi.Output<string | undefined>;
+    readonly strip: pulumi.Output<number | undefined>;
+    readonly url: pulumi.Output<string | undefined>;
     /**
      * What the software says it is, or the empty string when it could not be asked. Nothing compares it.
      */

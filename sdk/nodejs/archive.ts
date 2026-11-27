@@ -34,24 +34,24 @@ export class Archive extends pulumi.CustomResource {
         return obj['__pulumiType'] === Archive.__pulumiType;
     }
 
-    public readonly binary!: pulumi.Output<string>;
-    public readonly format!: pulumi.Output<string>;
+    public readonly binary!: pulumi.Output<string | undefined>;
+    public readonly format!: pulumi.Output<string | undefined>;
     public readonly group!: pulumi.Output<string>;
-    public readonly healthCommand!: pulumi.Output<string>;
+    public readonly healthCommand!: pulumi.Output<string | undefined>;
     /**
      * Whether it is there: the read, and the only thing this resource acts on.
      */
     public /*out*/ readonly installed!: pulumi.Output<boolean>;
-    public readonly link!: pulumi.Output<string>;
+    public readonly link!: pulumi.Output<string | undefined>;
     public readonly name!: pulumi.Output<string>;
     /**
      * Who owns the prefix itself, as the machine reports it after a read and as declared after an apply.
      */
     public readonly owner!: pulumi.Output<string>;
     public readonly prefix!: pulumi.Output<string>;
-    public readonly sha256!: pulumi.Output<string>;
-    public readonly strip!: pulumi.Output<number>;
-    public readonly url!: pulumi.Output<string>;
+    public readonly sha256!: pulumi.Output<string | undefined>;
+    public readonly strip!: pulumi.Output<number | undefined>;
+    public readonly url!: pulumi.Output<string | undefined>;
     /**
      * What the software says it is, or the empty string when it could not be asked. Nothing compares it.
      */

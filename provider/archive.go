@@ -27,8 +27,8 @@ type Archive struct{}
 // ArchiveArgs are the inputs of an Archive.
 type ArchiveArgs struct {
 	Name           string  `pulumi:"name"`
-	URL            string  `pulumi:"url"`
-	Sha256         string  `pulumi:"sha256"`
+	URL            *string `pulumi:"url"`
+	Sha256         *string `pulumi:"sha256"`
 	Prefix         string  `pulumi:"prefix"`
 	Link           *string `pulumi:"link,optional"`
 	Binary         *string `pulumi:"binary,optional"`
@@ -44,16 +44,16 @@ type ArchiveArgs struct {
 // ArchiveState is what is kept in state: the settled arguments and what the machine said.
 type ArchiveState struct {
 	Name           string  `pulumi:"name"`
-	URL            string  `pulumi:"url"`
-	Sha256         string  `pulumi:"sha256"`
+	URL            *string `pulumi:"url,optional"`
+	Sha256         *string `pulumi:"sha256,optional"`
 	Prefix         string  `pulumi:"prefix"`
-	Link           string  `pulumi:"link"`
-	Binary         string  `pulumi:"binary"`
-	HealthCommand  string  `pulumi:"healthCommand"`
+	Link           *string `pulumi:"link,optional"`
+	Binary         *string `pulumi:"binary,optional"`
+	HealthCommand  *string `pulumi:"healthCommand,optional"`
 	Owner          string  `pulumi:"owner"`
 	Group          string  `pulumi:"group"`
-	Strip          int     `pulumi:"strip"`
-	Format         string  `pulumi:"format"`
+	Strip          *int    `pulumi:"strip,optional"`
+	Format         *string `pulumi:"format,optional"`
 	VersionCommand string  `pulumi:"versionCommand"`
 	VersionPattern *string `pulumi:"versionPattern,optional"`
 	Installed      bool    `pulumi:"installed"`
@@ -303,16 +303,16 @@ func orDefault(v *string, d string) string {
 func resolveArchiveArgs(args ArchiveArgs) (resolvedArchive, error) {
 	format := archive.Format(orDefault(args.Format, ""))
 	if args.Format == nil {
-		format = archive.FormatOf(args.URL)
+		format = archive.FormatOf(deref(args.URL))
 	}
 	if args.Format == nil && format == "" {
-		return resolvedArchive{}, fmt.Errorf("cannot tell what kind of archive %s is from its name — give format: 'tar.gz' | 'tar.xz' | 'tar.bz2' | 'zip'", args.URL)
+		return resolvedArchive{}, fmt.Errorf("cannot tell what kind of archive %s is from its name — give format: 'tar.gz' | 'tar.xz' | 'tar.bz2' | 'zip'", deref(args.URL))
 	}
 	link := orDefault(args.Link, "")
 	where := whereOf(args.Prefix, link)
 	return resolvedArchive{
 		archiveSource: archiveSource{
-			URL: args.URL, Sha256: args.Sha256, Prefix: args.Prefix, Link: link,
+			URL: deref(args.URL), Sha256: deref(args.Sha256), Prefix: args.Prefix, Link: link,
 			Strip: deref(args.Strip), Format: format,
 		},
 		Name:           args.Name,
@@ -327,15 +327,16 @@ func resolveArchiveArgs(args ArchiveArgs) (resolvedArchive, error) {
 }
 
 func (r resolvedArchive) state(read probe) ArchiveState {
+	format := string(r.Format)
 	return ArchiveState{
-		Name: r.Name, URL: r.URL, Sha256: r.Sha256, Prefix: r.Prefix, Link: r.Link, Binary: r.Binary,
-		HealthCommand: r.HealthCommand, Owner: read.Owner, Group: read.Group, Strip: r.Strip, Format: string(r.Format),
+		Name: r.Name, URL: &r.URL, Sha256: &r.Sha256, Prefix: r.Prefix, Link: &r.Link, Binary: &r.Binary,
+		HealthCommand: &r.HealthCommand, Owner: read.Owner, Group: read.Group, Strip: &r.Strip, Format: &format,
 		VersionCommand: r.VersionCommand, VersionPattern: &r.VersionPattern, Installed: read.Installed, Version: read.Version,
 	}
 }
 
 func (s ArchiveState) source() archiveSource {
-	return archiveSource{URL: s.URL, Sha256: s.Sha256, Prefix: s.Prefix, Link: s.Link, Strip: s.Strip, Format: archive.Format(s.Format)}
+	return archiveSource{URL: deref(s.URL), Sha256: deref(s.Sha256), Prefix: s.Prefix, Link: deref(s.Link), Strip: deref(s.Strip), Format: archive.Format(deref(s.Format))}
 }
 
 // readArchive asks whether it is there and what it says it is. ask, not must: every way this can
@@ -383,11 +384,11 @@ func settleArchive(ctx context.Context, m *machine, args ArchiveArgs, previous *
 			looked = wanted.Where
 		}
 		return ArchiveState{}, fmt.Errorf("unpacked %s to %s on %s but %s is still not there — check strip, or whether the archive carries a top-level directory",
-			args.URL, wanted.Prefix, m.describe(), looked)
+			wanted.URL, wanted.Prefix, m.describe(), looked)
 	}
 	if ownershipChanged(after.Owner, after.Group, wanted.Owner, wanted.Group) {
 		return ArchiveState{}, fmt.Errorf("installed %s to %s on %s but it is owned by %s:%s rather than %s:%s — check that both exist on the machine",
-			args.URL, wanted.Prefix, m.describe(), after.Owner, after.Group, wanted.Owner, wanted.Group)
+			wanted.URL, wanted.Prefix, m.describe(), after.Owner, after.Group, wanted.Owner, wanted.Group)
 	}
 	return wanted.state(after), nil
 }
@@ -434,30 +435,42 @@ func (Archive) Read(ctx context.Context, req infer.ReadRequest[ArchiveArgs, Arch
 	if err != nil {
 		return infer.ReadResponse[ArchiveArgs, ArchiveState]{}, err
 	}
-	state := req.State
-	if state.Prefix == "" && req.Inputs.Prefix != "" {
-		args := req.Inputs
-		args.Name = req.ID
+	id, inputs, state := req.ID, req.Inputs, req.State
+	if state.Prefix == "" && inputs.Prefix != "" {
+		args := inputs
+		args.Name = id
 		wanted, err := resolveArchiveArgs(args)
 		if err != nil {
 			return infer.ReadResponse[ArchiveArgs, ArchiveState]{}, err
 		}
 		state = wanted.state(probe{})
 	}
+	if state.Prefix == "" {
+		parts := strings.SplitN(id, "@", 3)
+		if len(parts) < 2 || parts[0] == "" || parts[1] == "" || (len(parts) == 3 && parts[2] == "") {
+			return infer.ReadResponse[ArchiveArgs, ArchiveState]{}, fmt.Errorf("archive import ID must be name@prefix or name@prefix@link")
+		}
+		id, inputs.Name, inputs.Prefix, state.Prefix = parts[0], parts[0], parts[1], parts[1]
+		if len(parts) == 3 {
+			inputs.Link, state.Link = &parts[2], &parts[2]
+		}
+	}
 	if state.VersionPattern == nil {
 		pattern := archive.DefaultVersionPattern
 		state.VersionPattern = &pattern
 	}
-	if state.Format == "" {
-		state.Format = string(archive.TarGz)
+	if state.Format != nil && *state.Format == "" {
+		format := string(archive.TarGz)
+		state.Format = &format
 	}
-	actual, err := readArchive(ctx, m, whereOf(state.Prefix, state.Link), state.Prefix, state.Binary, state.HealthCommand, state.VersionCommand, *state.VersionPattern)
+	link := deref(state.Link)
+	actual, err := readArchive(ctx, m, whereOf(state.Prefix, link), state.Prefix, deref(state.Binary), deref(state.HealthCommand), state.VersionCommand, *state.VersionPattern)
 	if err != nil || !actual.Installed {
 		return infer.ReadResponse[ArchiveArgs, ArchiveState]{}, err
 	}
-	state.Name = req.ID
+	state.Name = id
 	state.Installed, state.Owner, state.Group, state.Version = true, actual.Owner, actual.Group, actual.Version
-	return infer.ReadResponse[ArchiveArgs, ArchiveState]{ID: req.ID, Inputs: req.Inputs, State: state}, nil
+	return infer.ReadResponse[ArchiveArgs, ArchiveState]{ID: id, Inputs: inputs, State: state}, nil
 }
 
 // Update settles against the previous source, so only a changed source refetches.
@@ -470,6 +483,15 @@ func (Archive) Update(ctx context.Context, req infer.UpdateRequest[ArchiveArgs, 
 			return infer.UpdateResponse[ArchiveState]{}, err
 		}
 		return infer.UpdateResponse[ArchiveState]{Output: wanted.state(probe{Installed: true, Owner: wanted.Owner, Group: wanted.Group, Version: req.State.Version})}, nil
+	}
+	// The first update after import records the declaration using the observations from Read.
+	if req.State.URL == nil && req.State.Installed {
+		wanted, err := resolveArchiveArgs(args)
+		if err != nil {
+			return infer.UpdateResponse[ArchiveState]{}, err
+		}
+		read := probe{Installed: true, Owner: req.State.Owner, Group: req.State.Group, Version: req.State.Version}
+		return infer.UpdateResponse[ArchiveState]{Output: wanted.state(read)}, nil
 	}
 	m, err := machineFrom(ctx)
 	if err != nil {
@@ -498,18 +520,19 @@ func (Archive) Diff(_ context.Context, req infer.DiffRequest[ArchiveArgs, Archiv
 		}
 	}
 	changed("installed", !old.Installed)
-	changed("url", old.URL != wanted.URL)
-	changed("sha256", old.Sha256 != wanted.Sha256)
-	changed("link", old.Link != wanted.Link)
-	changed("strip", old.Strip != wanted.Strip)
-	changed("format", old.Format != string(wanted.Format))
-	changed("binary", old.Binary != wanted.Binary)
-	changed("healthCommand", old.HealthCommand != wanted.HealthCommand)
+	changed("url", old.URL != nil && *old.URL != wanted.URL)
+	changed("sha256", old.Sha256 != nil && *old.Sha256 != wanted.Sha256)
+	changed("link", old.Link != nil && *old.Link != wanted.Link)
+	changed("strip", old.Strip != nil && *old.Strip != wanted.Strip)
+	changed("format", old.Format != nil && *old.Format != string(wanted.Format))
+	changed("binary", old.Binary != nil && *old.Binary != wanted.Binary)
+	changed("healthCommand", old.HealthCommand != nil && *old.HealthCommand != wanted.HealthCommand)
 	changed("owner", ownershipChanged(old.Owner, old.Group, wanted.Owner, wanted.Group))
 	if old.Prefix != wanted.Prefix {
 		resp.DetailedDiff["prefix"] = p.PropertyDiff{Kind: p.UpdateReplace}
 	}
-	resp.HasChanges = len(resp.DetailedDiff) > 0
+	// Record the declaration once so subsequent edits compare against real inputs.
+	resp.HasChanges = old.URL == nil || len(resp.DetailedDiff) > 0
 	return resp, nil
 }
 
@@ -533,6 +556,6 @@ func (Archive) Delete(ctx context.Context, req infer.DeleteRequest[ArchiveState]
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate(archiveDeleteCommand(req.State.Prefix, req.State.Link)))
+	_, err = m.must(ctx, m.escalate(archiveDeleteCommand(req.State.Prefix, deref(req.State.Link))))
 	return infer.DeleteResponse{}, err
 }

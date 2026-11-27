@@ -22,6 +22,7 @@ func configuredServer(t *testing.T, fake *remotetest.Runner) interface {
 	Delete(p.DeleteRequest) error
 	Diff(p.DiffRequest) (p.DiffResponse, error)
 	Read(p.ReadRequest) (p.ReadResponse, error)
+	Update(p.UpdateRequest) (p.UpdateResponse, error)
 } {
 	t.Helper()
 	s := newServer(t, (&capture{runner: fake}).factory)
@@ -136,4 +137,98 @@ func TestReadPreservesDeclaredImportInputs(t *testing.T) {
 			t.Fatalf("%+v %v", diff, err)
 		}
 	})
+}
+
+func TestPackageImportsFromIDOnly(t *testing.T) {
+	tests := []struct {
+		typeName, id, importID, probe, stdout string
+		declaration                           map[string]property.Value
+		unknown                               []string
+		retainedKey, editKey                  string
+	}{
+		{
+			typeName: "Archive", id: "mise", importID: "mise@/opt/mise/1.0@/opt/mise/current",
+			probe: "test -d '/opt/mise/current'", stdout: "present\n" + ownerMarker + "\nroot:root\n" + versionMarker + "\n",
+			declaration: map[string]property.Value{
+				"name": property.New("mise"), "url": property.New("https://x/mise.tar.xz"),
+				"sha256": property.New(strings.Repeat("a", 64)), "prefix": property.New("/opt/mise/1.0"),
+				"link": property.New("/opt/mise/current"), "binary": property.New("bin/mise"),
+				"healthCommand": property.New("{}/bin/mise --version"), "strip": property.New(1.0),
+			},
+			unknown:     []string{"url", "sha256", "binary", "healthCommand", "strip", "format"},
+			retainedKey: "prefix", editKey: "sha256",
+		},
+		{
+			typeName: "Archive", id: "gh", importID: "gh@/opt/gh",
+			probe: "test -d '/opt/gh'", stdout: "present\n" + ownerMarker + "\nt3code:t3code\n" + versionMarker + "\n",
+			declaration: map[string]property.Value{
+				"name": property.New("gh"), "url": property.New("https://x/gh.tar.gz"),
+				"sha256": property.New(strings.Repeat("a", 64)), "prefix": property.New("/opt/gh"),
+				"binary": property.New("bin/gh"), "owner": property.New("t3code"), "group": property.New("t3code"),
+			},
+			unknown:     []string{"url", "sha256", "link", "binary", "healthCommand", "strip", "format"},
+			retainedKey: "prefix", editKey: "sha256",
+		},
+		{
+			typeName: "OfficialInstall", id: "install-claude",
+			importID: "install-claude@t3code@/mnt/storage/t3code/.local/bin/claude",
+			probe:    "runuser -u 't3code' -- bash -c", stdout: "2.1.3\n",
+			declaration: map[string]property.Value{
+				"account": property.New("t3code"), "home": property.New("/mnt/storage/t3code"),
+				"bin":       property.New("/mnt/storage/t3code/.local/bin/claude"),
+				"installer": property.New("curl -fsSL https://claude.ai/install.sh | bash"),
+			},
+			unknown:     []string{"home", "installer"},
+			retainedKey: "bin", editKey: "installer",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.id, func(t *testing.T) {
+			fake := remotetest.New()
+			quotedProbe := shellQuote(tc.probe)
+			probe := quotedProbe[1 : len(quotedProbe)-1]
+			fake.When(func(c string) bool { return strings.Contains(c, probe) }, func(string) remotetest.Reply {
+				return remotetest.Reply{Stdout: tc.stdout}
+			}, 0)
+			s := configuredServer(t, fake)
+			urn := urnOf(tc.typeName, tc.id)
+			read, err := s.Read(p.ReadRequest{ID: tc.importID, Urn: urn})
+			if err != nil || read.ID != tc.id || !read.Inputs.Get(tc.retainedKey).Equals(tc.declaration[tc.retainedKey]) {
+				t.Fatalf("read: %+v, %v", read, err)
+			}
+			for _, key := range tc.unknown {
+				if !read.Properties.Get(key).IsNull() || !read.Inputs.Get(key).IsNull() {
+					t.Errorf("read materialized unknown %s", key)
+				}
+			}
+			checked, err := s.Check(p.CheckRequest{Urn: urn, Inputs: props(tc.declaration), State: read.Inputs})
+			if err != nil || len(checked.Failures) != 0 {
+				t.Fatalf("check: %+v, %v", checked, err)
+			}
+			diffReq := p.DiffRequest{ID: read.ID, Urn: urn, State: read.Properties, Inputs: checked.Inputs}
+			diff, err := s.Diff(diffReq)
+			if err != nil || !diff.HasChanges || len(diff.DetailedDiff) != 0 {
+				t.Fatalf("expected only a state update: %+v, %v", diff, err)
+			}
+			update, err := s.Update(p.UpdateRequest{
+				ID: read.ID, Urn: urn, State: read.Properties, OldInputs: read.Inputs, Inputs: checked.Inputs,
+			})
+			if err != nil || !update.Properties.Get(tc.editKey).Equals(tc.declaration[tc.editKey]) {
+				t.Fatalf("update: %+v, %v", update, err)
+			}
+			if cmds := fake.Commands(); len(cmds) != 1 || !strings.Contains(cmds[0], probe) {
+				t.Fatalf("expected only the import probe, got %v", cmds)
+			}
+			diffReq.State = update.Properties
+			diff, err = s.Diff(diffReq)
+			if err != nil || diff.HasChanges {
+				t.Fatalf("unchanged declaration: %+v, %v", diff, err)
+			}
+			diffReq.Inputs = checked.Inputs.Set(tc.editKey, property.New("changed"))
+			diff, err = s.Diff(diffReq)
+			if err != nil || !diff.HasChanges || diff.DetailedDiff[tc.editKey].Kind != p.Update {
+				t.Fatalf("changed declaration: %+v, %v", diff, err)
+			}
+		})
+	}
 }

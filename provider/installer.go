@@ -22,23 +22,19 @@ type OfficialInstall struct{}
 
 // OfficialInstallArgs are the inputs of an OfficialInstall.
 type OfficialInstallArgs struct {
-	Account   string `pulumi:"account"`
-	Home      string `pulumi:"home"`
-	Installer string `pulumi:"installer"`
-	Bin       string `pulumi:"bin"`
+	Account   string  `pulumi:"account"`
+	Home      *string `pulumi:"home"`
+	Installer *string `pulumi:"installer"`
+	Bin       string  `pulumi:"bin"`
 }
 
 // OfficialInstallState is what is kept in state.
 type OfficialInstallState struct {
-	Account   string `pulumi:"account"`
-	Home      string `pulumi:"home"`
-	Installer string `pulumi:"installer"`
-	Bin       string `pulumi:"bin"`
-	Version   string `pulumi:"version"`
-}
-
-func (s OfficialInstallState) args() OfficialInstallArgs {
-	return OfficialInstallArgs{Account: s.Account, Home: s.Home, Installer: s.Installer, Bin: s.Bin}
+	Account   string  `pulumi:"account"`
+	Home      *string `pulumi:"home,optional"`
+	Installer *string `pulumi:"installer,optional"`
+	Bin       string  `pulumi:"bin"`
+	Version   string  `pulumi:"version"`
 }
 
 func installState(args OfficialInstallArgs, version string) OfficialInstallState {
@@ -71,9 +67,17 @@ func asAccount(account, home, command string) string {
 
 // readToolVersion is the version the tool reports, or ok false when it is not installed or does not
 // run: a home carried over from another machine can hold an executable for the wrong architecture.
-func readToolVersion(ctx context.Context, m *machine, args OfficialInstallArgs) (string, bool, error) {
-	asked, err := m.ask(ctx, m.escalate("test -x "+shellQuote(args.Bin)+" || exit 9; "+
-		asAccount(args.Account, args.Home, shellQuote(args.Bin)+" --version 2>/dev/null")))
+func readToolVersion(ctx context.Context, m *machine, account, bin string, home *string) (string, bool, error) {
+	version := shellQuote(bin) + " --version 2>/dev/null"
+	var command string
+	if home == nil {
+		// runuser supplies HOME from the account database for an ID-only import.
+		command = "runuser -u " + shellQuote(account) + " -- bash -c " +
+			shellQuote(`cd "$HOME" && PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" `+version)
+	} else {
+		command = asAccount(account, *home, version)
+	}
+	asked, err := m.ask(ctx, m.escalate("test -x "+shellQuote(bin)+" || exit 9; "+command))
 	if err != nil || asked.code != 0 {
 		return "", false, err
 	}
@@ -85,19 +89,19 @@ func readToolVersion(ctx context.Context, m *machine, args OfficialInstallArgs) 
 }
 
 func ensureInstalled(ctx context.Context, m *machine, args OfficialInstallArgs) (OfficialInstallState, error) {
-	version, ok, err := readToolVersion(ctx, m, args)
+	version, ok, err := readToolVersion(ctx, m, args.Account, args.Bin, args.Home)
 	if err != nil {
 		return OfficialInstallState{}, err
 	}
 	if !ok {
-		if _, err := m.must(ctx, m.escalate(asAccount(args.Account, args.Home, args.Installer))); err != nil {
+		if _, err := m.must(ctx, m.escalate(asAccount(args.Account, deref(args.Home), deref(args.Installer)))); err != nil {
 			return OfficialInstallState{}, err
 		}
-		if version, ok, err = readToolVersion(ctx, m, args); err != nil {
+		if version, ok, err = readToolVersion(ctx, m, args.Account, args.Bin, args.Home); err != nil {
 			return OfficialInstallState{}, err
 		}
 		if !ok {
-			return OfficialInstallState{}, fmt.Errorf("the installer ran for %s but %s is still not there: %s", args.Account, args.Bin, args.Installer)
+			return OfficialInstallState{}, fmt.Errorf("the installer ran for %s but %s is still not there: %s", args.Account, args.Bin, deref(args.Installer))
 		}
 	}
 	return installState(args, version), nil
@@ -121,30 +125,36 @@ func (OfficialInstall) Create(ctx context.Context, req infer.CreateRequest[Offic
 }
 
 // Read asks the tool its version; gone from the machine, it is dropped from the state and the next
-// deployment installs it again. Without a state (an import) there is nothing to ask with.
+// deployment installs it again. An ID-only import supplies name@account@bin.
 func (OfficialInstall) Read(ctx context.Context, req infer.ReadRequest[OfficialInstallArgs, OfficialInstallState]) (infer.ReadResponse[OfficialInstallArgs, OfficialInstallState], error) {
-	state := req.State
-	if state.Bin == "" && req.Inputs.Bin != "" {
-		state = installState(req.Inputs, "")
+	id, inputs, state := req.ID, req.Inputs, req.State
+	if state.Bin == "" && inputs.Bin != "" {
+		state = installState(inputs, "")
 	}
 	if state.Bin == "" {
-		return infer.ReadResponse[OfficialInstallArgs, OfficialInstallState]{ID: req.ID, Inputs: req.Inputs, State: req.State}, nil
+		parts := strings.SplitN(id, "@", 3)
+		if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+			return infer.ReadResponse[OfficialInstallArgs, OfficialInstallState]{}, fmt.Errorf("official install import ID must be name@account@bin")
+		}
+		id, inputs.Account, inputs.Bin = parts[0], parts[1], parts[2]
+		state = installState(inputs, "")
 	}
 	m, err := machineFrom(ctx)
 	if err != nil {
 		return infer.ReadResponse[OfficialInstallArgs, OfficialInstallState]{}, err
 	}
-	version, ok, err := readToolVersion(ctx, m, state.args())
+	version, ok, err := readToolVersion(ctx, m, state.Account, state.Bin, state.Home)
 	if err != nil || !ok {
 		return infer.ReadResponse[OfficialInstallArgs, OfficialInstallState]{}, err
 	}
 	state.Version = version
-	return infer.ReadResponse[OfficialInstallArgs, OfficialInstallState]{ID: req.ID, Inputs: req.Inputs, State: state}, nil
+	return infer.ReadResponse[OfficialInstallArgs, OfficialInstallState]{ID: id, Inputs: inputs, State: state}, nil
 }
 
 // Update makes sure it is installed, under the new arguments.
 func (OfficialInstall) Update(ctx context.Context, req infer.UpdateRequest[OfficialInstallArgs, OfficialInstallState]) (infer.UpdateResponse[OfficialInstallState], error) {
-	if req.DryRun {
+	// Import already verified the tool. This first update only records the declaration.
+	if req.DryRun || req.State.Home == nil || req.State.Installer == nil {
 		return infer.UpdateResponse[OfficialInstallState]{Output: installState(req.Inputs, req.State.Version)}, nil
 	}
 	m, err := machineFrom(ctx)
@@ -165,8 +175,8 @@ func (OfficialInstall) Diff(_ context.Context, req infer.DiffRequest[OfficialIns
 	resp := p.DiffResponse{DetailedDiff: map[string]p.PropertyDiff{}}
 	replace := old.Account != args.Account || old.Bin != args.Bin
 	for key, changed := range map[string]bool{
-		"installer": old.Installer != args.Installer, "bin": old.Bin != args.Bin,
-		"account": old.Account != args.Account, "home": old.Home != args.Home,
+		"installer": old.Installer != nil && *old.Installer != deref(args.Installer), "bin": old.Bin != args.Bin,
+		"account": old.Account != args.Account, "home": old.Home != nil && *old.Home != deref(args.Home),
 	} {
 		if !changed {
 			continue
@@ -177,7 +187,8 @@ func (OfficialInstall) Diff(_ context.Context, req infer.DiffRequest[OfficialIns
 		}
 		resp.DetailedDiff[key] = p.PropertyDiff{Kind: kind}
 	}
-	resp.HasChanges = len(resp.DetailedDiff) > 0
+	// Record the declaration once so subsequent edits compare against real inputs.
+	resp.HasChanges = old.Home == nil || old.Installer == nil || len(resp.DetailedDiff) > 0
 	return resp, nil
 }
 

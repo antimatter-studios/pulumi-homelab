@@ -138,7 +138,7 @@ func TestArchiveInstallScript(t *testing.T) {
 		noLink.Link = ""
 		lacks(t, installScript(t, noLink, "", ""), "ln -s")
 		// an undeclared link settles to "" too
-		r := resolved(t, ArchiveArgs{Name: "w", URL: archiveSrc.URL, Sha256: "a", Prefix: "/opt/w"})
+		r := resolved(t, ArchiveArgs{Name: "w", URL: &archiveSrc.URL, Sha256: strp("a"), Prefix: "/opt/w"})
 		lacks(t, installScript(t, r.archiveSource, r.Owner, r.Group), "ln -s")
 	})
 	t.Run("passes the staging paths as shell variables rather than as quoted literals", func(t *testing.T) {
@@ -297,7 +297,7 @@ func TestSubstitute(t *testing.T) {
 
 // Ported from src/resources/archive.test.ts: who owns the unpacked tree.
 func TestOwnership(t *testing.T) {
-	base := ArchiveArgs{Name: "w", URL: "https://x/a.tar.gz", Sha256: "a", Prefix: "/opt/w"}
+	base := ArchiveArgs{Name: "w", URL: strp("https://x/a.tar.gz"), Sha256: strp("a"), Prefix: "/opt/w"}
 	withOwner := func(owner, group string) ArchiveArgs {
 		a := base
 		a.Owner, a.Group = &owner, &group
@@ -375,7 +375,7 @@ func TestOwnership(t *testing.T) {
 // Ported from src/resources/archive.test.ts: deciding what an install needs.
 func TestArchiveAct(t *testing.T) {
 	owner, group := "svc", "svc"
-	args := ArchiveArgs{Name: "w", URL: "https://x/a.tar.gz", Sha256: "a", Prefix: "/opt/w", Owner: &owner, Group: &group}
+	args := ArchiveArgs{Name: "w", URL: strp("https://x/a.tar.gz"), Sha256: strp("a"), Prefix: "/opt/w", Owner: &owner, Group: &group}
 	wanted := resolved(t, args)
 	right := probe{Installed: true, Owner: "svc", Group: "svc"}
 	absent := probe{}
@@ -397,7 +397,7 @@ func TestArchiveAct(t *testing.T) {
 	})
 	t.Run("installs when the source moved, and does not merely chown", func(t *testing.T) {
 		moved := args
-		moved.Sha256 = "b"
+		moved.Sha256 = strp("b")
 		previous := resolved(t, moved).archiveSource
 		if got := archiveAct(right, &previous, wanted); got != actInstall {
 			t.Fatalf("got %s", got)
@@ -467,24 +467,24 @@ func TestInstallNeeded(t *testing.T) {
 
 // Ported from src/resources/archive.test.ts: settling the arguments.
 func TestResolveArgs(t *testing.T) {
-	base := ArchiveArgs{Name: "w", URL: "https://x/a.tar.gz", Sha256: "a", Prefix: "/opt/w"}
+	base := ArchiveArgs{Name: "w", URL: strp("https://x/a.tar.gz"), Sha256: strp("a"), Prefix: "/opt/w"}
 	t.Run("infers the format from the url", func(t *testing.T) {
 		a := base
-		a.URL = "https://x/a.tar.xz"
+		a.URL = strp("https://x/a.tar.xz")
 		if got := resolved(t, a).Format; got != archive.TarXz {
 			t.Fatal(got)
 		}
 	})
 	t.Run("takes a given format over the url, for a download that carries no name", func(t *testing.T) {
 		a := base
-		a.URL, a.Format = "https://api.x/artifacts/1/download", strp("zip")
+		a.URL, a.Format = strp("https://api.x/artifacts/1/download"), strp("zip")
 		if got := resolved(t, a).Format; got != archive.Zip {
 			t.Fatal(got)
 		}
 	})
 	t.Run("refuses a url it cannot read and names the way out", func(t *testing.T) {
 		a := base
-		a.URL = "https://api.x/artifacts/1"
+		a.URL = strp("https://api.x/artifacts/1")
 		_, err := resolveArchiveArgs(a)
 		if err == nil || !strings.Contains(err.Error(), "give format") {
 			t.Fatalf("got %v", err)

@@ -36,8 +36,8 @@ export class OfficialInstall extends pulumi.CustomResource {
 
     public readonly account!: pulumi.Output<string>;
     public readonly bin!: pulumi.Output<string>;
-    public readonly home!: pulumi.Output<string>;
-    public readonly installer!: pulumi.Output<string>;
+    public readonly home!: pulumi.Output<string | undefined>;
+    public readonly installer!: pulumi.Output<string | undefined>;
     /**
      * What the tool said its version was when last read. Reported, never enforced.
      */
