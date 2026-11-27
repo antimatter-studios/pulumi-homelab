@@ -331,6 +331,27 @@ export function resolveNormalise(rule: AclNormaliseArgs): Required<AclNormaliseA
   };
 }
 
+/**
+ * Whether the rule asked for differs from the one last applied.
+ *
+ * Compared field by field, never as serialised objects: Pulumi stores an object's keys sorted, so
+ * the state comes back as `{ from, group, ignore, to }` while `resolveNormalise` builds
+ * `{ group, from, to, ignore }`. Comparing the two as JSON reported a change on every preview, and
+ * every `up` then walked the whole tree again for nothing.
+ */
+export function normaliseChanged(applied: AclNormaliseArgs | undefined, wanted: AclNormaliseArgs | undefined): boolean {
+  // A missing rule is stored as null as well as left out.
+  if (!applied || !wanted) return Boolean(applied) !== Boolean(wanted);
+  // The applied rule passed the same checks when it was applied, so resolving it cannot throw.
+  const had = resolveNormalise(applied);
+  const want = resolveNormalise(wanted);
+  return had.group !== want.group
+    || had.from !== want.from
+    || had.to !== want.to
+    || had.ignore.length !== want.ignore.length
+    || had.ignore.some((ignored, i) => ignored !== want.ignore[i]);
+}
+
 /** `find -path` takes a pattern, so a directory literally named `a[1]` has to be escaped. */
 function findPathLiteral(path: string): string {
   return path.replace(/[\\*?[\]]/g, '\\$&');
@@ -481,8 +502,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<PosixAclArgs
         changes: transportChanged(old)
           || declared(old.entries ?? []) !== declared(wanted.entries)
           || declared(old.defaultEntries ?? []) !== declared(wanted.defaultEntries)
-          || JSON.stringify(old.normalise ?? null)
-            !== JSON.stringify(args.normalise === undefined ? null : resolveNormalise(args.normalise))
+          || normaliseChanged(old.normalise, args.normalise)
           // what the machine grants, against what was asked for. This is where a chmod that
           // recomputed the mask and suppressed a named entry shows up
           || unsatisfied(old.actual ?? [], old.entries ?? [], 'access').length > 0
