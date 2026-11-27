@@ -1,0 +1,145 @@
+package sshd
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
+
+const real = `passwordauthentication no
+pubkeyauthentication yes
+permitrootlogin without-password
+maxauthtries 6
+maxstartups 10:30:100
+gatewayports no`
+
+func TestParseSshdT(t *testing.T) {
+	t.Run("reads the keywords sshd prints, which are lowercased", func(t *testing.T) {
+		if got := ParseSshdT(real)["passwordauthentication"]; got != "no" {
+			t.Errorf("passwordauthentication = %q", got)
+		}
+		if got := ParseSshdT(real)["maxauthtries"]; got != "6" {
+			t.Errorf("maxauthtries = %q", got)
+		}
+	})
+	t.Run("turns without-password into the spelling anybody would write", func(t *testing.T) {
+		if got := ParseSshdT(real)["permitrootlogin"]; got != "prohibit-password" {
+			t.Errorf("permitrootlogin = %q", got)
+		}
+		if got := NormaliseSshdValue("without-password"); got != "prohibit-password" {
+			t.Errorf("NormaliseSshdValue = %q", got)
+		}
+	})
+	t.Run("leaves every other value exactly as sshd said it", func(t *testing.T) {
+		if got := NormaliseSshdValue("prohibit-password"); got != "prohibit-password" {
+			t.Errorf("NormaliseSshdValue = %q", got)
+		}
+		if got := ParseSshdT(real)["maxstartups"]; got != "10:30:100" {
+			t.Errorf("maxstartups = %q", got)
+		}
+	})
+	t.Run("keeps a value containing spaces whole", func(t *testing.T) {
+		if got := ParseSshdT("subsystem sftp /usr/lib/openssh/sftp-server")["subsystem"]; got != "sftp /usr/lib/openssh/sftp-server" {
+			t.Errorf("subsystem = %q", got)
+		}
+	})
+	t.Run("says nothing when sshd could not answer", func(t *testing.T) {
+		if got := ParseSshdT(""); len(got) != 0 {
+			t.Errorf("ParseSshdT(\"\") = %v", got)
+		}
+	})
+}
+
+func TestRenderSshd(t *testing.T) {
+	keyword := func(t *testing.T, in, want string) {
+		t.Helper()
+		if got := KeywordFor(in); got != want {
+			t.Errorf("KeywordFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+	render := func(t *testing.T, settings []Setting, unchecked []Keyword, want []Keyword) {
+		t.Helper()
+		if got := RenderSshd(settings, unchecked); !reflect.DeepEqual(got, want) {
+			t.Errorf("RenderSshd = %v, want %v", got, want)
+		}
+	}
+	t.Run("capitalises a property into the keyword sshd uses", func(t *testing.T) {
+		keyword(t, "passwordAuthentication", "PasswordAuthentication")
+		keyword(t, "maxAuthTries", "MaxAuthTries")
+	})
+	t.Run("knows the ones that are not simply capitalised", func(t *testing.T) {
+		keyword(t, "usePAM", "UsePAM")
+		keyword(t, "useDNS", "UseDNS")
+		keyword(t, "x11Forwarding", "X11Forwarding")
+		keyword(t, "macs", "MACs")
+	})
+	t.Run("writes booleans as yes and no, which sshd requires", func(t *testing.T) {
+		render(t, []Setting{{"passwordAuthentication", false}, {"pubkeyAuthentication", true}}, nil,
+			[]Keyword{{"PasswordAuthentication", "no"}, {"PubkeyAuthentication", "yes"}})
+	})
+	t.Run("writes lists comma-separated", func(t *testing.T) {
+		render(t, []Setting{{"allowUsers", []string{"admin", "deploy"}}}, nil, []Keyword{{"AllowUsers", "admin,deploy"}})
+	})
+	t.Run("writes numbers as themselves", func(t *testing.T) {
+		render(t, []Setting{{"maxAuthTries", 3}, {"port", 22}}, nil, []Keyword{{"MaxAuthTries", "3"}, {"Port", "22"}})
+	})
+	t.Run("leaves out what was never set", func(t *testing.T) {
+		render(t, nil, nil, nil)
+	})
+	t.Run("lets unchecked reach a keyword the type does not name", func(t *testing.T) {
+		render(t, nil, []Keyword{{"RekeyLimit", "1G 1h"}}, []Keyword{{"RekeyLimit", "1G 1h"}})
+	})
+}
+
+func TestSshdDropIn(t *testing.T) {
+	t.Run("writes a plain file when there is no match", func(t *testing.T) {
+		file := SshdDropIn([]Keyword{{"PasswordAuthentication", "no"}}, nil)
+		if !strings.Contains(file, "PasswordAuthentication no") {
+			t.Errorf("missing setting: %q", file)
+		}
+		if strings.Contains(file, "Match") {
+			t.Errorf("unexpected Match: %q", file)
+		}
+	})
+	t.Run("puts the settings inside the block, indented", func(t *testing.T) {
+		file := SshdDropIn([]Keyword{{"PasswordAuthentication", "yes"}}, []Criterion{{"Address", "10.0.0.0/24"}})
+		if !strings.Contains(file, "Match Address 10.0.0.0/24") {
+			t.Errorf("missing Match: %q", file)
+		}
+		if !strings.Contains(file, "    PasswordAuthentication yes") {
+			t.Errorf("missing indented setting: %q", file)
+		}
+	})
+	t.Run("joins several criteria into one Match line", func(t *testing.T) {
+		file := SshdDropIn([]Keyword{{"X11Forwarding", "no"}}, []Criterion{{"User", "deploy"}, {"Address", "10.0.0.0/24"}})
+		if !strings.Contains(file, "Match User deploy Address 10.0.0.0/24") {
+			t.Errorf("missing Match: %q", file)
+		}
+	})
+	t.Run("says who wrote it, for whoever finds it", func(t *testing.T) {
+		if file := SshdDropIn(nil, nil); !strings.HasPrefix(file, "# Managed by Pulumi.") {
+			t.Errorf("no header: %q", file)
+		}
+	})
+}
+
+func TestHasInclude(t *testing.T) {
+	check := func(t *testing.T, text string, want bool) {
+		t.Helper()
+		if got := HasInclude(text, Directory); got != want {
+			t.Errorf("HasInclude(%q) = %v, want %v", text, got, want)
+		}
+	}
+	t.Run("finds the Include that makes a drop-in mean anything", func(t *testing.T) {
+		check(t, "Include /etc/ssh/sshd_config.d/*.conf\nPort 22\n", true)
+	})
+	t.Run("is not case-sensitive about the keyword, since sshd is not", func(t *testing.T) {
+		check(t, "include /etc/ssh/sshd_config.d/*.conf\n", true)
+	})
+	t.Run("reports its absence, which is the silent failure this guards", func(t *testing.T) {
+		check(t, "Port 22\nPermitRootLogin no\n", false)
+	})
+	t.Run("does not accept an Include of somewhere else", func(t *testing.T) {
+		check(t, "Include /etc/ssh/other.d/*.conf\n", false)
+	})
+}
