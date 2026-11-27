@@ -20,6 +20,9 @@ breaking changes live.
 
 ### Added
 
+- **`User` `uid` and `group`** — pin the uid and primary group of an account whose files outlive the
+  machine (a disk carried over records numbers, not names). An existing account with a different
+  uid is refused rather than renumbered.
 - **`PosixAcl` `normalise`** — corrects directories that already exist under the path when the ACL
   is applied: one exact mode owned by one group, skipping the paths named in `ignore`. A directory
   created as `2755` has a mask that caps the `rwx` it inherited, and default entries cannot reach it.

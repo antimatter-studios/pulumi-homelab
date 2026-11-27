@@ -6,9 +6,12 @@ import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
  * A system account for something that runs.
  *
  * Only the parts worth describing: whether it exists, what shell it has, which groups it is in, and
- * whether it owns a home directory. Not the password, not the uid — a password belongs in a secret
- * store rather than a config file, and pinning a uid turns every machine into a special case for a
- * number nobody reads.
+ * whether it owns a home directory. Not the password: that belongs in a secret store rather than a
+ * config file.
+ *
+ * The uid is optional, and usually best left out. It matters when data outlives the machine: files
+ * on a disk carried from one machine to the next are owned by numbers, not names, so an account
+ * recreated with a different uid finds its own files owned by somebody else (or nobody).
  *
  * Deleting one deliberately leaves the home directory behind. A service account's home is where its
  * data lives, and a deployment that removes a user should not be the thing that quietly destroys
@@ -49,6 +52,19 @@ export interface UserArgs {
    */
   groups?: string[];
   /**
+   * The numeric uid, for an account whose files must keep their owner across machines.
+   *
+   * Set when the account is created. An existing account with a different uid is refused rather
+   * than renumbered: `usermod -u` only rechowns the home directory, so every file elsewhere would be
+   * left owned by the old number.
+   */
+  uid?: number;
+  /**
+   * The primary group's name. It must already exist; declare it as a `Group` with its gid and put
+   * that resource in `dependsOn`. Left out, `useradd` makes a group named after the account.
+   */
+  group?: string;
+  /**
    * Permission to remove memberships the arguments do not mention.
    *
    * Off by default, because the failure it prevents takes the machine with it.
@@ -58,6 +74,8 @@ export interface UserArgs {
 
 interface UserState {
   name: string;
+  uid?: number;
+  group?: string;
   shell: string;
   home: string;
   createHome: boolean;
@@ -83,20 +101,35 @@ export function groupsToLose(actual: string[], declared: string[]): string[] {
 
 /** What the machine says about the account, or null when there is no such user. */
 export async function readUser(host: Target, name: string): Promise<Omit<UserState, 'createHome' | 'allowGroupRemoval'> | null> {
-  const asked = await ask(host, `getent passwd ${shellQuote(name)} && id -nG ${shellQuote(name)}`);
+  const asked = await ask(host, `getent passwd ${shellQuote(name)} && id -nG ${shellQuote(name)} && id -gn ${shellQuote(name)}`);
   if (asked.code !== 0) return null;
+  return parseUserRead(name, asked.out);
+}
 
-  const [passwd = '', memberships = ''] = asked.out.trim().split('\n');
-  // name:x:uid:gid:gecos:home:shell — the two fields worth describing are the last two
+/** `getent passwd`, `id -nG` and `id -gn`, one per line, as the account they describe. */
+export function parseUserRead(name: string, out: string): Omit<UserState, 'createHome' | 'allowGroupRemoval'> {
+  const [passwd = '', memberships = '', primary = ''] = out.trim().split('\n');
+  // name:x:uid:gid:gecos:home:shell
   const fields = passwd.split(':');
+  const group = primary.trim() || name;
   return {
     name,
+    uid: Number(fields[2]),
+    group,
     home: fields[5] ?? '',
     shell: fields[6] ?? '',
-    // `id -nG` includes the user's own primary group, which nobody writes in a groups list and
-    // which would otherwise show up as drift on the very first refresh
-    groups: memberships.split(/\s+/).filter((g) => g.length > 0 && g !== name).sort(),
+    // `id -nG` includes the primary group, which nobody writes in a groups list and which would
+    // otherwise show up as drift on the very first refresh
+    groups: memberships.split(/\s+/).filter((g) => g.length > 0 && g !== group).sort(),
   };
+}
+
+/** Why an existing account cannot be made to match a declared uid, or null when it already does. */
+export function uidRefusal(name: string, declared: number | undefined, actual: number | undefined): string | null {
+  if (declared === undefined || actual === undefined || declared === actual) return null;
+  return `${name} exists with uid ${actual}, and the code says ${declared}. Renumbering an account leaves `
+    + `every file it owns outside its home owned by the old number, so this is refused. Change the files and `
+    + `the account by hand (usermod -u, then chown everything the old uid owned), or declare uid ${actual}.`;
 }
 
 /**
@@ -148,6 +181,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<UserArgs, Us
       );
     }
     const actual = await readUser(host, args.name);
+    const renumber = uidRefusal(args.name, args.uid, actual?.uid);
+    if (renumber) throw new Error(renumber);
     const losing = actual ? groupsToLose(actual.groups, args.groups) : [];
     if (losing.length > 0 && !args.allowGroupRemoval) {
       throw new Error(
@@ -164,14 +199,16 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<UserArgs, Us
     const name = shellQuote(args.name);
     const groups = args.groups.length > 0 ? `-G ${shellQuote(args.groups.join(','))}` : '';
     const home = args.home ? `-d ${shellQuote(args.home)}` : '';
+    const uid = args.uid !== undefined ? `-u ${args.uid}` : '';
+    const primary = args.group ? `-g ${shellQuote(args.group)}` : '';
     // useradd for a user that exists fails; usermod for one that does not fails too. Asking first
     // is the only way to write this once and have it be safe to run again, which every resource
     // here has to be.
     await must(host, escalate(host,
       `if getent passwd ${name} >/dev/null; then ` +
-      `usermod -s ${shellQuote(args.shell)} ${home} ${groups} ${name}; ` +
+      `usermod -s ${shellQuote(args.shell)} ${home} ${primary} ${groups} ${name}; ` +
       `else ` +
-      `useradd --system ${args.createHome ? '-m' : '-M'} -s ${shellQuote(args.shell)} ${home} ${groups} ${name}; ` +
+      `useradd --system ${args.createHome ? '-m' : '-M'} -s ${shellQuote(args.shell)} ${uid} ${primary} ${home} ${groups} ${name}; ` +
       `fi`,
     ));
   };
@@ -209,6 +246,8 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<UserArgs, Us
       const groups = [...(args.groups ?? [])].sort();
       const changed = old.shell !== args.shell
         || (args.home !== undefined && old.home !== args.home)
+        || (args.uid !== undefined && old.uid !== args.uid)
+        || (args.group !== undefined && old.group !== args.group)
         || old.groups.join(',') !== groups.join(',');
       return {
         changes: transportChanged(old)
