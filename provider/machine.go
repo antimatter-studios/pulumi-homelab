@@ -41,6 +41,46 @@ func (m *machine) must(ctx context.Context, command string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return m.check(command, r)
+}
+
+// feed runs a command as root with data on its stdin, and fails on a non-zero exit. The command
+// is given unescalated; feed escalates it.
+//
+// With "sudo" and "none" the data is the command's whole stdin. With "sudo-password" it cannot be:
+// the password goes down the same stdin to sudo -S, and sudo reads it only when it actually asks
+// (not under NOPASSWD, not with a cached timestamp), so a password followed by the data would at
+// times put the password into the file. There the data is first staged, unescalated and with no
+// password on the stream, in a private temporary file of the login user, which the escalated
+// command then reads and removes.
+func (m *machine) feed(ctx context.Context, command string, data []byte) (string, error) {
+	if m.cfg.Escalation != "sudo-password" {
+		return m.run(ctx, m.escalate(command), data)
+	}
+	const stage = `umask 077 && t=$(mktemp) && cat > "$t" && printf %s "$t"`
+	staged, err := m.run(ctx, stage, data)
+	if err != nil {
+		return "", err
+	}
+	escalated := m.escalate(fmt.Sprintf(`t=%s; trap 'rm -f -- "$t"' EXIT; (%s) < "$t"`, shellQuote(staged), command))
+	out, err := m.must(ctx, escalated)
+	if err != nil {
+		// the escalated command did not get as far as its trap: take the staged copy back
+		_, _, _, _ = m.runner.Run(ctx, "rm -f -- "+shellQuote(staged), nil)
+	}
+	return out, err
+}
+
+// run runs a command with exactly the given stdin, no password added, and fails on a non-zero exit.
+func (m *machine) run(ctx context.Context, command string, stdin []byte) (string, error) {
+	out, errb, code, err := m.runner.Run(ctx, command, stdin)
+	if err != nil {
+		return "", err
+	}
+	return m.check(command, ran{code: code, out: string(out), err: string(errb)})
+}
+
+func (m *machine) check(command string, r ran) (string, error) {
 	if r.code != 0 {
 		detail := strings.TrimSpace(r.err)
 		if detail == "" {

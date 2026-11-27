@@ -1,6 +1,12 @@
 export { GroupArgs } from "./group";
 export type Group = import("./group").Group;
 export declare const Group: typeof import("./group").Group;
+export { ManagedFileArgs } from "./managedFile";
+export type ManagedFile = import("./managedFile").ManagedFile;
+export declare const ManagedFile: typeof import("./managedFile").ManagedFile;
+export { ProtectedFileArgs } from "./protectedFile";
+export type ProtectedFile = import("./protectedFile").ProtectedFile;
+export declare const ProtectedFile: typeof import("./protectedFile").ProtectedFile;
 export { ProviderArgs } from "./provider";
 export type Provider = import("./provider").Provider;
 export declare const Provider: typeof import("./provider").Provider;

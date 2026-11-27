@@ -17,6 +17,8 @@
         "config/vars.ts",
         "group.ts",
         "index.ts",
+        "managedFile.ts",
+        "protectedFile.ts",
         "provider.ts",
         "types/index.ts",
         "types/input.ts",

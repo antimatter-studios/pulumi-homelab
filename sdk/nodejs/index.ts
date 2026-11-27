@@ -10,6 +10,16 @@ export type Group = import("./group").Group;
 export const Group: typeof import("./group").Group = null as any;
 utilities.lazyLoad(exports, ["Group"], () => require("./group"));
 
+export { ManagedFileArgs } from "./managedFile";
+export type ManagedFile = import("./managedFile").ManagedFile;
+export const ManagedFile: typeof import("./managedFile").ManagedFile = null as any;
+utilities.lazyLoad(exports, ["ManagedFile"], () => require("./managedFile"));
+
+export { ProtectedFileArgs } from "./protectedFile";
+export type ProtectedFile = import("./protectedFile").ProtectedFile;
+export const ProtectedFile: typeof import("./protectedFile").ProtectedFile = null as any;
+utilities.lazyLoad(exports, ["ProtectedFile"], () => require("./protectedFile"));
+
 export { ProviderArgs } from "./provider";
 export type Provider = import("./provider").Provider;
 export const Provider: typeof import("./provider").Provider = null as any;
@@ -31,6 +41,10 @@ const _module = {
         switch (type) {
             case "homelab:index:Group":
                 return new Group(name, <any>undefined, { urn })
+            case "homelab:index:ManagedFile":
+                return new ManagedFile(name, <any>undefined, { urn })
+            case "homelab:index:ProtectedFile":
+                return new ProtectedFile(name, <any>undefined, { urn })
             default:
                 throw new Error(`unknown resource type ${type}`);
         }
