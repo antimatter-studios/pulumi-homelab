@@ -126,7 +126,7 @@ func TestGroupCreateFailureAndSudoPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := s.Create(p.CreateRequest{Urn: groupURN, Properties: groupInputs(1002, false)})
-	want := "`sudo -S -p '' sh -c 'groupadd -g 1002 '\\''storage'\\'''` failed on chris@127.0.0.1 (exit 9): groupadd: GID '1002' already exists"
+	want := "`sudo -S -p '' sh -c 'groupadd -g 1002 '\\''storage'\\'''` failed on chris@127.0.0.1:20022 (exit 9): groupadd: GID '1002' already exists"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("got %v", err)
 	}
