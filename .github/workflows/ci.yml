@@ -115,6 +115,9 @@ jobs:
           ./scripts/release.sh notes
 
   integration:
+    # Pull requests do not wait for this: the integration suites run locally before every push, and
+    # GitHub-hosted runners are shared with other repositories and often queued. It runs on main.
+    if: github.event_name == 'push'
     # The Debian 13 container suites. They need real Docker (an sshd container with a published port,
     # its own networks, privileged systemd containers), which the Ryzen runners do not offer: Docker
     # there is rootless podman in an unprivileged sidecar. So this job alone stays on GitHub-hosted
