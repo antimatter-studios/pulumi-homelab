@@ -15,9 +15,11 @@
     "files": [
         "config/index.ts",
         "config/vars.ts",
+        "directory.ts",
         "group.ts",
         "index.ts",
         "provider.ts",
+        "symlink.ts",
         "types/index.ts",
         "types/input.ts",
         "types/output.ts",

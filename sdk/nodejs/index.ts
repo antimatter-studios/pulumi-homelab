@@ -5,6 +5,11 @@ import * as pulumi from "@pulumi/pulumi";
 import * as utilities from "./utilities";
 
 // Export members:
+export { DirectoryArgs } from "./directory";
+export type Directory = import("./directory").Directory;
+export const Directory: typeof import("./directory").Directory = null as any;
+utilities.lazyLoad(exports, ["Directory"], () => require("./directory"));
+
 export { GroupArgs } from "./group";
 export type Group = import("./group").Group;
 export const Group: typeof import("./group").Group = null as any;
@@ -14,6 +19,11 @@ export { ProviderArgs } from "./provider";
 export type Provider = import("./provider").Provider;
 export const Provider: typeof import("./provider").Provider = null as any;
 utilities.lazyLoad(exports, ["Provider"], () => require("./provider"));
+
+export { SymlinkArgs } from "./symlink";
+export type Symlink = import("./symlink").Symlink;
+export const Symlink: typeof import("./symlink").Symlink = null as any;
+utilities.lazyLoad(exports, ["Symlink"], () => require("./symlink"));
 
 
 // Export sub-modules:
@@ -29,8 +39,12 @@ const _module = {
     version: utilities.getVersion(),
     construct: (name: string, type: string, urn: string): pulumi.Resource => {
         switch (type) {
+            case "homelab:index:Directory":
+                return new Directory(name, <any>undefined, { urn })
             case "homelab:index:Group":
                 return new Group(name, <any>undefined, { urn })
+            case "homelab:index:Symlink":
+                return new Symlink(name, <any>undefined, { urn })
             default:
                 throw new Error(`unknown resource type ${type}`);
         }
