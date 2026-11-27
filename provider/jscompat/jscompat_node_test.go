@@ -154,6 +154,17 @@ func TestAgainstNode(t *testing.T) {
 			}
 			return false
 		}
+		// A letter node knows can still gain a case pair in a newer Unicode: U+A7D3 and U+A7D5 are
+		// old lowercase letters whose capitals (U+A7D2, U+A7D4) arrived in Unicode 17. A mapping to
+		// or from a code point node does not assign is the same version difference.
+		pairedWithUnassigned := func(r rune) bool {
+			for _, m := range string([]rune{unicode.ToUpper(r), unicode.ToLower(r)}) {
+				if m != r && nodeUnassigned(m) {
+					return true
+				}
+			}
+			return false
+		}
 		// Code points Go's tables do not know yet (and the ones paired with them) are documented
 		// divergences, as are İ and final sigma; everything else must match.
 		known := func(s string) bool {
@@ -170,7 +181,7 @@ func TestAgainstNode(t *testing.T) {
 			changed[r] = true
 			upper, lower := c[1].(string), c[2].(string)
 			s := string(r)
-			if !known(s) || !known(upper) || !known(lower) || nodeUnassigned(r) {
+			if !known(s) || !known(upper) || !known(lower) || nodeUnassigned(r) || pairedWithUnassigned(r) {
 				continue
 			}
 			if got := ToUpper(s); got != upper {
@@ -181,7 +192,7 @@ func TestAgainstNode(t *testing.T) {
 			}
 		}
 		for r := rune(0); r <= unicode.MaxRune; r++ {
-			if changed[r] || (r >= 0xD800 && r <= 0xDFFF) || nodeUnassigned(r) {
+			if changed[r] || (r >= 0xD800 && r <= 0xDFFF) || nodeUnassigned(r) || pairedWithUnassigned(r) {
 				continue
 			}
 			s := string(r)
