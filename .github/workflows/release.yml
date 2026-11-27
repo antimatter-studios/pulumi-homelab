@@ -1,21 +1,25 @@
 name: Release
 
-# On every merge to main: work out the next semver version from the conventional-commit subjects
-# since the last v* tag (scripts/release.sh), and when one is due, turn CHANGELOG.md's Unreleased
-# section into that version, commit and tag it, build the plugin for each platform with the version
-# in its ldflags, and publish a GitHub release whose body is that changelog section. Nothing in here
-# names this repository; only BINARY does, so the same file serves pulumi-homelab-k3s.
+# A reusable release: work out the next semver version from the conventional-commit subjects since
+# the last v* tag, and when one is due, tag the given commit, build the plugin for each platform with
+# the version in its ldflags, and publish a GitHub release whose notes are the CHANGELOG.md entries
+# added under "## Unreleased" since the previous tag (scripts/release.sh).
+#
+# Nothing is committed: main is protected (a pull request and a green CI for every change, admins
+# included), so a release is only a tag on a commit main already has. Callers run this after their
+# CI on main has passed (release-on-green.yml here); pulumi-homelab-k3s calls it the same way with
+# its own binary. The release script always comes from this repository's main.
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-concurrency:
-  group: release
-  cancel-in-progress: false
-
-env:
-  BINARY: pulumi-resource-homelab
+  workflow_call:
+    inputs:
+      binary:
+        description: The plugin binary, pulumi-resource-<name>, built from provider/cmd/<binary>.
+        type: string
+        required: true
+      sha:
+        description: The commit on main to release; its CI has passed.
+        type: string
+        required: true
 
 permissions:
   contents: write
@@ -28,27 +32,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.sha }}
           fetch-depth: 0
 
-      - name: Next version
+      - uses: actions/checkout@v4
+        with:
+          repository: antimatter-studios/pulumi-homelab
+          ref: main
+          path: .release-tools
+
+      - name: Next version and notes
         id: next
         run: |
-          v="$(./scripts/release.sh next)"
+          v="$(.release-tools/scripts/release.sh next)"
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "next version: ${v:-none, no feat or fix since the last tag}"
+          # before the tag exists, so "since the last tag" means the previous release
+          [ -z "$v" ] || .release-tools/scripts/release.sh notes > "$RUNNER_TEMP/notes.md"
 
-      - name: Changelog and tag
+      - uses: actions/upload-artifact@v4
+        if: steps.next.outputs.version != ''
+        with:
+          name: notes
+          path: ${{ runner.temp }}/notes.md
+
+      - name: Tag
         if: steps.next.outputs.version != ''
         env:
           V: ${{ steps.next.outputs.version }}
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          ./scripts/release.sh changelog "$V"
-          git commit -am "Release v$V"
-          git tag "v$V"
-          # Both or neither: a tag on a commit main refused would make every later version wrong.
-          git push --atomic origin HEAD:main "v$V"
+          git tag "v$V" "${{ inputs.sha }}"
+          git push origin "refs/tags/v$V"
 
   build:
     needs: version
@@ -74,12 +88,13 @@ jobs:
         env:
           V: ${{ needs.version.outputs.version }}
           T: ${{ matrix.target }}
+          BINARY: ${{ inputs.binary }}
           CGO_ENABLED: '0'
         run: |
           export GOOS="${T%-*}" GOARCH="${T#*-}"
           module="$(go list -m)"
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w -X $module.Version=$V" -o "dist/$BINARY" ./cmd/$BINARY
+          go build -trimpath -ldflags "-s -w -X $module.Version=$V" -o "dist/$BINARY" "./cmd/$BINARY"
           tar -czf "$BINARY-v$V-$T.tar.gz" -C dist "$BINARY"
 
       - uses: actions/upload-artifact@v4
@@ -91,10 +106,6 @@ jobs:
     needs: [version, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.version }}
-
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -105,5 +116,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           V: ${{ needs.version.outputs.version }}
         run: |
-          ./scripts/release.sh notes "$V" > notes.md
-          gh release create "v$V" dist/*.tar.gz --title "v$V" --notes-file notes.md --verify-tag
+          gh release create "v$V" dist/*.tar.gz --repo "$GITHUB_REPOSITORY" \
+            --title "v$V" --notes-file dist/notes.md --verify-tag
