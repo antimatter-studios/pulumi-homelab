@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 	"github.com/antimatter-studios/pulumi-homelab/provider/shell"
 )
 
@@ -14,7 +15,7 @@ import (
 func ParseManual(out string) []string {
 	names := []string{}
 	for _, line := range strings.Split(out, "\n") {
-		name := strings.Split(strings.TrimSpace(line), ":")[0]
+		name := strings.Split(jscompat.Trim(line), ":")[0]
 		if name != "" && !strings.HasPrefix(name, "#") {
 			names = append(names, name)
 		}

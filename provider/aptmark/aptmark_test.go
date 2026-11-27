@@ -97,3 +97,7 @@ func TestMarkManualCommand(t *testing.T) {
 		contains(t, must(t, []string{"ovmf"}), ">/dev/null")
 	})
 }
+
+func TestParseManualTrimsAsJavaScriptDoes(t *testing.T) {
+	eq(t, ParseManual("\ufeffovmf\n\u0085ovmf\u0085\n"), []string{"ovmf", "\u0085ovmf\u0085"})
+}
