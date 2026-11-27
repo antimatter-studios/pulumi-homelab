@@ -6,9 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
-	"strings"
 
-	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 	"github.com/antimatter-studios/pulumi-homelab/provider/samba"
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
@@ -26,9 +24,11 @@ type SambaUserArgs struct {
 
 // SambaUserState is what is kept in state.
 type SambaUserState struct {
-	Name     string `pulumi:"name"`
-	Password string `pulumi:"password" provider:"secret"`
-	Exists   bool   `pulumi:"exists"`
+	Name string `pulumi:"name"`
+	// Password is nil after an import: samba cannot give it back, so an imported user does not
+	// know it, and Diff compares it only once a Create or Update has recorded it.
+	Password *string `pulumi:"password,optional" provider:"secret"`
+	Exists   bool    `pulumi:"exists"`
 }
 
 func (s *SambaUserArgs) Annotate(a infer.Annotator) {
@@ -67,29 +67,22 @@ func setSambaPassword(ctx context.Context, m *machine, name, password string) er
 			" ] && break; done; " + command
 		stdin = m.cfg.SudoPassword + "\n" + marker + "\n" + stdin
 	}
-	redact := func(text string) string {
-		if password != "" {
-			return strings.ReplaceAll(text, password, "[secret]")
-		}
-		return text
-	}
-	out, stderr, code, err := m.runner.Run(ctx, m.escalate(command), []byte(stdin))
+	_, _, code, err := m.runner.Run(ctx, m.escalate(command), []byte(stdin))
 	if err != nil {
-		return fmt.Errorf("%s", redact(err.Error()))
+		return fmt.Errorf("smbpasswd failed for user %s on %s: the connection failed", name, m.describe())
 	}
 	if code != 0 {
-		detail := jscompat.Trim(redact(string(stderr)))
-		if detail == "" {
-			detail = jscompat.Trim(redact(string(out)))
-		}
-		return fmt.Errorf("setting the samba password of %s failed on %s (exit %d): %s", name, m.describe(), code, detail)
+		// smbpasswd's own output never reaches the error: it can echo the password in forms no
+		// redaction catches (trimmed, CRLF, one line of a multiline password).
+		return fmt.Errorf("smbpasswd failed for user %s on %s (exit %d)", name, m.describe(), code)
 	}
 	return nil
 }
 
 // Create sets the password of an existing unix account.
 func (SambaUser) Create(ctx context.Context, req infer.CreateRequest[SambaUserArgs]) (infer.CreateResponse[SambaUserState], error) {
-	state := SambaUserState{Name: req.Inputs.Name, Password: req.Inputs.Password, Exists: true}
+	password := req.Inputs.Password
+	state := SambaUserState{Name: req.Inputs.Name, Password: &password, Exists: true}
 	if req.DryRun {
 		return infer.CreateResponse[SambaUserState]{ID: req.Inputs.Name, Output: state}, nil
 	}
@@ -111,7 +104,7 @@ func (SambaUser) Create(ctx context.Context, req infer.CreateRequest[SambaUserAr
 }
 
 // Read reports whether samba knows the user; one gone from samba's database is forgotten. A
-// password cannot be read back, so an import holds the declared one when given it.
+// password cannot be read back, so an import leaves it unknown.
 func (SambaUser) Read(ctx context.Context, req infer.ReadRequest[SambaUserArgs, SambaUserState]) (infer.ReadResponse[SambaUserArgs, SambaUserState], error) {
 	m, err := machineFrom(ctx)
 	if err != nil {
@@ -125,9 +118,6 @@ func (SambaUser) Read(ctx context.Context, req infer.ReadRequest[SambaUserArgs, 
 		return infer.ReadResponse[SambaUserArgs, SambaUserState]{}, nil
 	}
 	state := req.State
-	if state.Name == "" {
-		state.Password = req.Inputs.Password
-	}
 	state.Name, state.Exists = req.ID, true
 	inputs := req.Inputs
 	inputs.Name = req.ID
@@ -136,7 +126,8 @@ func (SambaUser) Read(ctx context.Context, req infer.ReadRequest[SambaUserArgs, 
 
 // Update sets the password again.
 func (SambaUser) Update(ctx context.Context, req infer.UpdateRequest[SambaUserArgs, SambaUserState]) (infer.UpdateResponse[SambaUserState], error) {
-	state := SambaUserState{Name: req.ID, Password: req.Inputs.Password, Exists: true}
+	password := req.Inputs.Password
+	state := SambaUserState{Name: req.ID, Password: &password, Exists: true}
 	if req.DryRun {
 		return infer.UpdateResponse[SambaUserState]{Output: state}, nil
 	}
@@ -153,7 +144,7 @@ func (SambaUser) Update(ctx context.Context, req infer.UpdateRequest[SambaUserAr
 // Diff: a new password is an update; a new name replaces, deleting first.
 func (SambaUser) Diff(_ context.Context, req infer.DiffRequest[SambaUserArgs, SambaUserState]) (p.DiffResponse, error) {
 	resp := p.DiffResponse{DeleteBeforeReplace: true, DetailedDiff: map[string]p.PropertyDiff{}}
-	if req.State.Password != req.Inputs.Password {
+	if req.State.Password != nil && *req.State.Password != req.Inputs.Password {
 		resp.DetailedDiff["password"] = p.PropertyDiff{Kind: p.Update}
 	}
 	if req.State.Name != req.Inputs.Name {

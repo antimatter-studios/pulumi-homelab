@@ -36,7 +36,7 @@ export class SambaUser extends pulumi.CustomResource {
 
     public /*out*/ readonly exists!: pulumi.Output<boolean>;
     public readonly name!: pulumi.Output<string>;
-    public readonly password!: pulumi.Output<string>;
+    public readonly password!: pulumi.Output<string | undefined>;
 
     /**
      * Create a SambaUser resource with the given unique name, arguments, and options.

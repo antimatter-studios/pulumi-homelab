@@ -144,8 +144,8 @@ chmod 755 /usr/local/bin/smbpasswd`)
 				t.Fatalf("unexpected smbpasswd argv")
 			}
 			err := setSambaPassword(t.Context(), m, "failing", password)
-			if err == nil || strings.Contains(err.Error(), strings.TrimSpace(password)) || !strings.Contains(err.Error(), "[secret]") {
-				t.Fatal("smbpasswd failure did not redact the password before trimming")
+			if err == nil || strings.Contains(err.Error(), strings.TrimSpace(password)) || !strings.Contains(err.Error(), "smbpasswd failed for user failing") {
+				t.Fatal("a smbpasswd failure must name the user and carry none of smbpasswd's output")
 			}
 		})
 	}

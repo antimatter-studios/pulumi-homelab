@@ -25,13 +25,16 @@ type SambaSettingArgs struct {
 
 // SambaSettingState is what is kept in state.
 type SambaSettingState struct {
-	Share     string `pulumi:"share"`
-	Key       string `pulumi:"key"`
-	Value     string `pulumi:"value"`
-	Apply     string `pulumi:"apply"`
-	Config    string `pulumi:"config"`
-	Actual    string `pulumi:"actual"`
-	Effective string `pulumi:"effective"`
+	Share string `pulumi:"share"`
+	Key   string `pulumi:"key"`
+	Value string `pulumi:"value"`
+	// Apply is nil after an import: how a change takes effect is a behaviour, not something
+	// smb.conf shows, so an imported setting does not know it and Diff compares it only once a
+	// Create or Update has recorded it.
+	Apply     *string `pulumi:"apply,optional"`
+	Config    string  `pulumi:"config"`
+	Actual    string  `pulumi:"actual"`
+	Effective string  `pulumi:"effective"`
 }
 
 func (s *SambaSettingArgs) Annotate(a infer.Annotator) {
@@ -122,11 +125,12 @@ func settleSetting(ctx context.Context, m *machine, args SambaSettingArgs) (Samb
 	if err != nil {
 		return SambaSettingState{}, err
 	}
-	return SambaSettingState{Share: args.Share, Key: args.Key, Value: args.Value, Apply: how, Config: config, Actual: actual, Effective: effective}, nil
+	return SambaSettingState{Share: args.Share, Key: args.Key, Value: args.Value, Apply: &how, Config: config, Actual: actual, Effective: effective}, nil
 }
 
 func previewSetting(args SambaSettingArgs) SambaSettingState {
-	return SambaSettingState{Share: args.Share, Key: args.Key, Value: args.Value, Apply: orApply(args.Apply), Config: orConf(args.Config)}
+	how := orApply(args.Apply)
+	return SambaSettingState{Share: args.Share, Key: args.Key, Value: args.Value, Apply: &how, Config: orConf(args.Config)}
 }
 
 // Create writes the setting, or adopts one the file already has.
@@ -182,14 +186,15 @@ func (SambaSetting) Read(ctx context.Context, req infer.ReadRequest[SambaSetting
 		} else {
 			inputs.Value = value
 		}
-		state = SambaSettingState{Value: value, Apply: orApply(inputs.Apply)}
+		state = SambaSettingState{Value: value}
+		if inputs.Apply != nil {
+			how := orApply(inputs.Apply)
+			state.Apply = &how
+		}
 		inputs.Share, inputs.Key = share, key
 		if req.Inputs.Share == "" && req.Inputs.Key == "" {
-			inputs.Apply, inputs.Config = &state.Apply, &config
+			inputs.Config = &config
 		}
-	}
-	if state.Apply == "" {
-		state.Apply = "reload"
 	}
 	state.Config, state.Share, state.Key, state.Actual, state.Effective = config, share, key, actual, effective
 	return infer.ReadResponse[SambaSettingArgs, SambaSettingState]{ID: req.ID, Inputs: inputs, State: state}, nil
@@ -221,7 +226,7 @@ func (SambaSetting) Diff(_ context.Context, req infer.DiffRequest[SambaSettingAr
 	if !sambaSameValue(args.Key, args.Value, old.Actual) || old.Value != args.Value {
 		resp.DetailedDiff["value"] = p.PropertyDiff{Kind: p.Update}
 	}
-	if old.Apply != orApply(args.Apply) {
+	if old.Apply != nil && *old.Apply != orApply(args.Apply) {
 		resp.DetailedDiff["apply"] = p.PropertyDiff{Kind: p.Update}
 	}
 	if old.Share != args.Share || old.Key != args.Key {

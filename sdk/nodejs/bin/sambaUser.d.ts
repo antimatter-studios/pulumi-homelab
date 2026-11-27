@@ -19,7 +19,7 @@ export declare class SambaUser extends pulumi.CustomResource {
     static isInstance(obj: any): obj is SambaUser;
     readonly exists: pulumi.Output<boolean>;
     readonly name: pulumi.Output<string>;
-    readonly password: pulumi.Output<string>;
+    readonly password: pulumi.Output<string | undefined>;
     /**
      * Create a SambaUser resource with the given unique name, arguments, and options.
      *

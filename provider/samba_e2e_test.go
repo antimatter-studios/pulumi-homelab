@@ -180,6 +180,20 @@ func TestSambaSettingLifecycle(t *testing.T) {
 	if diff, err := s.Diff(p.DiffRequest{ID: created.ID, Urn: settingURN, State: imported.Properties, Inputs: inputs("homelab", "nmbd")}); err != nil || diff.HasChanges {
 		t.Fatalf("import diff %+v %v", diff, err)
 	}
+	// an ID-only import, as the #38 switch does it, cannot know apply: samba-netbios-name declares
+	// nmbd, and that must not diff
+	bare, err := s.Read(p.ReadRequest{ID: created.ID, Urn: settingURN})
+	if err != nil {
+		t.Fatalf("id-only import %v", err)
+	}
+	if v, ok := bare.Properties.GetOk("apply"); ok && !v.IsNull() {
+		t.Fatalf("an id-only import claimed to know apply: %v", v)
+	}
+	if diff, err := s.Diff(p.DiffRequest{ID: created.ID, Urn: settingURN, State: bare.Properties, Inputs: inputs("homelab", "nmbd")}); err != nil {
+		t.Fatalf("id-only import diff %v", err)
+	} else if _, applies := diff.DetailedDiff["apply"]; applies {
+		t.Fatalf("id-only import diffs on apply: %+v", diff)
+	}
 	if diff, err := s.Diff(p.DiffRequest{ID: created.ID, Urn: settingURN, State: read.Properties, Inputs: inputs("other", "nmbd")}); err != nil || diff.DetailedDiff["value"].Kind != p.Update {
 		t.Fatalf("value diff %+v %v", diff, err)
 	}
@@ -251,7 +265,45 @@ func TestSambaUserLifecycle(t *testing.T) {
 	// a failure does not put the password into the error
 	failing := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).On(setPw, remotetest.Reply{Code: 1, Stderr: "Failed to add entry for user chris.\n"})
 	_, err = configured(t, failing).Create(p.CreateRequest{Urn: sambaURN, Properties: in("chris", "s3cret")})
-	if err == nil || strings.Contains(err.Error(), "s3cret") || !strings.Contains(err.Error(), "Failed to add entry for user chris.") {
+	if err == nil || strings.Contains(err.Error(), "s3cret") || !strings.Contains(err.Error(), "smbpasswd failed for user chris") ||
+		!strings.Contains(err.Error(), "(exit 1)") || strings.Contains(err.Error(), "Failed to add entry") {
 		t.Fatalf("failure %v", err)
+	}
+}
+
+// smbpasswd's output never reaches an error, whatever form the password takes in it: padded,
+// with a tab, with CRLF, or one line of a multiline password.
+func TestSambaUserErrorNeverCarriesThePassword(t *testing.T) {
+	for _, password := range []string{"  padded  ", "tab\there", "crlf\r\npart", "line one\nline two"} {
+		echo := "smbpasswd: " + password + "\n" + strings.TrimSpace(password) + "\r\n" +
+			strings.ReplaceAll(password, "\t", "\\t") + "\n" + strings.Split(password, "\n")[0] + "\n"
+		fake := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).
+			When(func(c string) bool { return strings.Contains(c, "smbpasswd -s -a") }, func(string) remotetest.Reply { return remotetest.Reply{Code: 1, Stdout: echo, Stderr: echo} }, 0)
+		in := property.NewMap(map[string]property.Value{"name": property.New("chris"), "password": property.New(password).WithSecret(true)})
+		_, err := configured(t, fake).Create(p.CreateRequest{Urn: sambaURN, Properties: in})
+		if err == nil || !strings.Contains(err.Error(), "smbpasswd failed for user chris") || !strings.Contains(err.Error(), "(exit 1)") {
+			t.Fatalf("%q: want smbpasswd's exit-1 failure, got %v", password, err)
+		}
+		for _, piece := range []string{"padded", "tab", "here", "crlf", "part", "line one", "line two"} {
+			if strings.Contains(err.Error(), piece) {
+				t.Fatalf("%q: the error carries %q: %v", password, piece, err)
+			}
+		}
+	}
+}
+
+// The #38 switch imports samba-user-chris; samba cannot give the password back, so an import
+// leaves it unknown and the declared password diffs clean.
+func TestSambaUserImportIgnoresThePassword(t *testing.T) {
+	fake := remotetest.New().When(func(c string) bool { return strings.Contains(c, "pdbedit -L") },
+		func(string) remotetest.Reply { return remotetest.Reply{Stdout: "chris:1000:\n"} }, 0)
+	s := configured(t, fake)
+	imported, err := s.Read(p.ReadRequest{ID: "chris", Urn: sambaURN})
+	if err != nil || imported.ID != "chris" {
+		t.Fatalf("import read %+v %v", imported, err)
+	}
+	declared := property.NewMap(map[string]property.Value{"name": property.New("chris"), "password": property.New("s3cret").WithSecret(true)})
+	if d, err := s.Diff(p.DiffRequest{ID: "chris", Urn: sambaURN, State: imported.Properties, Inputs: declared}); err != nil || d.HasChanges {
+		t.Fatalf("import diff %+v %v", d, err)
 	}
 }

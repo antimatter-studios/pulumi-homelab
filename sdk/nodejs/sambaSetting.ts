@@ -38,7 +38,7 @@ export class SambaSetting extends pulumi.CustomResource {
      * The value as the file says it.
      */
     public /*out*/ readonly actual!: pulumi.Output<string>;
-    public readonly apply!: pulumi.Output<string>;
+    public readonly apply!: pulumi.Output<string | undefined>;
     public readonly config!: pulumi.Output<string>;
     /**
      * The value as testparm -sv reports it, defaults included.
