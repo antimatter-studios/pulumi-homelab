@@ -1,0 +1,97 @@
+import { describe, expect, it } from 'vitest';
+import { AGENT_DEFAULTS, T3_DEFAULT, unitResourceLines } from './index';
+
+describe('the harness release this package was tested against', () => {
+  it('pins a version and the checksum for it together', () => {
+    // a version bumped with the hash left behind is an install that fails on a mismatch
+    expect(T3_DEFAULT.version).toMatch(/^\d+\.\d+\.\d+-nightly\.\d+\.\d+$/);
+    expect(T3_DEFAULT.sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('builds the url from the version, so the two cannot disagree', () => {
+    expect(T3_DEFAULT.url('1.2.3-nightly.4.5')).toContain('/v1.2.3-nightly.4.5/');
+    expect(T3_DEFAULT.url('1.2.3-nightly.4.5')).toContain('t3-1.2.3-nightly.4.5-linux-x64.tar.gz');
+  });
+
+  /**
+   * Nightly is forced rather than chosen: preview builds are never offered as updates, so a preview
+   * install sits on its bootstrap build for ever, and stable publishes no linux-arm64 asset at all.
+   */
+  it('is a nightly', () => {
+    expect(T3_DEFAULT.version).toContain('nightly');
+  });
+});
+
+describe('the agent CLIs installed by default', () => {
+  it('installs gh, and the three providers t3 spawns', () => {
+    expect(AGENT_DEFAULTS.map((agent) => agent.key)).toEqual(['gh', 'claude', 'codex', 'opencode']);
+  });
+
+  it('pins gh by checksum', () => {
+    for (const agent of AGENT_DEFAULTS.filter((a) => !('installer' in a))) {
+      expect('sha256' in agent && agent.sha256, agent.key).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+
+  /**
+   * The coding agents update themselves and T3 refuses versions it has outgrown, so they are
+   * installed the vendors' way and left to update: a pinned copy owned by the deployment cannot.
+   */
+  it('installs the three coding agents with their vendors\' own installers', () => {
+    const official = AGENT_DEFAULTS.filter((a) => 'installer' in a).map((a) => a.key);
+    expect(official).toEqual(['claude', 'codex', 'opencode']);
+    for (const agent of AGENT_DEFAULTS) {
+      if (!('installer' in agent)) continue;
+      expect(agent.installer, agent.key).toMatch(/^curl -fsSL https:\/\//);
+      // relative to the account's home, and never asks a question nobody is there to answer
+      expect(agent.bin.startsWith('/'), agent.key).toBe(false);
+    }
+    const codex = AGENT_DEFAULTS.find((a) => a.key === 'codex');
+    expect(codex && 'installer' in codex && codex.installer).toContain('CODEX_NON_INTERACTIVE=1');
+  });
+
+  it('names the executable, never bare', () => {
+    for (const agent of AGENT_DEFAULTS) {
+      expect(agent.bin, agent.key).toBeTruthy();
+      expect(agent.bin.startsWith('/'), agent.key).toBe(false);
+    }
+  });
+});
+
+describe('what the agents may take of the machine', () => {
+  it('adds nothing when nothing is asked for, so existing units are unchanged', () => {
+    expect(unitResourceLines()).toBe('');
+    expect(unitResourceLines({ name: 't3code', limits: {} })).toBe('');
+  });
+
+  it('writes each limit and TMPDIR as a [Service] line', () => {
+    const lines = unitResourceLines({
+      limits: { memoryHigh: '6G', memoryMax: '8G', cpuWeight: 20, ioWeight: 20 },
+      tmpDir: '/mnt/storage/t3code/tmp',
+    });
+    expect(lines).toContain('\nMemoryHigh=6G\n');
+    expect(lines).toContain('\nMemoryMax=8G\n');
+    expect(lines).toContain('\nCPUWeight=20\n');
+    expect(lines).toContain('\nIOWeight=20\n');
+    expect(lines).toContain('\nEnvironment=TMPDIR=/mnt/storage/t3code/tmp\n');
+  });
+
+  it('caps swap and keeps the unit running when one of its processes is killed', () => {
+    const lines = unitResourceLines({ limits: { memoryMax: '8G', memorySwapMax: '32G', oomPolicy: 'continue' } });
+    expect(lines).toContain('\nMemorySwapMax=32G\n');
+    expect(lines).toContain('\nOOMPolicy=continue\n');
+  });
+
+  it('leaves swap and the OOM policy to systemd when they are not asked for', () => {
+    const lines = unitResourceLines({ limits: { memoryMax: '8G' } });
+    expect(lines).not.toContain('MemorySwapMax');
+    expect(lines).not.toContain('OOMPolicy');
+  });
+
+  it('refuses a weight systemd would reject', () => {
+    // systemd ignores an invalid weight with a log line, so the unit starts with no weight at all
+    expect(() => unitResourceLines({ limits: { cpuWeight: 0 } })).toThrow(/CPUWeight/);
+    expect(() => unitResourceLines({ limits: { ioWeight: 20000 } })).toThrow(/IOWeight/);
+    expect(() => unitResourceLines({ limits: { cpuWeight: 2.5 } })).toThrow(/CPUWeight/);
+  });
+});

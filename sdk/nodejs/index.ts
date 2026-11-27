@@ -263,3 +263,12 @@ pulumi.runtime.registerResourcePackage("homelab", {
         return new Provider(name, <any>undefined, { urn });
     },
 });
+
+export type { FluxAppArgs } from "./components/flux";
+export type FluxApp = import("./components/flux").FluxApp;
+export const FluxApp: typeof import("./components/flux").FluxApp = null as any;
+export const ignoreRules: typeof import("./components/flux").ignoreRules = null as any;
+utilities.lazyLoad(exports, ["FluxApp", "ignoreRules"], () => require("./components/flux"));
+export * from "./components/flux/ready";
+export * from "./components/claude";
+export * from "./components/t3code";
