@@ -8,7 +8,8 @@
     "test:unit": "vitest run",
     "check:serialise": "node --experimental-strip-types scripts/serialise-check.ts",
     "check:revision": "node --experimental-strip-types scripts/revision.ts",
-    "revision:record": "node --experimental-strip-types scripts/revision.ts --record"
+    "revision:record": "node --experimental-strip-types scripts/revision.ts --record",
+    "measure:state": "node --experimental-strip-types scripts/measure-state.ts"
   },
   "dependencies": {
     "@pulumi/command": "^1.0.1",
