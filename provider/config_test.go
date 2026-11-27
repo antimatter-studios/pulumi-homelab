@@ -377,3 +377,17 @@ func TestStrictJumpNeedsPinnedKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The engine adds "version" (and "__"-prefixed internals) to an explicit provider's inputs; the
+// config check accepts them rather than refusing them as unknown configuration. homelab-server's
+// first preview on the plugin failed exactly here.
+func TestCheckConfigAcceptsEngineFields(t *testing.T) {
+	cfg := with(with(homelabServerConfig(), "version", property.New("0.0.0-dev")), "__internal", property.New("x"))
+	if err := checkConfig(t, cfg); err != nil {
+		t.Fatalf("got %v", err)
+	}
+	// a genuinely unknown key is still refused
+	if err := checkConfig(t, with(homelabServerConfig(), "adress", property.New("typo"))); err == nil {
+		t.Fatal("an unknown key was accepted")
+	}
+}
