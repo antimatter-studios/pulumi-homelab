@@ -278,7 +278,7 @@ func (GitCheckout) Diff(_ context.Context, req infer.DiffRequest[GitCheckoutArgs
 	return resp, nil
 }
 
-// Delete removes the working tree.
+// Delete removes the working tree after checking for local work.
 func (GitCheckout) Delete(ctx context.Context, req infer.DeleteRequest[GitCheckoutState]) (infer.DeleteResponse, error) {
 	m, err := machineFrom(ctx)
 	if err != nil {
@@ -288,6 +288,5 @@ func (GitCheckout) Delete(ctx context.Context, req infer.DeleteRequest[GitChecko
 	if path == "" {
 		path = req.ID
 	}
-	_, err = m.must(ctx, m.escalate("rm -rf "+shellQuote(path)))
-	return infer.DeleteResponse{}, err
+	return infer.DeleteResponse{}, deleteCheckout(ctx, m, path)
 }

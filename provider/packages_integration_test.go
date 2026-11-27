@@ -97,6 +97,38 @@ func TestDebian13GitCheckout(t *testing.T) {
 			t.Fatalf("HEAD is %q", out)
 		}
 	})
+
+	sh(t, m, "useradd -m checkout-owner")
+	for _, tc := range []struct{ name, change, finding string }{
+		{"working tree", "echo changed > a", "Working tree changes:\n M a"},
+		{"stash", "echo changed > a && git stash -q", "Stashes:\nstash@{0}"},
+		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "Unpushed branch commits:"},
+	} {
+		t.Run("refuses "+tc.name, func(t *testing.T) {
+			path := "/srv/w-" + strings.ReplaceAll(tc.name, " ", "-")
+			checkout(t, path)
+			sh(t, m, "cd "+shellQuote(path)+" && "+tc.change+" && chown -R checkout-owner:checkout-owner "+shellQuote(path))
+			err := deleteCheckout(t.Context(), m, path)
+			if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.finding) {
+				t.Fatalf("got %v, want refusal naming %s and %q", err, path, tc.finding)
+			}
+			if !exists(t, m, path) {
+				t.Fatal("checkout was removed")
+			}
+		})
+	}
+
+	t.Run("removes a clean checkout", func(t *testing.T) {
+		path := "/srv/clean"
+		checkout(t, path)
+		sh(t, m, "echo ignored > /srv/clean/ignored.log && chown -R checkout-owner:checkout-owner /srv/clean")
+		if err := deleteCheckout(t.Context(), m, path); err != nil {
+			t.Fatal(err)
+		}
+		if exists(t, m, path) {
+			t.Fatal("checkout is still present")
+		}
+	})
 }
 
 // Archive: installs from a verified archive with the declared owner, chowns rather than refetching
