@@ -1,6 +1,7 @@
 package sshd
 
 import (
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -142,4 +143,56 @@ func TestHasInclude(t *testing.T) {
 	t.Run("does not accept an Include of somewhere else", func(t *testing.T) {
 		check(t, "Include /etc/ssh/other.d/*.conf\n", false)
 	})
+}
+
+func TestRenderSshdWritesValuesAsJavaScriptsString(t *testing.T) {
+	got := RenderSshd([]Setting{
+		{"maxStartups", float64(1000000)},
+		{"clientAliveInterval", 15},
+		{"loginGraceTime", math.Copysign(0, -1)},
+		{"maxAuthTries", 1.5},
+		{"allowUsers", []any{"admin", "deploy"}},
+		{"allowGroups", []any{"a", nil, 3.0, true}},
+		{"denyUsers", []string{"x", "y"}},
+	}, nil)
+	want := []Keyword{
+		{"MaxStartups", "1000000"},
+		{"ClientAliveInterval", "15"},
+		{"LoginGraceTime", "0"},
+		{"MaxAuthTries", "1.5"},
+		{"AllowUsers", "admin,deploy"},
+		{"AllowGroups", "a,,3,true"},
+		{"DenyUsers", "x,y"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestKeywordForCapitalisesTheFirstCharacterAsJavaScriptDoes(t *testing.T) {
+	for in, want := range map[string]string{
+		"éx":          "Éx",
+		"ßx":          "SSx",
+		"\U00010428x": "\U00010428x", // charAt(0) is half a surrogate pair, which toUpperCase leaves
+		"":            "",
+		"x":           "X",
+	} {
+		if got := KeywordFor(in); got != want {
+			t.Errorf("KeywordFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestParseSshdTTrimsWhatJavaScriptTrims(t *testing.T) {
+	got := ParseSshdT("\ufeffport 22\u3000\nx11forwarding no\u0085\n")
+	want := map[string]string{"port": "22", "x11forwarding": "no\u0085"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if !HasInclude("\ufeffInclude\u00a0/etc/ssh/sshd_config.d/*.conf", Directory) {
+		t.Error("an Include split by NBSP after a BOM was missed")
+	}
+	if HasInclude("Include\u0085/etc/ssh/sshd_config.d/*.conf", Directory) {
+		t.Error("NEL is not whitespace in JavaScript, so this line is one word")
+	}
 }

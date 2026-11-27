@@ -6,6 +6,9 @@ package sshd
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 // Directory is the drop-in directory sshd_config is expected to include.
@@ -26,10 +29,13 @@ func KeywordFor(property string) string {
 	if keyword, ok := keywords[property]; ok {
 		return keyword
 	}
-	if property == "" {
-		return ""
+	// property.charAt(0).toUpperCase(): charAt takes one UTF-16 code unit, so a first character
+	// above U+FFFF is half a surrogate pair, which toUpperCase leaves alone
+	first, size := utf8.DecodeRuneInString(property)
+	if size == 0 || first > 0xFFFF || first == utf8.RuneError {
+		return property
 	}
-	return strings.ToUpper(property[:1]) + property[1:]
+	return jscompat.ToUpper(string(first)) + property[size:]
 }
 
 // Setting is one typed property and its value. The value is a bool, an int, a string or a
@@ -77,10 +83,8 @@ func RenderSshd(settings []Setting, unchecked []Keyword) []Keyword {
 			} else {
 				set(keyword, "no")
 			}
-		case []string:
-			set(keyword, strings.Join(value, ","))
 		default:
-			set(keyword, fmt.Sprint(value))
+			set(keyword, jsString(value))
 		}
 	}
 	for _, keyword := range unchecked {
@@ -89,12 +93,54 @@ func RenderSshd(settings []Setting, unchecked []Keyword) []Keyword {
 	return rendered
 }
 
+// jsString is String(value) for the values a setting can hold: numbers as JavaScript writes them
+// (1000000, not 1e+06), lists joined with commas as Array.prototype.join does (nil elements as
+// empty), booleans inside a list as true and false.
+func jsString(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case float64:
+		return jscompat.FormatNumber(v)
+	case float32:
+		return jscompat.FormatNumber(float64(v))
+	case int:
+		return jscompat.FormatNumber(float64(v))
+	case int64:
+		return jscompat.FormatNumber(float64(v))
+	case int32:
+		return jscompat.FormatNumber(float64(v))
+	case uint:
+		return jscompat.FormatNumber(float64(v))
+	case uint64:
+		return jscompat.FormatNumber(float64(v))
+	case uint32:
+		return jscompat.FormatNumber(float64(v))
+	case []string:
+		return strings.Join(v, ",")
+	case []any:
+		parts := make([]string, len(v))
+		for i, element := range v {
+			parts[i] = jsString(element)
+		}
+		return strings.Join(parts, ",")
+	}
+	return fmt.Sprint(value)
+}
+
 // ParseSshdT reads `sshd -T` into lowercased keywords and normalised values. Empty output, which
 // is what a machine whose config does not parse gives, is an empty map.
 func ParseSshdT(out string) map[string]string {
 	effective := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
-		text := strings.TrimSpace(line)
+		text := jscompat.Trim(line)
 		if text == "" {
 			continue
 		}
@@ -102,7 +148,7 @@ func ParseSshdT(out string) map[string]string {
 		if space <= 0 {
 			continue
 		}
-		effective[strings.ToLower(text[:space])] = NormaliseSshdValue(strings.TrimSpace(text[space+1:]))
+		effective[jscompat.ToLower(text[:space])] = NormaliseSshdValue(jscompat.Trim(text[space+1:]))
 	}
 	return effective
 }
@@ -119,8 +165,8 @@ func NormaliseSshdValue(value string) string {
 // HasInclude reports whether sshd_config has an Include of the drop-in directory.
 func HasInclude(text, directory string) bool {
 	for _, line := range strings.Split(text, "\n") {
-		words := strings.Fields(line)
-		if len(words) == 0 || strings.ToLower(words[0]) != "include" {
+		words := jscompat.Fields(line)
+		if len(words) == 0 || jscompat.ToLower(words[0]) != "include" {
 			continue
 		}
 		second := ""
