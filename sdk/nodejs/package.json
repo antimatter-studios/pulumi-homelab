@@ -1,0 +1,30 @@
+{
+    "name": "@antimatter-studios/homelab",
+    "version": "0.0.0-dev",
+    "keywords": [
+        "homelab",
+        "linux",
+        "ssh",
+        "category/infrastructure"
+    ],
+    "repository": "https://github.com/antimatter-studios/pulumi-homelab",
+    "license": "MIT",
+    "scripts": {
+        "build": "tsc"
+    },
+    "dependencies": {
+        "@pulumi/pulumi": "^3.142.0"
+    },
+    "devDependencies": {
+        "@types/node": "14.18.63",
+        "typescript": "4.9.5"
+    },
+    "pulumi": {
+        "resource": true,
+        "name": "homelab",
+        "server": "github://api.github.com/antimatter-studios",
+        "version": "0.0.0-dev"
+    },
+    "main": "bin/index.js",
+    "types": "bin/index.d.ts"
+}

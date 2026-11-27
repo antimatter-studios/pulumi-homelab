@@ -1,0 +1,120 @@
+name: Release
+
+# A reusable release: work out the next semver version from the conventional-commit subjects since
+# the last v* tag, and when one is due, tag the given commit, build the plugin for each platform with
+# the version in its ldflags, and publish a GitHub release whose notes are the CHANGELOG.md entries
+# added under "## Unreleased" since the previous tag (scripts/release.sh).
+#
+# Nothing is committed: main is protected (a pull request and a green CI for every change, admins
+# included), so a release is only a tag on a commit main already has. Callers run this after their
+# CI on main has passed (release-on-green.yml here); pulumi-homelab-k3s calls it the same way with
+# its own binary. The release script always comes from this repository's main.
+on:
+  workflow_call:
+    inputs:
+      binary:
+        description: The plugin binary, pulumi-resource-<name>, built from provider/cmd/<binary>.
+        type: string
+        required: true
+      sha:
+        description: The commit on main to release; its CI has passed.
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: antimatter-studios/pulumi-homelab
+          ref: main
+          path: .release-tools
+
+      - name: Next version and notes
+        id: next
+        run: |
+          v="$(.release-tools/scripts/release.sh next)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "next version: ${v:-none, no feat or fix since the last tag}"
+          # before the tag exists, so "since the last tag" means the previous release
+          [ -z "$v" ] || .release-tools/scripts/release.sh notes > "$RUNNER_TEMP/notes.md"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.next.outputs.version != ''
+        with:
+          name: notes
+          path: ${{ runner.temp }}/notes.md
+
+      - name: Tag
+        if: steps.next.outputs.version != ''
+        env:
+          V: ${{ steps.next.outputs.version }}
+        run: |
+          git tag "v$V" "${{ inputs.sha }}"
+          git push origin "refs/tags/v$V"
+
+  build:
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [darwin-arm64, linux-amd64, linux-arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: provider/go.mod
+          cache-dependency-path: provider/go.sum
+
+      - name: Build
+        # pulumi-resource-<name>-v<version>-<os>-<arch>.tar.gz is the asset name Pulumi's github://
+        # plugin downloader asks for.
+        working-directory: provider
+        env:
+          V: ${{ needs.version.outputs.version }}
+          T: ${{ matrix.target }}
+          BINARY: ${{ inputs.binary }}
+          CGO_ENABLED: '0'
+        run: |
+          export GOOS="${T%-*}" GOARCH="${T#*-}"
+          module="$(go list -m)"
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X $module.Version=$V" -o "dist/$BINARY" "./cmd/$BINARY"
+          tar -czf "$BINARY-v$V-$T.tar.gz" -C dist "$BINARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: provider/*.tar.gz
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$V" dist/*.tar.gz --repo "$GITHUB_REPOSITORY" \
+            --title "v$V" --notes-file dist/notes.md --verify-tag
