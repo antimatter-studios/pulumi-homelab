@@ -28,7 +28,8 @@ func ParseInstalled(out string) map[string]string {
 	return installed
 }
 
-const manualMarker = "#pulumi-homelab#manual"
+// ManualMarker separates dpkg output from apt-mark output.
+const ManualMarker = "#pulumi-homelab#manual"
 
 // PackageState is dpkg's answer and apt's marking for one set of names.
 type PackageState struct {
@@ -39,7 +40,7 @@ type PackageState struct {
 // ParsePackageState splits the one-round-trip reply at the marker into dpkg's answer and the
 // names apt holds as manual.
 func ParsePackageState(out string) PackageState {
-	parts := strings.Split(out, manualMarker+"\n")
+	parts := strings.Split(out, ManualMarker+"\n")
 	dpkg, marked := parts[0], ""
 	if len(parts) > 1 {
 		marked = parts[1]

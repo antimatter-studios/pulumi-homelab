@@ -7,6 +7,7 @@ package homelab
 
 import (
 	"context"
+	"slices"
 
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
@@ -28,12 +29,12 @@ const PluginDownloadURL = "github://api.github.com/antimatter-studios"
 
 // Provider builds the provider the plugin serves.
 func Provider() p.Provider {
-	return keepEngineVersion(infer.Provider(options(nil)))
+	return markSecretsOnRead(keepEngineVersion(infer.Provider(options(nil))))
 }
 
 // ProviderWith builds the provider with an injected Runner factory, for tests.
 func ProviderWith(factory remote.Factory) p.Provider {
-	return keepEngineVersion(infer.Provider(options(factory)))
+	return markSecretsOnRead(keepEngineVersion(infer.Provider(options(factory))))
 }
 
 // keepEngineVersion puts the engine's "version" back into the checked configuration. A provider's
@@ -56,10 +57,45 @@ func keepEngineVersion(prov p.Provider) p.Provider {
 	return prov
 }
 
+// secretsOnRead names, per resource type, the fields that hold credentials. infer marks such a field
+// secret when it builds the value from declared inputs, but a Read that starts from an id alone (an
+// import) encodes what it found on the machine as plain values, and the engine stores them so.
+var secretsOnRead = map[string][]string{"homelab:index:RcloneRemote": {"secrets"}}
+
+// secretsOnImport names fields that may hold credentials the provider cannot pick out when a Read
+// starts from an id alone: an S3 remote keeps its keys in settings, in the clear, because rclone
+// obscures whatever is under secrets and an obscured S3 key does not work. The whole field is marked
+// secret on such a Read; a later Read keeps whatever marking the state then has.
+var secretsOnImport = map[string][]string{"homelab:index:RcloneRemote": {"settings"}}
+
+func markSecretsOnRead(prov p.Provider) p.Provider {
+	read := prov.Read
+	prov.Read = func(ctx context.Context, req p.ReadRequest) (p.ReadResponse, error) {
+		resp, err := read(ctx, req)
+		if err != nil {
+			return resp, err
+		}
+		keys := secretsOnRead[string(req.Urn.Type())]
+		if req.Properties.Len() == 0 && req.Inputs.Len() == 0 {
+			keys = append(slices.Clone(keys), secretsOnImport[string(req.Urn.Type())]...)
+		}
+		for _, key := range keys {
+			if v, ok := resp.Properties.GetOk(key); ok {
+				resp.Properties = resp.Properties.Set(key, v.WithSecret(true))
+			}
+			if v, ok := resp.Inputs.GetOk(key); ok {
+				resp.Inputs = resp.Inputs.Set(key, v.WithSecret(true))
+			}
+		}
+		return resp, nil
+	}
+	return prov
+}
+
 func options(factory remote.Factory) infer.Options {
 	return infer.NewProviderBuilder().
 		WithConfig(infer.Config(&Config{factory: factory})).
-		WithResources(infer.Resource(Group{}), infer.Resource(PosixAcl{}), infer.Resource(SambaShare{}), infer.Resource(SambaSetting{}), infer.Resource(SambaUser{}), infer.Resource(SshTunnel{}), infer.Resource(Symlink{}), infer.Resource(Directory{}), infer.Resource(Precondition{}), infer.Resource(User{}), infer.Resource(SudoRule{}), infer.Resource(AuthorizedKey{}), infer.Resource(SshKey{}), infer.Resource(ManagedLine{}), infer.Resource(KernelCmdline{}), infer.Resource(SystemdUnit{}), infer.Resource(SystemdInstance{}), infer.Resource(Journald{}), infer.Resource(Hostname{}), infer.Resource(FstabEntry{}), infer.Resource(Swap{}), infer.Resource(SshdConfig{}), infer.Resource(BootConfig{}), infer.Resource(ManagedFile{}), infer.Resource(ProtectedFile{})).
+		WithResources(infer.Resource(Group{}), infer.Resource(AptPackage{}), infer.Resource(AptPackages{}), infer.Resource(DebPackage{}), infer.Resource(Archive{}), infer.Resource(OfficialInstall{}), infer.Resource(GitCheckout{}), infer.Resource(RcloneRemote{}), infer.Resource(PosixAcl{}), infer.Resource(SambaShare{}), infer.Resource(SambaSetting{}), infer.Resource(SambaUser{}), infer.Resource(SshTunnel{}), infer.Resource(Symlink{}), infer.Resource(Directory{}), infer.Resource(Precondition{}), infer.Resource(User{}), infer.Resource(SudoRule{}), infer.Resource(AuthorizedKey{}), infer.Resource(SshKey{}), infer.Resource(ManagedLine{}), infer.Resource(KernelCmdline{}), infer.Resource(SystemdUnit{}), infer.Resource(SystemdInstance{}), infer.Resource(Journald{}), infer.Resource(Hostname{}), infer.Resource(FstabEntry{}), infer.Resource(Swap{}), infer.Resource(SshdConfig{}), infer.Resource(BootConfig{}), infer.Resource(ManagedFile{}), infer.Resource(ProtectedFile{})).
 		WithDisplayName("homelab").
 		WithDescription("Desired state for a Linux machine you own.").
 		WithNamespace("antimatter-studios").
@@ -68,7 +104,15 @@ func options(factory remote.Factory) infer.Options {
 		WithPluginDownloadURL(PluginDownloadURL).
 		// The npm name the generated SDK carries. Left unset, Pulumi names it @pulumi/homelab, which
 		// claims Pulumi's own scope for a package they do not publish.
-		WithLanguageMap(map[string]any{"nodejs": map[string]any{"packageName": "@antimatter-studios/homelab"}}).
+		WithLanguageMap(map[string]any{
+			"nodejs": map[string]any{"packageName": "@antimatter-studios/homelab"},
+			"go": map[string]any{
+				"importBasePath":       "github.com/antimatter-studios/pulumi-homelab/sdk/go",
+				"modulePath":           "github.com/antimatter-studios/pulumi-homelab/sdk/go",
+				"rootPackageName":      "homelab",
+				"respectSchemaVersion": true,
+			},
+		}).
 		WithKeywords("homelab", "linux", "ssh", "category/infrastructure").
 		BuildOptions()
 }

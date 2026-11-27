@@ -99,13 +99,15 @@ jobs:
           pulumi-version: 3.150.0
 
       - name: SDK is up to date
-        # sdk/nodejs is generated from the plugin's schema and committed; regenerate it and fail when
-        # it differs, so a provider change cannot land without the SDK that consumers link.
         working-directory: .
         run: |
           ./scripts/gen-sdk.sh
-          git diff --exit-code -- sdk/nodejs
-          test -z "$(git status --porcelain -- sdk/nodejs)"
+          git diff --exit-code -- sdk/nodejs sdk/go
+          test -z "$(git status --porcelain -- sdk/nodejs sdk/go)"
+
+      - name: Build Go SDK
+        working-directory: sdk/go
+        run: go build ./...
 
       - name: Release dry run
         # What the next merge to main would release, computed from the real history, and its notes.

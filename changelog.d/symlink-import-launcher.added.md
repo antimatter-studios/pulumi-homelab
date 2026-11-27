@@ -1,0 +1,1 @@
+- A Symlink import id can end in @launcher (path@launcher), so a T3 Code launcher that has been rewritten as a small script imports as the link it stands for instead of reading as a file in the way.

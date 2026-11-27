@@ -5,6 +5,21 @@ import * as pulumi from "@pulumi/pulumi";
 import * as utilities from "./utilities";
 
 // Export members:
+export { AptPackageArgs } from "./aptPackage";
+export type AptPackage = import("./aptPackage").AptPackage;
+export const AptPackage: typeof import("./aptPackage").AptPackage = null as any;
+utilities.lazyLoad(exports, ["AptPackage"], () => require("./aptPackage"));
+
+export { AptPackagesArgs } from "./aptPackages";
+export type AptPackages = import("./aptPackages").AptPackages;
+export const AptPackages: typeof import("./aptPackages").AptPackages = null as any;
+utilities.lazyLoad(exports, ["AptPackages"], () => require("./aptPackages"));
+
+export { ArchiveArgs } from "./archive";
+export type Archive = import("./archive").Archive;
+export const Archive: typeof import("./archive").Archive = null as any;
+utilities.lazyLoad(exports, ["Archive"], () => require("./archive"));
+
 export { AuthorizedKeyArgs } from "./authorizedKey";
 export type AuthorizedKey = import("./authorizedKey").AuthorizedKey;
 export const AuthorizedKey: typeof import("./authorizedKey").AuthorizedKey = null as any;
@@ -15,6 +30,11 @@ export type BootConfig = import("./bootConfig").BootConfig;
 export const BootConfig: typeof import("./bootConfig").BootConfig = null as any;
 utilities.lazyLoad(exports, ["BootConfig"], () => require("./bootConfig"));
 
+export { DebPackageArgs } from "./debPackage";
+export type DebPackage = import("./debPackage").DebPackage;
+export const DebPackage: typeof import("./debPackage").DebPackage = null as any;
+utilities.lazyLoad(exports, ["DebPackage"], () => require("./debPackage"));
+
 export { DirectoryArgs } from "./directory";
 export type Directory = import("./directory").Directory;
 export const Directory: typeof import("./directory").Directory = null as any;
@@ -24,6 +44,11 @@ export { FstabEntryArgs } from "./fstabEntry";
 export type FstabEntry = import("./fstabEntry").FstabEntry;
 export const FstabEntry: typeof import("./fstabEntry").FstabEntry = null as any;
 utilities.lazyLoad(exports, ["FstabEntry"], () => require("./fstabEntry"));
+
+export { GitCheckoutArgs } from "./gitCheckout";
+export type GitCheckout = import("./gitCheckout").GitCheckout;
+export const GitCheckout: typeof import("./gitCheckout").GitCheckout = null as any;
+utilities.lazyLoad(exports, ["GitCheckout"], () => require("./gitCheckout"));
 
 export { GroupArgs } from "./group";
 export type Group = import("./group").Group;
@@ -55,6 +80,11 @@ export type ManagedLine = import("./managedLine").ManagedLine;
 export const ManagedLine: typeof import("./managedLine").ManagedLine = null as any;
 utilities.lazyLoad(exports, ["ManagedLine"], () => require("./managedLine"));
 
+export { OfficialInstallArgs } from "./officialInstall";
+export type OfficialInstall = import("./officialInstall").OfficialInstall;
+export const OfficialInstall: typeof import("./officialInstall").OfficialInstall = null as any;
+utilities.lazyLoad(exports, ["OfficialInstall"], () => require("./officialInstall"));
+
 export { PosixAclArgs } from "./posixAcl";
 export type PosixAcl = import("./posixAcl").PosixAcl;
 export const PosixAcl: typeof import("./posixAcl").PosixAcl = null as any;
@@ -74,6 +104,11 @@ export { ProviderArgs } from "./provider";
 export type Provider = import("./provider").Provider;
 export const Provider: typeof import("./provider").Provider = null as any;
 utilities.lazyLoad(exports, ["Provider"], () => require("./provider"));
+
+export { RcloneRemoteArgs } from "./rcloneRemote";
+export type RcloneRemote = import("./rcloneRemote").RcloneRemote;
+export const RcloneRemote: typeof import("./rcloneRemote").RcloneRemote = null as any;
+utilities.lazyLoad(exports, ["RcloneRemote"], () => require("./rcloneRemote"));
 
 export { SambaSettingArgs } from "./sambaSetting";
 export type SambaSetting = import("./sambaSetting").SambaSetting;
@@ -149,14 +184,24 @@ const _module = {
     version: utilities.getVersion(),
     construct: (name: string, type: string, urn: string): pulumi.Resource => {
         switch (type) {
+            case "homelab:index:AptPackage":
+                return new AptPackage(name, <any>undefined, { urn })
+            case "homelab:index:AptPackages":
+                return new AptPackages(name, <any>undefined, { urn })
+            case "homelab:index:Archive":
+                return new Archive(name, <any>undefined, { urn })
             case "homelab:index:AuthorizedKey":
                 return new AuthorizedKey(name, <any>undefined, { urn })
             case "homelab:index:BootConfig":
                 return new BootConfig(name, <any>undefined, { urn })
+            case "homelab:index:DebPackage":
+                return new DebPackage(name, <any>undefined, { urn })
             case "homelab:index:Directory":
                 return new Directory(name, <any>undefined, { urn })
             case "homelab:index:FstabEntry":
                 return new FstabEntry(name, <any>undefined, { urn })
+            case "homelab:index:GitCheckout":
+                return new GitCheckout(name, <any>undefined, { urn })
             case "homelab:index:Group":
                 return new Group(name, <any>undefined, { urn })
             case "homelab:index:Hostname":
@@ -169,12 +214,16 @@ const _module = {
                 return new ManagedFile(name, <any>undefined, { urn })
             case "homelab:index:ManagedLine":
                 return new ManagedLine(name, <any>undefined, { urn })
+            case "homelab:index:OfficialInstall":
+                return new OfficialInstall(name, <any>undefined, { urn })
             case "homelab:index:PosixAcl":
                 return new PosixAcl(name, <any>undefined, { urn })
             case "homelab:index:Precondition":
                 return new Precondition(name, <any>undefined, { urn })
             case "homelab:index:ProtectedFile":
                 return new ProtectedFile(name, <any>undefined, { urn })
+            case "homelab:index:RcloneRemote":
+                return new RcloneRemote(name, <any>undefined, { urn })
             case "homelab:index:SambaSetting":
                 return new SambaSetting(name, <any>undefined, { urn })
             case "homelab:index:SambaShare":
@@ -214,3 +263,12 @@ pulumi.runtime.registerResourcePackage("homelab", {
         return new Provider(name, <any>undefined, { urn });
     },
 });
+
+export type { FluxAppArgs } from "./components/flux";
+export type FluxApp = import("./components/flux").FluxApp;
+export const FluxApp: typeof import("./components/flux").FluxApp = null as any;
+export const ignoreRules: typeof import("./components/flux").ignoreRules = null as any;
+utilities.lazyLoad(exports, ["FluxApp", "ignoreRules"], () => require("./components/flux"));
+export * from "./components/flux/ready";
+export * from "./components/claude";
+export * from "./components/t3code";

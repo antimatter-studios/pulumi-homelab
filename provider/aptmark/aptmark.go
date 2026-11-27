@@ -46,9 +46,8 @@ func MarkManualCommand(names []string) (command string, ok bool) {
 		return "", false
 	}
 	sorted := slices.Clone(names)
-	// JavaScript's default sort compares UTF-16 code units; for the ASCII names apt allows that
-	// is the same order as Go's byte-wise string comparison
-	slices.Sort(sorted)
+	// [...names].sort(): JavaScript's default sort, by UTF-16 code units, not Go's byte order
+	slices.SortFunc(sorted, jscompat.CompareUTF16)
 	quoted := make([]string, len(sorted))
 	for i, name := range sorted {
 		quoted[i] = shell.Quote(name)

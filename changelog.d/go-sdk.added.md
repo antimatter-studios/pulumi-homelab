@@ -1,0 +1,1 @@
+- Generate a Go SDK for the homelab provider at `github.com/antimatter-studios/pulumi-homelab/sdk/go`.

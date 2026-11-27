@@ -17,7 +17,10 @@
 #
 # The bump comes from the conventional-commit subjects since the last v* tag: fix: is a patch,
 # feat: a minor, and a breaking change (type! or BREAKING CHANGE) a minor below 1.0.0, a major
-# after. No feat or fix means no release. With no tag yet the first release is 0.1.0.
+# after. The changelog.d fragments added since that tag count the same way, so a change whose
+# commits carry no prefix still releases: fixed or security is a patch, added, changed or
+# deprecated a minor, removed a breaking change. Neither means no release. With no tag yet the first
+# release is 0.1.0.
 set -euo pipefail
 changelog="${CHANGELOG:-CHANGELOG.md}"
 
@@ -34,6 +37,14 @@ next() {
   grep -qE '^fix(\([^)]*\))?:' <<<"$log" && bump=1
   grep -qE '^feat(\([^)]*\))?:' <<<"$log" && bump=2
   grep -qE '^(feat|fix)(\([^)]*\))?!:|^BREAKING[ -]CHANGE:' <<<"$log" && bump=3
+  local kind
+  while IFS= read -r kind; do
+    case "$kind" in
+      fixed | security) [ "$bump" -lt 1 ] && bump=1 ;;
+      added | changed | deprecated) [ "$bump" -lt 2 ] && bump=2 ;;
+      removed) bump=3 ;;
+    esac
+  done < <(git diff --name-only --diff-filter=A "$last" HEAD -- changelog.d | grep -v '/README.md$' | sed -E 's#.*\.([a-z]+)\.md$#\1#')
   [ "$bump" -eq 0 ] && return 0
   IFS=. read -r ma mi pa <<<"${last#v}"
   case "$bump" in

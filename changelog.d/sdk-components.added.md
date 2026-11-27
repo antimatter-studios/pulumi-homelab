@@ -1,0 +1,1 @@
+- The Node.js SDK now provides the Claude profile, T3 Code, and Flux helpers. Pass the configured machine provider to the Claude and T3 Code helpers in place of the legacy SSH target.
