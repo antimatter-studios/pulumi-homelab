@@ -111,3 +111,26 @@ func TestParseUIDMin(t *testing.T) {
 		eq(t, ParseUIDMin([]string{}), 1000.0)
 	})
 }
+
+// The TypeScript's answers under node for each case.
+func TestAuditWhitespaceAndNumbersAreJavaScripts(t *testing.T) {
+	for line, want := range map[string]float64{
+		"UID_MIN\v500": 500, "UID_MIN\u00a0500": 500, "UID_MIN\u3000500": 500, "UID_MIN \ufeff500": 500,
+		"UID_MIN \u0085500": 1000, "UID_MIN 0x1f4": 500,
+	} {
+		if got := ParseUIDMin([]string{line}); got != want {
+			t.Errorf("ParseUIDMin(%q) = %v, want %v", line, got, want)
+		}
+	}
+	if got := ParseUnitNames([]string{"/x/a.service\u0085", "/x/b.service\ufeff", "\u3000/x/c.service"}); !reflect.DeepEqual(got, []string{"b", "c"}) {
+		t.Errorf("ParseUnitNames = %q, want [b c]", got)
+	}
+	times := ParseInstallTimes([]string{"\ufeff1000 /var/lib/dpkg/info/a.list", "\u00851000 /var/lib/dpkg/info/b.list", "1000\u0085 /var/lib/dpkg/info/c.list"})
+	if !reflect.DeepEqual(times, map[string]float64{"a": 1000}) {
+		t.Errorf("ParseInstallTimes = %v, want map[a:1000]", times)
+	}
+	s := SplitSections("#pulumi-homelab#packages\n\ufeff\n\u0085\nvim\n#pulumi-homelab#units\u3000\n/x/a.service")
+	if !reflect.DeepEqual(s.Packages, []string{"\u0085", "vim"}) || !reflect.DeepEqual(s.Units, []string{"/x/a.service"}) {
+		t.Errorf("SplitSections = %+v", s)
+	}
+}

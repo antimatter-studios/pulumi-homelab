@@ -3,9 +3,11 @@
 package audit
 
 import (
+	"math"
 	"regexp"
-	"strconv"
 	"strings"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 const mark = "#pulumi-homelab#"
@@ -32,49 +34,21 @@ func SplitSections(out string) Sections {
 	var current *[]string
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(line, mark) {
-			current = byName[strings.TrimSpace(line[len(mark):])]
+			current = byName[jscompat.Trim(line[len(mark):])]
 			continue
 		}
-		if current != nil && strings.TrimSpace(line) != "" {
+		if current != nil && jscompat.Trim(line) != "" {
 			*current = append(*current, line)
 		}
 	}
 	return s
 }
 
-// jsNumber converts text the way JavaScript's Number() does for the shapes these parsers meet: an
-// empty or blank string is 0, a 0x/0o/0b prefix is read in that base, and anything else must be
-// a whole decimal literal. ok is false where Number() would give NaN or an infinity.
+// jsNumber is Number(text) (jscompat.Number) followed by Number.isFinite: ok is false where
+// Number() gives NaN or an infinity.
 func jsNumber(text string) (float64, bool) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return 0, true
-	}
-	if len(text) > 2 && text[0] == '0' {
-		base := 0
-		switch text[1] {
-		case 'x', 'X':
-			base = 16
-		case 'o', 'O':
-			base = 8
-		case 'b', 'B':
-			base = 2
-		}
-		if base != 0 {
-			n, err := strconv.ParseUint(text[2:], base, 64)
-			return float64(n), err == nil
-		}
-	}
-	for _, r := range text {
-		if !strings.ContainsRune("0123456789+-.eE", r) {
-			return 0, false
-		}
-	}
-	n, err := strconv.ParseFloat(text, 64)
-	if err != nil {
-		return 0, false
-	}
-	return n, true
+	n := jscompat.Number(text)
+	return n, !math.IsNaN(n) && !math.IsInf(n, 0)
 }
 
 var listSuffix = regexp.MustCompile(`\.list$`)
@@ -109,7 +83,7 @@ var serviceSuffix = regexp.MustCompile(`\.service$`)
 func ParseUnitNames(lines []string) []string {
 	names := []string{}
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
+		line = jscompat.Trim(line)
 		if !strings.HasSuffix(line, ".service") || strings.Contains(line, "*") {
 			continue
 		}
@@ -143,7 +117,7 @@ func ParseLoginUsers(lines []string, uidMin float64) []UserFinding {
 	return found
 }
 
-var uidMinPrefix = regexp.MustCompile(`^UID_MIN\s+`)
+var uidMinPrefix = regexp.MustCompile(`^UID_MIN` + jscompat.SpaceClass + `+`)
 
 // ParseUIDMin reads UID_MIN out of login.defs lines, or 1000 when none gives a positive number.
 func ParseUIDMin(lines []string) float64 {
