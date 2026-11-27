@@ -16,8 +16,8 @@
         "@pulumi/pulumi": "^3.142.0"
     },
     "devDependencies": {
-        "@types/node": "^14",
-        "typescript": "^4.3.5"
+        "@types/node": "14.18.63",
+        "typescript": "4.9.5"
     },
     "pulumi": {
         "resource": true,
@@ -25,5 +25,6 @@
         "server": "github://api.github.com/antimatter-studios",
         "version": "0.0.0-dev"
     },
-    "main": "index.ts"
+    "main": "bin/index.js",
+    "types": "bin/index.d.ts"
 }
