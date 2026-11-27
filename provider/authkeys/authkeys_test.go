@@ -138,3 +138,26 @@ func TestKeyComment(t *testing.T) {
 		check(t, strings.TrimSpace(RemoveAuthorized(key+"\n"+other+"\n", key)), "build@ci")
 	})
 }
+
+// The TypeScript's answers under node for each case.
+func TestAuthkeysWhitespaceIsJavaScripts(t *testing.T) {
+	const body = "AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GVsc"
+	key := "ssh-ed25519 " + body + " me@host"
+	same := func(t *testing.T, got, want string) {
+		t.Helper()
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+	same(t, AuthorizedLine("\ufeff"+key+"\u0085", nil), key+"\u0085")
+	same(t, bodyOf("ssh-ed25519\u00a0"+body+"\u3000c"), body)
+	same(t, bodyOf("ssh-ed25519\v"+body), body)
+	if b, ok := KeyBody("\ufeff#ssh-ed25519 " + body); ok {
+		t.Errorf("a BOM-led comment read as key %q", b)
+	}
+	commented := "\ufeff#" + key + "\n"
+	same(t, UpsertAuthorized(commented, key, key), commented+key+"\n")
+	same(t, RemoveAuthorized(commented, key), commented)
+	same(t, KeyComment("ssh-ed25519 "+body+" me\u0085"), "me\u0085")
+	same(t, KeyComment("\ufeffssh-ed25519 "+body+"\u3000me\ufeff"), "me")
+}

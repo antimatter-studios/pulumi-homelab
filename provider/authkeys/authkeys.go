@@ -6,15 +6,17 @@ package authkeys
 import (
 	"regexp"
 	"strings"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
-var bodyPattern = regexp.MustCompile(`(?:^|\s)(AAAA[0-9A-Za-z+/=]{20,})(?:\s|$)`)
+var bodyPattern = regexp.MustCompile(`(?:^|` + jscompat.SpaceClass + `)(AAAA[0-9A-Za-z+/=]{20,})(?:` + jscompat.SpaceClass + `|$)`)
 
 // KeyBody is the base64 body of a public key, the only part that identifies it. It is found by
 // shape rather than by position, since options may contain spaces inside quotes. ok is false for
 // a comment, a blank line or anything without a body.
 func KeyBody(line string) (body string, ok bool) {
-	text := strings.TrimSpace(line)
+	text := jscompat.Trim(line)
 	if text == "" || strings.HasPrefix(text, "#") {
 		return "", false
 	}
@@ -31,8 +33,8 @@ func KeyComment(line string) string {
 	if !ok {
 		return ""
 	}
-	text := strings.TrimSpace(line)
-	return strings.TrimSpace(text[strings.Index(text, body)+len(body):])
+	text := jscompat.Trim(line)
+	return jscompat.Trim(text[strings.Index(text, body)+len(body):])
 }
 
 // AuthorizedLine is the line as it should appear, options first and comma-separated.
@@ -41,7 +43,7 @@ func AuthorizedLine(key string, options []string) string {
 	if len(options) > 0 {
 		restrictions = strings.Join(options, ",") + " "
 	}
-	return restrictions + strings.TrimSpace(key)
+	return restrictions + jscompat.Trim(key)
 }
 
 var trailingNewlines = regexp.MustCompile(`\n+$`)
