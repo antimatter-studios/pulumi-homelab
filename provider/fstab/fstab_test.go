@@ -170,3 +170,34 @@ func TestMarkedTargets(t *testing.T) {
 		eq(t, MarkedTargets(adopted), []string{"/mnt/data"})
 	})
 }
+
+// The TypeScript's answers under node: trim() and split(/\s+/) take a BOM as whitespace and a NEL
+// as text, which strings.TrimSpace and strings.Fields do the other way round.
+func TestFstabWhitespaceIsJavaScripts(t *testing.T) {
+	eq := func(t *testing.T, got, want any) {
+		t.Helper()
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+	for line, want := range map[string]string{
+		"\ufeff#a /mnt c":    "",
+		"\u0085#a /mnt c":    "/mnt",
+		"a\u00a0/mnt\u3000c": "/mnt",
+		"a\u0085/mnt c":      "",
+		"\va\v/mnt\vc\v":     "/mnt",
+	} {
+		got, ok := TargetOf(line)
+		if !ok {
+			got = ""
+		}
+		if got != want {
+			t.Errorf("TargetOf(%q) = %q, want %q", line, got, want)
+		}
+	}
+	commented := "\ufeff#/dev/sda1 /mnt ext4 defaults 0 0\n"
+	eq(t, Upsert(commented, "/mnt", "/dev/sdb1 /mnt ext4 defaults 0 0"),
+		"\ufeff#/dev/sda1 /mnt ext4 defaults 0 0\n# pulumi-homelab\n/dev/sdb1 /mnt ext4 defaults 0 0\n")
+	eq(t, Remove(commented, "/mnt"), commented)
+	eq(t, MarkedTargets("\ufeff# pulumi-homelab\n/dev/sda1 /mnt/data ext4 defaults 0 2\n"), []string{"/mnt/data"})
+}

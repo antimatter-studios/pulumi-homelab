@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 // Marker is the annotation written on the line above every entry this provider owns.
@@ -21,8 +23,8 @@ type Entry struct {
 	Pass    int
 }
 
-func isMarker(line string) bool  { return strings.HasPrefix(strings.TrimSpace(line), Marker) }
-func isComment(line string) bool { return strings.HasPrefix(strings.TrimSpace(line), "#") }
+func isMarker(line string) bool  { return strings.HasPrefix(jscompat.Trim(line), Marker) }
+func isComment(line string) bool { return strings.HasPrefix(jscompat.Trim(line), "#") }
 
 // Line writes the six fields in fstab's order, with defaults for an empty options list.
 func Line(e Entry) string {
@@ -36,10 +38,10 @@ func Line(e Entry) string {
 // TargetOf is the mount point a line describes; ok is false for a comment, a blank line, or
 // anything with fewer than three fields.
 func TargetOf(line string) (target string, ok bool) {
-	if isComment(line) || strings.TrimSpace(line) == "" {
+	if isComment(line) || jscompat.Trim(line) == "" {
 		return "", false
 	}
-	fields := strings.Fields(line)
+	fields := jscompat.Fields(line)
 	if len(fields) < 3 {
 		return "", false
 	}
