@@ -47,6 +47,9 @@ func TestDebian13JumpHost(t *testing.T) {
 		t.Fatal("the target's sshd did not come up")
 	}
 	f := strings.Fields(targetKey)
+	if len(f) < 2 {
+		t.Fatalf("the target's host key file is not a key: %q", targetKey)
+	}
 	targetPin := "target " + f[0] + " " + f[1]
 	targetHop := Hop{Address: "target", Port: 22, User: "chris"}
 
@@ -64,8 +67,9 @@ func TestDebian13JumpHost(t *testing.T) {
 	wrong := "target " + strings.TrimSpace(string(ssh.MarshalAuthorizedKey(other.PublicKey())))
 	bad := newT(t, Config{Hops: []Hop{jumpHop, targetHop}, AgentSocket: startAgent(t, userPEM),
 		HostKeys: []string{jumpPin, wrong}, StrictHostKeyChecking: true})
-	if _, _, _, err := bad.Run(context.Background(), "true", nil); err == nil {
-		t.Fatal("a wrong pin for the target behind the jump was accepted")
+	_, _, _, err := bad.Run(context.Background(), "true", nil)
+	if err == nil || !strings.Contains(err.Error(), "host key for chris@target:22 does not match its pin") {
+		t.Fatalf("a wrong pin for the target behind the jump: got %v, want the target's pin mismatch", err)
 	}
 }
 
