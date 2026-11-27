@@ -1,6 +1,6 @@
 {
     "name": "@antimatter-studios/homelab",
-    "version": "${VERSION}",
+    "version": "0.0.0-dev",
     "keywords": [
         "homelab",
         "linux",
@@ -22,7 +22,8 @@
     "pulumi": {
         "resource": true,
         "name": "homelab",
-        "server": "github://api.github.com/antimatter-studios"
+        "server": "github://api.github.com/antimatter-studios",
+        "version": "0.0.0-dev"
     },
     "main": "index.ts"
 }
