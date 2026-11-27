@@ -92,6 +92,11 @@ jobs:
       - name: Integration tests (Debian 13 sshd in Docker)
         run: go test -tags integration -run Debian13 ./transport/
 
+      - name: Integration tests (safeops in a Debian 13 container)
+        # Exact system calls against real filesystems: captures, restores, mounts (the container is
+        # privileged so the tests can mount inside it), a seccomp filter without renameat2.
+        run: go test -count=1 -tags integration ./safeops/
+
       - uses: pulumi/actions@v6
         with:
           pulumi-version: 3.150.0

@@ -1,67 +1,83 @@
 // Package safeops removes one entry from a machine only when it is still exactly what a resource
-// made, and never anything else, even something swapped in while the removal runs.
+// made, and never anything else, even something swapped in while the removal runs. It also
+// computes the digests such an entry is checked against, so a resource records at apply time
+// exactly what its delete will verify.
 //
-// The work is done by a perl script run over the remote.Runner, so that each step is one exact
-// system call rather than a shell utility whose behaviour varies by version: coreutils mv, asked for
-// no-clobber or no-copy, has been seen to fall back to a plain rename. perl-base is Essential on
-// Debian, so the script needs nothing installed; where perl is missing the removal is refused, with
-// no fallback.
+// The work is done by safeops.pl, run over the remote.Runner with perl, so that each step is one
+// exact system call rather than a shell utility whose behaviour varies by version: coreutils mv,
+// asked for no-clobber or no-copy, has been seen to fall back to a plain rename. perl-base is
+// Essential on Debian; where perl is missing the step is refused, with no fallback.
 //
-// The script:
+// A removal:
 //
-//  1. pins the parent once: lstat says it is a real directory (not a symlink), chdir enters it, the
-//     directory entered has the same device and inode, and its physical path is the recorded
-//     parent. From then on only relative names are used.
-//  2. captures the entry with rename(2) into a fresh private directory beside it (mkdir 0700).
-//     rename never copies, so an entry on another filesystem (a mount point) fails rather than
-//     being copied.
-//  3. verifies the captured entry only, where nothing else can swap it: its kind, a symlink's target
-//     compared exactly by readlink, and optionally a digest printed by a command the caller supplies.
-//  4. on a match removes it; on a mismatch restores it without clobbering, with link(2) and then
-//     unlink(2) for anything but a directory (link fails with EEXIST rather than replace, and does
-//     not follow a symlink), and renameat2(AT_FDCWD, …, AT_FDCWD, …, RENAME_NOREPLACE) through perl's
-//     syscall for a directory, since link(2) cannot link one and rename(2) would replace an empty
-//     directory at the name (SYS_renameat2 is 316 on x86_64, 276 on aarch64, 382 on arm, 353 on
-//     i386). ENOSYS, EINVAL, EEXIST or an unknown architecture leaves the entry in the private
-//     directory; there is no fallback. What cannot be put back has its exact path reported.
+//  1. pins the parent once: lstat says it is a real directory, chdir enters it, the directory
+//     entered has the same dev:ino, and its physical path is the recorded parent. Only relative
+//     names are used after that. A parent writable by group or others without the sticky bit is
+//     refused, since no name in it can be trusted.
+//  2. refuses an entry with a mount point at or under it (read from the mount table, which also
+//     catches a bind mount of the same filesystem).
+//  3. makes a private directory beside it, mode 0700, with a name from /dev/urandom, and checks
+//     right after mkdir that it is that directory (owned by the caller, no group or other bits).
+//  4. captures the entry with renameat2(AT_FDCWD, name, AT_FDCWD, private/entry,
+//     RENAME_NOREPLACE): it never replaces and never copies. ENOSYS or EINVAL (no renameat2, or a
+//     filesystem without RENAME_NOREPLACE) is refused, nothing touched. The private directory's
+//     dev:ino is checked again after the capture.
+//  5. verifies the captured entry only: a symlink's target exactly (readlink bytes), a file's
+//     sha256 (opened with O_NOFOLLOW, fstat checked to be the entry lstat saw), a tree's manifest
+//     sha256 (an lstat walk that never follows a symlink and never crosses st_dev), or that it is a
+//     directory for EmptyDir. An empty or malformed expected value, a digest that cannot be
+//     computed, and empty or malformed digest output all mean "not a match"; nothing is removed on
+//     them.
+//  6. on a match removes it: rmdir for EmptyDir, unlink for a file or link, and for a tree a
+//     depth-first lstat walk of unlink and rmdir that never enters another st_dev. A walk that
+//     stops reports Partial with the entries left and the first error.
+//  7. on a mismatch restores it without replacing anything: link(2) then unlink(2) for a file or
+//     link, renameat2(RENAME_NOREPLACE) for a directory. What cannot be put back stays in the
+//     private directory.
 //
-// Every outcome is reported as a Result, never as a failure: the caller turns kept and refused into
-// warnings, so a delete that finds something unexpected keeps it, says so, and succeeds.
+// Every report names the parent, the staging name and the parent's dev:ino. An absolute path for
+// what was left behind is given only while the parent is still the pinned directory; otherwise the
+// report says the parent moved and where the entry is by staging name and dev:ino.
+//
+// Accepted limit (RULES.md): capturing a name does not stop a process that already has the file,
+// or a directory in the tree, open from changing it after it was verified.
 package safeops
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 )
+
+//go:embed safeops.pl
+var script string
 
 // Kind is what the entry must be for it to count as the resource's.
 type Kind string
 
 const (
-	// Symlink is a symbolic link whose target is exactly Expect.Target.
+	// Symlink is a symbolic link whose target is exactly Expect.Value.
 	Symlink Kind = "symlink"
-	// File is a regular file (not a symlink to one).
+	// File is a regular file whose sha256 is Expect.Value (see Digest).
 	File Kind = "file"
-	// Dir is a directory (not a symlink to one), removed with everything in it.
-	Dir Kind = "dir"
-	// EmptyDir is a directory (not a symlink to one) removed with rmdir(2), so only while it is
-	// empty; one with anything in it is put back.
+	// Tree is a directory whose manifest sha256 is Expect.Value (see Digest), removed with
+	// everything in it.
+	Tree Kind = "tree"
+	// EmptyDir is a directory removed with rmdir(2), so only while it is empty; Expect.Value is
+	// unused.
 	EmptyDir Kind = "emptydir"
 )
 
 // Expect is what the entry must be.
 type Expect struct {
 	Kind Kind
-	// Target is the exact symlink target for Kind Symlink, compared byte for byte (a trailing
-	// newline included).
-	Target string
-	// DigestCommand, when set, is a shell command run with the captured entry's path as $1; its
-	// output with trailing whitespace removed must equal Digest. It runs inside the pinned parent,
-	// on the captured entry, which nothing else can reach.
-	DigestCommand string
-	Digest        string
+	// Value is the exact symlink target for Symlink, or the lowercase hex sha256 for File and Tree
+	// as Digest computes it.
+	Value string
 }
 
 // Outcome is what happened.
@@ -73,24 +89,35 @@ const (
 	// Removed: the entry was the resource's and is gone. Result.Path is set when the private
 	// directory could not be removed afterwards.
 	Removed Outcome = "removed"
-	// Restored: the entry was not the resource's and is back at its path, untouched.
+	// Restored: the entry was not the resource's and is back at its path.
 	Restored Outcome = "restored"
-	// Kept: the entry was captured and is not back at its path; Result.Path is where it is.
+	// Kept: the entry was captured and is not back at its path; Result.Path (or Staging and
+	// ParentDevIno when the parent moved) says where it is.
 	Kept Outcome = "kept"
-	// Refused: nothing was touched, for the reason given (a parent that is not the recorded one,
-	// an entry that could not be captured).
+	// Partial: the entry was the resource's, and its removal stopped part way: Remaining entries
+	// are left in the private directory, and Reason holds the first error.
+	Partial Outcome = "partial"
+	// Refused: nothing was touched, for the reason given.
 	Refused Outcome = "refused"
 )
 
-// Result is the outcome, any path left behind on the machine, and why.
+// Result is one removal's outcome.
 type Result struct {
 	Outcome Outcome
-	// Path is where an entry was kept, or the private directory left behind; "" when nothing was.
+	// Path is where an entry was kept, or the private directory left behind, while the parent is
+	// still where it was; "" when nothing was left or the parent moved.
 	Path   string
 	Reason string
+	// Parent, Staging and ParentDevIno identify where anything left behind is, even when the
+	// parent has moved: the staging directory's name under the directory with that dev:ino.
+	Parent       string
+	Staging      string
+	ParentDevIno string
+	// Remaining is how many entries a Partial removal left.
+	Remaining int
 }
 
-// Split checks path is an absolute, clean path to an entry and returns its parent and name.
+// Split checks p is an absolute, clean path to an entry and returns its parent and name.
 func Split(p string) (parent, name string, err error) {
 	if !strings.HasPrefix(p, "/") || path.Clean(p) != p || p == "/" {
 		return "", "", fmt.Errorf("%q is not an absolute, clean path to an entry", p)
@@ -98,146 +125,129 @@ func Split(p string) (parent, name string, err error) {
 	return path.Dir(p), path.Base(p), nil
 }
 
-// Command is the shell command that removes the entry at p when it is as expected. It runs as the
-// user that may remove it; the caller escalates it.
+func command(args ...string) string {
+	quoted := []string{"perl", "-e", quote(script), "--"}
+	for _, a := range args {
+		quoted = append(quoted, quote(a))
+	}
+	return strings.Join(quoted, " ")
+}
+
+// Command is the shell command that removes the entry at p when it is as expected. The caller
+// escalates it and passes what it prints to Parse. The expected value is checked by the script
+// itself, so an empty or malformed one is refused there, with nothing touched.
 func Command(p string, want Expect) (string, error) {
 	parent, name, err := Split(p)
 	if err != nil {
 		return "", err
 	}
 	switch want.Kind {
-	case Symlink, File, Dir, EmptyDir:
+	case Symlink, File, Tree, EmptyDir:
 	default:
 		return "", fmt.Errorf("unknown kind %q", want.Kind)
 	}
-	args := []string{"perl", "-e", quote(script), "--", quote(parent), quote(name), quote(string(want.Kind)),
-		quote(want.Target), quote(want.DigestCommand), quote(want.Digest)}
-	return strings.Join(args, " "), nil
+	return command("remove", parent, name, string(want.Kind), want.Value), nil
 }
 
-// Parse reads what Command printed. code 127 is a machine without perl, which is refused rather
-// than worked around.
-func Parse(code int, stdout, stderr string) (Result, error) {
+// DigestCommand is the shell command that prints the digest of the entry at p as kind File or Tree
+// checks it: the same code computes the digest a resource records at apply time and the one its
+// delete verifies, so the two always agree.
+func DigestCommand(p string, kind Kind) (string, error) {
+	parent, name, err := Split(p)
+	if err != nil {
+		return "", err
+	}
+	if kind != File && kind != Tree {
+		return "", fmt.Errorf("kind %q has no digest", kind)
+	}
+	return command("digest", parent, name, string(kind)), nil
+}
+
+const frameFields = 7
+
+// frame reads exactly seven NUL-terminated fields, refusing truncated output and trailing data.
+func frame(code int, stdout, stderr string) ([]string, error) {
 	if code == 127 {
-		return Result{}, errors.New("perl is not installed, and nothing is removed without it: install perl-base")
+		return nil, errors.New("perl is not installed, and nothing is removed without it: install perl-base")
 	}
 	if code != 0 {
-		return Result{}, fmt.Errorf("the removal script failed (exit %d): %s", code, strings.TrimSpace(stderr))
+		return nil, fmt.Errorf("the safeops script failed (exit %d): %s", code, strings.TrimSpace(stderr))
 	}
-	fields := strings.Split(stdout, "\x00")
-	if len(fields) < 3 {
-		return Result{}, fmt.Errorf("the removal script printed %q, not a result", stdout)
+	if !strings.HasSuffix(stdout, "\x00") {
+		return nil, fmt.Errorf("the safeops script printed %q, which is not a complete result", stdout)
 	}
-	r := Result{Outcome: Outcome(fields[0]), Path: fields[1], Reason: fields[2]}
-	switch r.Outcome {
-	case Absent, Removed, Restored, Kept, Refused:
-		return r, nil
+	fields := strings.Split(strings.TrimSuffix(stdout, "\x00"), "\x00")
+	if len(fields) != frameFields {
+		return nil, fmt.Errorf("the safeops script printed %d fields, not %d", len(fields), frameFields)
 	}
-	return Result{}, fmt.Errorf("the removal script reported %q", fields[0])
+	return fields, nil
 }
 
-// Warning is the sentence a caller logs for a result that kept something or left something behind,
-// or "" for one that needs no warning. what names the entry, as in "Symlink /var/log/journal".
+// Parse reads what Command printed. A missing perl (exit 127) is refused rather than worked around.
+func Parse(code int, stdout, stderr string) (Result, error) {
+	f, err := frame(code, stdout, stderr)
+	if err != nil {
+		return Result{}, err
+	}
+	remaining, err := strconv.Atoi(f[6])
+	if err != nil || remaining < 0 {
+		return Result{}, fmt.Errorf("the safeops script reported %q entries remaining", f[6])
+	}
+	r := Result{Outcome: Outcome(f[0]), Path: f[1], Reason: f[2], Parent: f[3], Staging: f[4], ParentDevIno: f[5], Remaining: remaining}
+	switch r.Outcome {
+	case Absent, Removed, Restored, Kept, Partial, Refused:
+		return r, nil
+	}
+	return Result{}, fmt.Errorf("the safeops script reported %q", f[0])
+}
+
+var hexDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// ParseDigest reads what DigestCommand printed: the digest, or why there is none.
+func ParseDigest(code int, stdout, stderr string) (string, error) {
+	f, err := frame(code, stdout, stderr)
+	if err != nil {
+		return "", err
+	}
+	if f[0] != "digest" {
+		return "", fmt.Errorf("no digest: %s", f[2])
+	}
+	if !hexDigest.MatchString(f[2]) {
+		return "", fmt.Errorf("the safeops script printed %q, not a digest", f[2])
+	}
+	return f[2], nil
+}
+
+// Warning is the sentence a caller logs for a result that kept something or left something
+// behind, or "" for one that needs no warning. what names the entry, as in "Symlink /var/log/journal".
 func (r Result) Warning(what string) string {
+	where := func() string {
+		if r.Path != "" {
+			return r.Path
+		}
+		return fmt.Sprintf("staging directory %s under the directory with dev:ino %s (once %s)", r.Staging, r.ParentDevIno, r.Parent)
+	}
 	switch r.Outcome {
 	case Absent:
 		return ""
 	case Removed:
-		if r.Path == "" {
+		if r.Path == "" && r.Staging == "" {
 			return ""
 		}
-		return fmt.Sprintf("%s was removed, but %s is left behind: %s", what, r.Path, r.Reason)
+		return fmt.Sprintf("%s was removed, but %s is left behind: %s", what, where(), r.Reason)
 	case Restored:
+		if r.Path != "" || r.Staging != "" {
+			return fmt.Sprintf("%s was kept on the machine rather than deleted: %s (left behind: %s)", what, r.Reason, where())
+		}
 		return fmt.Sprintf("%s was kept on the machine rather than deleted: %s", what, r.Reason)
 	case Kept:
-		return fmt.Sprintf("%s was kept on the machine rather than deleted, and is now at %s: %s", what, r.Path, r.Reason)
+		return fmt.Sprintf("%s was kept on the machine rather than deleted, and is now in %s: %s", what, where(), r.Reason)
+	case Partial:
+		return fmt.Sprintf("%s was only partly removed: %d entries are left in %s, first error: %s", what, r.Remaining, where(), r.Reason)
 	}
-	where := ""
-	if r.Path != "" {
-		where = "; " + r.Path + " is left behind"
-	}
-	return fmt.Sprintf("%s was kept on the machine rather than deleted: %s%s", what, r.Reason, where)
+	return fmt.Sprintf("%s was kept on the machine rather than deleted: %s", what, r.Reason)
 }
 
 func quote(text string) string {
 	return "'" + strings.ReplaceAll(text, "'", `'\''`) + "'"
 }
-
-// script is the perl that does the work. Arguments: parent, name, kind, target, digest command,
-// digest. It prints outcome NUL path NUL reason NUL and exits 0 for every decision; it dies (exit
-// 255) only on a fault.
-const script = `use strict; use warnings; use POSIX (); use Cwd ();
-my ($parent, $name, $kind, $target, $dcmd, $digest) = @ARGV;
-sub done { my ($o, $p, $r) = @_; print join("\0", $o, $p, $r), "\0"; exit 0; }
-my $prefix = $parent eq "/" ? "" : $parent;
-my @pl = lstat($parent);
-if (!@pl) { done("absent", "", "") if $!{ENOENT}; done("refused", "", "the parent $parent cannot be examined: $!"); }
-done("refused", "", "the parent $parent is a symlink, not the recorded directory") if -l _;
-done("refused", "", "the parent $parent is not a directory") unless -d _;
-chdir($parent) or done("refused", "", "the parent $parent cannot be entered: $!");
-my @here = lstat(".");
-done("refused", "", "the parent $parent changed while it was entered") if !@here || $here[0] != $pl[0] || $here[1] != $pl[1];
-my $cwd = Cwd::getcwd();
-done("refused", "", "the parent $parent resolves to " . ($cwd // "nothing")) if !defined($cwd) || $cwd ne $parent;
-my @nl = lstat($name);
-if (!@nl) { done("absent", "", "") if $!{ENOENT}; done("refused", "", "it cannot be examined: $!"); }
-my $priv;
-for (1 .. 20) {
-  my $try = sprintf(".homelab-safeops.%d.%08x", $$, int(rand(4294967295)));
-  if (mkdir($try, 0700)) { $priv = $try; last; }
-  done("refused", "", "a private directory cannot be made beside it: $!") unless $!{EEXIST};
-}
-done("refused", "", "no private directory name was free") unless defined $priv;
-my $cap = "$priv/entry";
-my $kept = "$prefix/$cap";
-my $left = "$prefix/$priv";
-if (!rename($name, $cap)) {
-  my ($err, $gone) = ("$!", $!{ENOENT});
-  rmdir($priv) or done("refused", $left, "it could not be captured ($err), and the private directory could not be removed: $!");
-  done("absent", "", "") if $gone;
-  done("refused", "", "it could not be captured, so it was not touched: $err");
-}
-my @cl = lstat($cap);
-my $match = 0;
-my $why = "";
-if (!@cl) { $why = "the captured entry cannot be examined: $!"; }
-elsif ($kind eq "symlink") {
-  if (!-l _) { $why = "it is not a symlink"; }
-  else { my $t = readlink($cap); if (!defined $t) { $why = "its target cannot be read: $!"; } elsif ($t ne $target) { $why = "it points somewhere else"; } else { $match = 1; } }
-}
-elsif ($kind eq "file") { if (-l _ || !-f _) { $why = "it is not a regular file"; } else { $match = 1; } }
-elsif ($kind eq "dir" || $kind eq "emptydir") { if (-l _ || !-d _) { $why = "it is not a directory"; } else { $match = 1; } }
-if ($match && $dcmd ne "") {
-  my $got = "";
-  if (open(my $fh, "-|", "sh", "-c", $dcmd, "sh", $cap)) { local $/; $got = <$fh> // ""; close($fh); }
-  my $status = $?;
-  $got =~ s/\s+\z//;
-  if ($status != 0) { $match = 0; $why = "its digest could not be computed"; }
-  elsif ($got ne $digest) { $match = 0; $why = "its content is not what was written"; }
-}
-if ($match && $kind eq "emptydir" && !rmdir($cap)) { $match = 0; $why = $!{ENOTEMPTY} || $!{EEXIST} ? "it is not empty" : "it could not be removed: $!"; }
-elsif ($match && $kind eq "emptydir") { rmdir($priv) or done("removed", $left, "the private directory could not be removed: $!"); done("removed", "", ""); }
-if ($match) {
-  my $isdir = !-l $cap && -d _;
-  my $ok = $isdir ? system("rm", "-rf", "--", $cap) == 0 : unlink($cap);
-  done("kept", $kept, "it matched, but could not be removed: $!") if !$ok || -e $cap || -l $cap;
-  rmdir($priv) or done("removed", $left, "the private directory could not be removed: $!");
-  done("removed", "", "");
-}
-if (-d $cap && !-l $cap) {
-  my %renameat2 = (x86_64 => 316, aarch64 => 276, i686 => 353, i386 => 353);
-  my $arch = (POSIX::uname())[4];
-  my $nr = $renameat2{$arch} // ($arch =~ /^arm/ ? 382 : undef);
-  done("kept", $kept, "$why, and a directory cannot be put back without replacing on $arch") unless defined $nr;
-  my ($from, $to) = ($cap, $name);
-  # renameat2(AT_FDCWD, from, AT_FDCWD, to, RENAME_NOREPLACE): never replaces, not even an empty
-  # directory, which rename(2) would. ENOSYS or EINVAL (no renameat2, or a filesystem without
-  # RENAME_NOREPLACE) keeps the tree where it is, reported; there is no fallback.
-  syscall($nr, -100, $from, -100, $to, 1) == 0 or done("kept", $kept, "$why, and it could not be put back: $!");
-} else {
-  link($cap, $name) or done("kept", $kept, "$why, and it could not be put back: $!");
-  unlink($cap) or done("restored", $kept, "$why; it is back, and also still at the captured path: $!");
-}
-rmdir($priv) or done("restored", $left, "$why; it is back, but the private directory could not be removed: $!");
-done("restored", "", $why);
-`

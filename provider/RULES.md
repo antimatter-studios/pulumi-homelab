@@ -20,6 +20,10 @@ checked against them.
   removed; anything else is restored with link(2), which never replaces. Anything kept is reported
   by its exact path. `mv` is never used for no-clobber: Debian 13's `--update=none-fail` can fall
   back to a plain rename.
+  - **Accepted limit:** capturing an entry does not stop a process that already has the file, or
+    a directory of the tree, open from changing it after it was verified. That change goes with
+    the removal. Nothing short of a lock the writer honours prevents it, and the declared object is
+    what the resource owns.
 - **Delete never fails on something unexpected.** It keeps it and warns in Pulumi's output, so a
   destroy or replace never gets stuck. Faults that are not findings (no perl, an unreachable
   machine) are still errors.

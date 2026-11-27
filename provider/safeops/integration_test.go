@@ -12,17 +12,22 @@ import (
 	"testing"
 )
 
-// Real-shell tests in a Debian 13 container, as root, with a tmpfs mounted at /srv/mnt so a mount
-// point can stand for an entry on another filesystem.
+// Real-shell tests in a Debian 13 container, as root. The container is privileged so tests can
+// mount filesystems inside it, with a tmpfs at /srv/mnt. HOMELAB_SAFEOPS_TEST_HOOK runs a shell
+// snippet at a named point of the script (pinned, captured, verified), with the pinned parent as
+// its working directory, to change things mid-run.
 type box struct{ id string }
 
 func start(t *testing.T, opts ...string) box {
 	t.Helper()
-	args := append([]string{"run", "-d", "--rm", "--tmpfs", "/srv/mnt"}, opts...)
+	args := append([]string{"run", "-d", "--quiet", "--rm", "--tmpfs", "/srv/mnt"}, opts...)
 	args = append(args, "debian:trixie-slim", "sleep", "infinity")
-	out, err := exec.Command("docker", args...).CombinedOutput()
+	cmd := exec.Command("docker", args...)
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	out, err := cmd.Output() // the container ID alone: pull diagnostics go to stderr
 	if err != nil {
-		t.Fatalf("docker run: %v\n%s", err, out)
+		t.Fatalf("docker run: %v\n%s", err, errb.String())
 	}
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", id).Run() })
@@ -38,15 +43,13 @@ func (b box) sh(t *testing.T, command string) string {
 	return string(out)
 }
 
-func (b box) remove(t *testing.T, p string, want Expect) Result {
+func (b box) run(t *testing.T, command, hook string) (int, string, string) {
 	t.Helper()
-	command, err := Command(p, want)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command("docker", "exec", b.id, "sh", "-c", command)
+	// the command goes in on stdin, which docker passes as raw bytes; arguments go through JSON,
+	// which would replace a name that is not UTF-8
+	cmd := exec.Command("docker", "exec", "-i", "-e", "HOMELAB_SAFEOPS_TEST_HOOK="+hook, b.id, "sh", "-s")
 	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(command), &out, &errb
 	code := 0
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
@@ -55,15 +58,37 @@ func (b box) remove(t *testing.T, p string, want Expect) Result {
 		}
 		code = exit.ExitCode()
 	}
-	r, err := Parse(code, out.String(), errb.String())
+	return code, out.String(), errb.String()
+}
+
+func (b box) remove(t *testing.T, p string, want Expect, hook string) Result {
+	t.Helper()
+	command, err := Command(p, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := Parse(b.run(t, command, hook))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return r
 }
 
+func (b box) digest(t *testing.T, p string, kind Kind) string {
+	t.Helper()
+	command, err := DigestCommand(p, kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := ParseDigest(b.run(t, command, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 func TestRealShell(t *testing.T) {
-	b := start(t)
+	b := start(t, "--privileged")
 	b.sh(t, "mkdir -p /srv/a /srv/real && ln -s /srv/real /srv/p")
 	noStaging := func(t *testing.T, dir string) {
 		t.Helper()
@@ -71,98 +96,139 @@ func TestRealShell(t *testing.T) {
 			t.Fatalf("staging left in %s: %q", dir, got)
 		}
 	}
+	const bad = "0000000000000000000000000000000000000000000000000000000000000000"
 
 	t.Run("a matching symlink is removed", func(t *testing.T) {
 		b.sh(t, "ln -s /target /srv/a/l")
-		if r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Target: "/target"}); r.Outcome != Removed || r.Path != "" {
+		if r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Value: "/target"}, ""); r.Outcome != Removed || r.Path != "" || r.Staging != "" {
 			t.Fatalf("%+v", r)
 		}
 		b.sh(t, "test ! -e /srv/a/l && test ! -L /srv/a/l")
 		noStaging(t, "/srv/a")
 	})
-	t.Run("a mismatching symlink is restored untouched", func(t *testing.T) {
+	t.Run("a mismatching symlink, or a file in its place, is restored untouched", func(t *testing.T) {
 		b.sh(t, "ln -s /elsewhere /srv/a/l")
-		r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Target: "/target"})
-		if r.Outcome != Restored || r.Reason != "it points somewhere else" {
+		if r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Value: "/target"}, ""); r.Outcome != Restored || r.Reason != "it points somewhere else" {
 			t.Fatalf("%+v", r)
 		}
 		if got := b.sh(t, "readlink /srv/a/l"); got != "/elsewhere\n" {
 			t.Fatalf("%q", got)
 		}
-		noStaging(t, "/srv/a")
-		b.sh(t, "rm /srv/a/l")
-	})
-	t.Run("a regular file where a symlink was expected is restored", func(t *testing.T) {
-		b.sh(t, "echo data > /srv/a/l")
-		if r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Target: "/target"}); r.Outcome != Restored || r.Reason != "it is not a symlink" {
+		b.sh(t, "rm /srv/a/l && echo data > /srv/a/l")
+		if r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Value: "/target"}, ""); r.Outcome != Restored || r.Reason != "it is not a symlink" {
 			t.Fatalf("%+v", r)
 		}
-		if got := b.sh(t, "cat /srv/a/l"); got != "data\n" {
-			t.Fatalf("%q", got)
-		}
-		b.sh(t, "rm /srv/a/l")
-	})
-	t.Run("a directory that is not the resource's is restored with its contents", func(t *testing.T) {
-		b.sh(t, "mkdir /srv/a/d && echo keep > /srv/a/d/f")
-		if r := b.remove(t, "/srv/a/d", Expect{Kind: File}); r.Outcome != Restored {
-			t.Fatalf("%+v", r)
-		}
-		b.sh(t, "test \"$(cat /srv/a/d/f)\" = keep")
+		b.sh(t, `test "$(cat /srv/a/l)" = data && rm /srv/a/l`)
 		noStaging(t, "/srv/a")
 	})
-	t.Run("a directory that is the resource's is removed with its contents", func(t *testing.T) {
-		if r := b.remove(t, "/srv/a/d", Expect{Kind: Dir, DigestCommand: `cat "$1/f"`, Digest: "keep"}); r.Outcome != Removed {
+	t.Run("a symlink target with a trailing newline is compared exactly", func(t *testing.T) {
+		b.sh(t, `perl -e 'symlink("/target\n", "/srv/a/n") or die'`)
+		if r := b.remove(t, "/srv/a/n", Expect{Kind: Symlink, Value: "/target"}, ""); r.Outcome != Restored {
+			t.Fatalf("without the newline: %+v", r)
+		}
+		if r := b.remove(t, "/srv/a/n", Expect{Kind: Symlink, Value: "/target\n"}, ""); r.Outcome != Removed {
+			t.Fatalf("with the newline: %+v", r)
+		}
+	})
+	t.Run("a file is removed only when its digest matches", func(t *testing.T) {
+		b.sh(t, "echo content > /srv/a/f")
+		d := b.digest(t, "/srv/a/f", File)
+		if sum := strings.Fields(b.sh(t, "sha256sum /srv/a/f"))[0]; d != sum {
+			t.Fatalf("digest %s, sha256sum %s", d, sum)
+		}
+		if r := b.remove(t, "/srv/a/f", Expect{Kind: File, Value: bad}, ""); r.Outcome != Restored || r.Reason != "its content is not what was written" {
 			t.Fatalf("%+v", r)
 		}
-		b.sh(t, "test ! -e /srv/a/d")
+		if r := b.remove(t, "/srv/a/f", Expect{Kind: File, Value: d}, ""); r.Outcome != Removed {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, "test ! -e /srv/a/f")
 	})
-	t.Run("an empty directory is removed, and one with anything in it is restored", func(t *testing.T) {
+	t.Run("an empty or malformed expected digest is refused, nothing touched", func(t *testing.T) {
+		b.sh(t, "echo content > /srv/a/f")
+		for _, v := range []string{"", "  ", "xyz", strings.Repeat("A", 64), bad + "0"} {
+			if r := b.remove(t, "/srv/a/f", Expect{Kind: File, Value: v}, ""); r.Outcome != Refused || !strings.Contains(r.Reason, "empty or malformed") {
+				t.Fatalf("%q: %+v", v, r)
+			}
+		}
+		if r := b.remove(t, "/srv/a/l2", Expect{Kind: Symlink, Value: ""}, ""); r.Outcome != Refused {
+			t.Fatalf("empty target: %+v", r)
+		}
+		b.sh(t, `test "$(cat /srv/a/f)" = content`)
+		noStaging(t, "/srv/a")
+	})
+	t.Run("a digest that fails or comes back empty is never a match", func(t *testing.T) {
+		d := b.digest(t, "/srv/a/f", File)
+		for hookless, fake := range map[string]string{
+			"could not be computed": "#!/bin/sh\nexit 1\n",
+			"came back empty":       "#!/bin/sh\ncat >/dev/null\n",
+			"came back malformed":   "#!/bin/sh\ncat >/dev/null; echo nonsense\n",
+		} {
+			b.sh(t, "printf '"+strings.ReplaceAll(fake, "\n", `\n`)+"' > /usr/local/bin/sha256sum && chmod 755 /usr/local/bin/sha256sum")
+			r := b.remove(t, "/srv/a/f", Expect{Kind: File, Value: d}, "")
+			if r.Outcome != Restored || !strings.Contains(r.Reason, hookless) {
+				t.Fatalf("%s: %+v", hookless, r)
+			}
+			b.sh(t, `test "$(cat /srv/a/f)" = content`)
+		}
+		b.sh(t, "rm /usr/local/bin/sha256sum /srv/a/f")
+	})
+	t.Run("a tree is digested without following links and removed only when it matches", func(t *testing.T) {
+		b.sh(t, "mkdir -p /srv/a/t/sub /srv/outside && echo one > /srv/outside/x && echo f > /srv/a/t/sub/f && ln -s /srv/outside/x /srv/a/t/link")
+		before := b.digest(t, "/srv/a/t", Tree)
+		b.sh(t, "echo two > /srv/outside/x")
+		if after := b.digest(t, "/srv/a/t", Tree); after != before {
+			t.Fatal("the digest followed a symlink out of the tree")
+		}
+		b.sh(t, "ln -sfn /srv/outside/y /srv/a/t/link")
+		if b.digest(t, "/srv/a/t", Tree) == before {
+			t.Fatal("a changed link target did not change the digest")
+		}
+		b.sh(t, "ln -sfn /srv/outside/x /srv/a/t/link")
+		if r := b.remove(t, "/srv/a/t", Expect{Kind: Tree, Value: bad}, ""); r.Outcome != Restored {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, `test "$(cat /srv/a/t/sub/f)" = f`)
+		if r := b.remove(t, "/srv/a/t", Expect{Kind: Tree, Value: before}, ""); r.Outcome != Removed {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, `test ! -e /srv/a/t && test "$(cat /srv/outside/x)" = two`)
+		noStaging(t, "/srv/a")
+	})
+	t.Run("names that are not UTF-8 are digested and removed", func(t *testing.T) {
+		b.sh(t, `mkdir "/srv/a/$(printf 'n\377')" && echo x > "/srv/a/$(printf 'n\377')/$(printf '\376f')"`)
+		name := "/srv/a/n\xff"
+		d := b.digest(t, name, Tree)
+		if r := b.remove(t, name, Expect{Kind: Tree, Value: d}, ""); r.Outcome != Removed {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, `test ! -e "/srv/a/$(printf 'n\377')"`)
+	})
+	t.Run("an empty directory is removed, one with contents is restored", func(t *testing.T) {
 		b.sh(t, "mkdir -p /srv/a/e /srv/a/full && touch /srv/a/full/data")
-		if r := b.remove(t, "/srv/a/full", Expect{Kind: EmptyDir}); r.Outcome != Restored || r.Reason != "it is not empty" {
+		if r := b.remove(t, "/srv/a/full", Expect{Kind: EmptyDir}, ""); r.Outcome != Restored || r.Reason != "it is not empty" {
 			t.Fatalf("%+v", r)
 		}
-		b.sh(t, "test -f /srv/a/full/data")
-		if r := b.remove(t, "/srv/a/e", Expect{Kind: EmptyDir}); r.Outcome != Removed || r.Path != "" {
+		b.sh(t, "test -f /srv/a/full/data && rm -r /srv/a/full")
+		if r := b.remove(t, "/srv/a/e", Expect{Kind: EmptyDir}, ""); r.Outcome != Removed {
 			t.Fatalf("%+v", r)
 		}
 		b.sh(t, "test ! -e /srv/a/e")
 		noStaging(t, "/srv/a")
 	})
-	t.Run("a directory is restored onto its absent name with renameat2", func(t *testing.T) {
-		b.sh(t, "mkdir -p /srv/a/tree/sub && echo keep > /srv/a/tree/sub/f")
-		if r := b.remove(t, "/srv/a/tree", Expect{Kind: Dir, DigestCommand: "echo other", Digest: "mine"}); r.Outcome != Restored || r.Path != "" {
-			t.Fatalf("%+v", r)
-		}
-		b.sh(t, `test "$(cat /srv/a/tree/sub/f)" = keep`)
-		noStaging(t, "/srv/a")
-	})
 	t.Run("a directory restore never replaces an empty directory that appeared at the name", func(t *testing.T) {
-		// rename(2) would silently replace an empty directory here; renameat2 with
-		// RENAME_NOREPLACE refuses, so the tree stays in the private directory, reported
-		r := b.remove(t, "/srv/a/tree", Expect{Kind: Dir, DigestCommand: "mkdir /srv/a/tree; echo other", Digest: "mine"})
+		b.sh(t, "mkdir -p /srv/a/full && touch /srv/a/full/data")
+		r := b.remove(t, "/srv/a/full", Expect{Kind: EmptyDir}, `[ "$1" = verified ] && mkdir full`)
 		if r.Outcome != Kept || !strings.HasPrefix(r.Path, "/srv/a/.homelab-safeops.") || !strings.HasSuffix(r.Path, "/entry") || !strings.Contains(r.Reason, "File exists") {
 			t.Fatalf("%+v", r)
 		}
-		b.sh(t, "test -d /srv/a/tree && test -z \"$(ls -A /srv/a/tree)\" && test \"$(cat "+r.Path+"/sub/f)\" = keep")
-		b.sh(t, "rm -r /srv/a/tree /srv/a/.homelab-safeops.*")
+		b.sh(t, "test -d /srv/a/full && test -z \"$(ls -A /srv/a/full)\" && test -f "+r.Path+"/data")
+		b.sh(t, "rm -r /srv/a/full /srv/a/.homelab-safeops.*")
 	})
-	t.Run("a file is removed only when its digest matches", func(t *testing.T) {
-		b.sh(t, "echo content > /srv/a/f")
-		sum := strings.Fields(b.sh(t, "sha256sum /srv/a/f"))[0]
-		digest := `sha256sum < "$1" | cut -d" " -f1`
-		if r := b.remove(t, "/srv/a/f", Expect{Kind: File, DigestCommand: digest, Digest: "0" + sum[1:]}); r.Outcome != Restored || r.Reason != "its content is not what was written" {
-			t.Fatalf("%+v", r)
-		}
-		if r := b.remove(t, "/srv/a/f", Expect{Kind: File, DigestCommand: digest, Digest: sum}); r.Outcome != Removed {
-			t.Fatalf("%+v", r)
-		}
-		b.sh(t, "test ! -e /srv/a/f")
-	})
-	t.Run("a restore that would clobber something new keeps the entry and reports its exact path", func(t *testing.T) {
+	t.Run("a link restore that would clobber something new keeps the entry at its exact path", func(t *testing.T) {
 		b.sh(t, "ln -s /elsewhere /srv/a/l")
-		// the digest command stands for whatever writes a new file at the name meanwhile
-		r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Target: "/elsewhere", DigestCommand: `echo new > /srv/a/l; echo x`, Digest: "y"})
-		if r.Outcome != Kept || !strings.HasPrefix(r.Path, "/srv/a/.homelab-safeops.") || !strings.HasSuffix(r.Path, "/entry") || !strings.Contains(r.Reason, "File exists") {
+		r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Value: "/target"}, `[ "$1" = verified ] && echo new > l`)
+		if r.Outcome != Kept || !strings.HasSuffix(r.Path, "/entry") || r.Staging == "" || r.ParentDevIno == "" || !strings.Contains(r.Reason, "File exists") {
 			t.Fatalf("%+v", r)
 		}
 		if got := b.sh(t, "cat /srv/a/l; readlink "+r.Path); got != "new\n/elsewhere\n" {
@@ -170,84 +236,107 @@ func TestRealShell(t *testing.T) {
 		}
 		b.sh(t, "rm -r /srv/a/l /srv/a/.homelab-safeops.*")
 	})
+	t.Run("a parent moved in flight is reported by staging name and dev:ino, not a stale path", func(t *testing.T) {
+		b.sh(t, "mkdir -p /srv/mv && ln -s /elsewhere /srv/mv/l")
+		devino := strings.TrimSpace(b.sh(t, "stat -c %d:%i /srv/mv"))
+		r := b.remove(t, "/srv/mv/l", Expect{Kind: Symlink, Value: "/target"}, `[ "$1" = verified ] && echo new > l && mv "$PWD" /srv/moved && mkdir /srv/mv`)
+		if r.Outcome != Kept || r.Path != "" || r.Parent != "/srv/mv" || r.ParentDevIno != devino || !strings.Contains(r.Reason, "the parent moved") {
+			t.Fatalf("%+v", r)
+		}
+		if got := b.sh(t, "readlink /srv/moved/"+r.Staging+"/entry"); got != "/elsewhere\n" {
+			t.Fatalf("%q", got)
+		}
+		if !strings.Contains(r.Warning("Symlink /srv/mv/l"), "staging directory "+r.Staging+" under the directory with dev:ino "+devino) {
+			t.Fatal(r.Warning("Symlink /srv/mv/l"))
+		}
+		b.sh(t, "rm -r /srv/moved /srv/mv")
+	})
 	t.Run("a private directory that cannot be cleaned up is reported", func(t *testing.T) {
 		b.sh(t, "ln -s /target /srv/a/l")
-		r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Target: "/target", DigestCommand: `touch "$(dirname "$1")/stray"; echo d`, Digest: "d"})
+		r := b.remove(t, "/srv/a/l", Expect{Kind: Symlink, Value: "/target"}, `[ "$1" = verified ] && for d in .homelab-safeops.*; do touch "$d/stray"; done`)
 		if r.Outcome != Removed || !strings.HasPrefix(r.Path, "/srv/a/.homelab-safeops.") || !strings.Contains(r.Reason, "Directory not empty") {
 			t.Fatalf("%+v", r)
 		}
 		b.sh(t, "test -f "+r.Path+"/stray && rm -r "+r.Path)
 	})
-	t.Run("an entry on another filesystem is refused, never copied", func(t *testing.T) {
+	t.Run("a removal that stops part way is reported as partial", func(t *testing.T) {
+		b.sh(t, "mkdir -p /srv/a/t/sub && echo f > /srv/a/t/sub/f && echo g > /srv/a/t/g")
+		d := b.digest(t, "/srv/a/t", Tree)
+		r := b.remove(t, "/srv/a/t", Expect{Kind: Tree, Value: d}, `[ "$1" = verified ] && mount -t tmpfs none .homelab-safeops.*/entry/sub`)
+		if r.Outcome != Partial || r.Remaining < 2 || !strings.Contains(r.Reason, "on another filesystem") || !strings.HasPrefix(r.Path, "/srv/a/.homelab-safeops.") {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, "umount "+r.Path+"/entry/sub && rm -r "+r.Path)
+	})
+	t.Run("an entry on another filesystem, or with a mount under it, is refused", func(t *testing.T) {
 		b.sh(t, "echo inside > /srv/mnt/f")
-		r := b.remove(t, "/srv/mnt", Expect{Kind: Dir})
-		if r.Outcome != Refused || !strings.Contains(r.Reason, "could not be captured") {
+		if r := b.remove(t, "/srv/mnt", Expect{Kind: Tree, Value: bad}, ""); r.Outcome != Refused || !strings.Contains(r.Reason, "/srv/mnt is a mount point") {
 			t.Fatalf("%+v", r)
 		}
-		b.sh(t, "test \"$(cat /srv/mnt/f)\" = inside && mountpoint -q /srv/mnt || grep -q ' /srv/mnt ' /proc/mounts")
+		b.sh(t, "mkdir -p /srv/a/t/m /srv/a/t2/b /srv/x && mount -t tmpfs none /srv/a/t/m && mount --bind /srv/x /srv/a/t2/b")
+		if r := b.remove(t, "/srv/a/t", Expect{Kind: Tree, Value: bad}, ""); r.Outcome != Refused || !strings.Contains(r.Reason, "/srv/a/t/m is a mount point") {
+			t.Fatalf("nested mount: %+v", r)
+		}
+		if r := b.remove(t, "/srv/a/t2", Expect{Kind: Tree, Value: bad}, ""); r.Outcome != Refused || !strings.Contains(r.Reason, "/srv/a/t2/b is a mount point") {
+			t.Fatalf("same-device bind: %+v", r)
+		}
+		b.sh(t, `test "$(cat /srv/mnt/f)" = inside && test -d /srv/a/t/m && test -d /srv/a/t2/b && umount /srv/a/t/m /srv/a/t2/b && rm -r /srv/a/t /srv/a/t2`)
 		noStaging(t, "/srv")
+		noStaging(t, "/srv/a")
 	})
-	t.Run("a symlink target with a trailing newline is compared exactly", func(t *testing.T) {
-		b.sh(t, `perl -e 'symlink("/target\n", "/srv/a/n") or die'`)
-		if r := b.remove(t, "/srv/a/n", Expect{Kind: Symlink, Target: "/target"}); r.Outcome != Restored {
-			t.Fatalf("without the newline: %+v", r)
-		}
-		if r := b.remove(t, "/srv/a/n", Expect{Kind: Symlink, Target: "/target\n"}); r.Outcome != Removed {
-			t.Fatalf("with the newline: %+v", r)
-		}
-	})
-	t.Run("a parent swapped for a symlink is refused", func(t *testing.T) {
-		b.sh(t, "ln -s /target /srv/real/l")
-		r := b.remove(t, "/srv/p/l", Expect{Kind: Symlink, Target: "/target"})
-		if r.Outcome != Refused || !strings.Contains(r.Reason, "the parent /srv/p is a symlink") {
+	t.Run("a parent that is a symlink, under one, or writable without the sticky bit is refused", func(t *testing.T) {
+		b.sh(t, "ln -s /target /srv/real/l && mkdir /srv/real/sub && ln -s /target /srv/real/sub/l")
+		if r := b.remove(t, "/srv/p/l", Expect{Kind: Symlink, Value: "/target"}, ""); r.Outcome != Refused || !strings.Contains(r.Reason, "the parent /srv/p is a symlink") {
 			t.Fatalf("%+v", r)
 		}
-		b.sh(t, "test -L /srv/real/l")
-		// and a parent under a symlinked ancestor resolves elsewhere
-		b.sh(t, "mkdir /srv/real/sub && ln -s /target /srv/real/sub/l")
-		r = b.remove(t, "/srv/p/sub/l", Expect{Kind: Symlink, Target: "/target"})
-		if r.Outcome != Refused || !strings.Contains(r.Reason, "resolves to /srv/real/sub") {
+		if r := b.remove(t, "/srv/p/sub/l", Expect{Kind: Symlink, Value: "/target"}, ""); r.Outcome != Refused || !strings.Contains(r.Reason, "resolves to /srv/real/sub") {
 			t.Fatalf("%+v", r)
 		}
-		b.sh(t, "test -L /srv/real/sub/l")
+		b.sh(t, "test -L /srv/real/l && test -L /srv/real/sub/l && mkdir -m 0777 /srv/open && chmod 0777 /srv/open && ln -s /target /srv/open/l")
+		if r := b.remove(t, "/srv/open/l", Expect{Kind: Symlink, Value: "/target"}, ""); r.Outcome != Refused || !strings.Contains(r.Reason, "without the sticky bit") {
+			t.Fatalf("%+v", r)
+		}
+		b.sh(t, "test -L /srv/open/l && chmod 1777 /srv/open")
+		if r := b.remove(t, "/srv/open/l", Expect{Kind: Symlink, Value: "/target"}, ""); r.Outcome != Removed {
+			t.Fatalf("sticky: %+v", r)
+		}
 	})
 	t.Run("nothing there, or no parent, is absent", func(t *testing.T) {
-		if r := b.remove(t, "/srv/a/none", Expect{Kind: File}); r.Outcome != Absent {
+		if r := b.remove(t, "/srv/a/none", Expect{Kind: EmptyDir}, ""); r.Outcome != Absent {
 			t.Fatalf("%+v", r)
 		}
-		if r := b.remove(t, "/srv/none/x", Expect{Kind: File}); r.Outcome != Absent {
+		if r := b.remove(t, "/srv/none/x", Expect{Kind: EmptyDir}, ""); r.Outcome != Absent {
 			t.Fatalf("%+v", r)
 		}
 	})
 	t.Run("a machine without perl is refused", func(t *testing.T) {
 		b.sh(t, "mv /usr/bin/perl /usr/bin/perl.away")
 		defer b.sh(t, "mv /usr/bin/perl.away /usr/bin/perl")
-		command, _ := Command("/srv/a/x", Expect{Kind: File})
-		out, _ := exec.Command("docker", "exec", b.id, "sh", "-c", command).CombinedOutput()
-		if _, err := Parse(127, "", string(out)); err == nil || !strings.Contains(err.Error(), "perl is not installed") {
-			t.Fatalf("%v %s", err, out)
-		}
-		if err := exec.Command("docker", "exec", b.id, "sh", "-c", command).Run(); err == nil {
-			t.Fatal("ran without perl")
-		} else if exit := new(exec.ExitError); errors.As(err, &exit) && exit.ExitCode() != 127 {
-			t.Fatalf("exit %d", exit.ExitCode())
+		command, _ := Command("/srv/a/x", Expect{Kind: EmptyDir})
+		code, out, errOut := b.run(t, command, "")
+		if _, err := Parse(code, out, errOut); code != 127 || err == nil || !strings.Contains(err.Error(), "perl is not installed") {
+			t.Fatalf("exit %d: %v", code, err)
 		}
 	})
 }
 
-// Where renameat2 is unavailable (ENOSYS, as an old kernel or a seccomp filter answers), a
-// directory that is not the resource's is kept in the private directory and reported; it is never
-// put back with rename(2), which could replace an empty directory at the name.
-func TestDirectoryRestoreWithoutRenameat2(t *testing.T) {
+// Where renameat2 answers ENOSYS (an old kernel, or here a seccomp filter), nothing is captured,
+// so nothing is touched: there is no fallback to rename(2), which could replace.
+func TestWithoutRenameat2(t *testing.T) {
 	profile := filepath.Join(t.TempDir(), "seccomp.json")
 	if err := os.WriteFile(profile, []byte(`{"defaultAction":"SCMP_ACT_ALLOW","syscalls":[{"names":["renameat2"],"action":"SCMP_ACT_ERRNO","errnoRet":38}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	b := start(t, "--security-opt", "seccomp="+profile)
-	b.sh(t, "mkdir -p /srv/a/tree && echo keep > /srv/a/tree/f")
-	r := b.remove(t, "/srv/a/tree", Expect{Kind: Dir, DigestCommand: "echo other", Digest: "mine"})
-	if r.Outcome != Kept || !strings.HasSuffix(r.Path, "/entry") || !strings.Contains(r.Reason, "Function not implemented") {
-		t.Fatalf("%+v", r)
+	b.sh(t, "mkdir -p /srv/a/tree && echo keep > /srv/a/tree/f && ln -s /target /srv/a/l")
+	for _, c := range []struct {
+		p    string
+		want Expect
+	}{{"/srv/a/tree", Expect{Kind: EmptyDir}}, {"/srv/a/l", Expect{Kind: Symlink, Value: "/target"}}} {
+		r := b.remove(t, c.p, c.want, "")
+		if r.Outcome != Refused || !strings.Contains(r.Reason, "Function not implemented") {
+			t.Fatalf("%s: %+v", c.p, r)
+		}
 	}
-	b.sh(t, "test ! -e /srv/a/tree && test \"$(cat "+r.Path+"/f)\" = keep")
+	b.sh(t, `test "$(cat /srv/a/tree/f)" = keep && test -L /srv/a/l && test -z "$(ls -A /srv/a | grep homelab-safeops)"`)
 }
