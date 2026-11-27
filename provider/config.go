@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
@@ -196,7 +197,17 @@ func (c *Config) RunnerConfig() remote.Config {
 
 // Check validates the configuration, failing with an error that names the missing key.
 func (c *Config) Check(ctx context.Context, req infer.CheckRequest) (infer.CheckResponse[*Config], error) {
-	cfg, failures, err := infer.DefaultCheck[*Config](ctx, req.NewInputs)
+	// The engine adds its own fields to a provider's inputs: "version" (the plugin version the
+	// program asked for) and "__"-prefixed internals. DefaultCheck decodes strictly, as for a
+	// resource, and would refuse them as unrecognised configuration; the library drops them the
+	// same way on its own paths.
+	inputs := req.NewInputs
+	for k := range inputs.All() {
+		if k == "version" || strings.HasPrefix(k, "__") {
+			inputs = inputs.Delete(k)
+		}
+	}
+	cfg, failures, err := infer.DefaultCheck[*Config](ctx, inputs)
 	if err != nil {
 		return infer.CheckResponse[*Config]{}, err
 	}
