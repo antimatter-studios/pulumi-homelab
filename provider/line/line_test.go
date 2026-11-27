@@ -27,7 +27,6 @@ var shims = Args{
 	Comment:  "#",
 }
 
-
 func with(args Args, change func(*Args)) Args {
 	change(&args)
 	return args
