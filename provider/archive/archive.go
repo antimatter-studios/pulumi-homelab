@@ -95,10 +95,17 @@ func jsPattern(p string) string {
 				b.WriteByte('\\')
 				b.WriteByte(next)
 			}
+		// JavaScript closes a class at the first ], even straight after [ or [^, so [] matches
+		// nothing and [^] matches anything; RE2 would read that ] as a literal instead.
+		case c == '[' && !inClass && strings.HasPrefix(p[i:], "[]"):
+			b.WriteString(`[^\x00-\x{10FFFF}]`)
+			i++
+		case c == '[' && !inClass && strings.HasPrefix(p[i:], "[^]"):
+			b.WriteString(`[\x00-\x{10FFFF}]`)
+			i += 2
 		case c == '[' && !inClass:
 			inClass = true
 			b.WriteByte(c)
-			// JavaScript closes a class at the first ], even straight after [ or [^, and so does this
 			if i+1 < len(p) && p[i+1] == '^' {
 				b.WriteByte('^')
 				i++

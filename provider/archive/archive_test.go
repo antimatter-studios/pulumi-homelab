@@ -65,7 +65,10 @@ func TestParseVersionMatchesJavaScriptSemantics(t *testing.T) {
 		{"version 1.2 x", "version (\\S+)", "1.2"},
 		{"version\u00a01.2", "version\\s(\\S+)", "1.2"},
 		{"a.b 7", "a\\.b ([0-9])", "7"},
-		{"widget 1.4.2", "", ""}, // an explicit empty pattern is used as given, as new RegExp('') is
+		{"widget 1.4.2", "", ""},                             // an explicit empty pattern is used as given, as new RegExp('') is
+		{"x]y", "x([]])y", ""},                               // [] matches nothing in JavaScript, so this cannot match
+		{"xab]y", "x([^]b])y", "ab]"},                        // [^] matches any one character
+		{"version 1.2\nnext", "version ([^]*)", "1.2\nnext"}, // the JavaScript idiom for anything
 	} {
 		if got := ParseVersion(tc.out, tc.pattern); got != tc.want {
 			t.Errorf("ParseVersion(%q, %q) = %q, want %q", tc.out, tc.pattern, got, tc.want)
