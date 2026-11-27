@@ -25,5 +25,6 @@
         "server": "github://api.github.com/antimatter-studios",
         "version": "0.0.0-dev"
     },
-    "main": "index.ts"
+    "main": "bin/index.js",
+    "types": "bin/index.d.ts"
 }
