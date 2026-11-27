@@ -20,8 +20,11 @@ const Name = "homelab"
 // -ldflags "-X github.com/antimatter-studios/pulumi-homelab/provider.Version=<version>".
 var Version = "0.0.0-dev"
 
-// Provider builds the provider the plugin serves. Until the ssh transport lands (#34), Configure
-// fails saying so.
+// PluginDownloadURL is where Pulumi fetches the plugin: the assets of this repository's GitHub
+// releases, which .github/workflows/release.yml attaches.
+const PluginDownloadURL = "github://api.github.com/antimatter-studios"
+
+// Provider builds the provider the plugin serves.
 func Provider() p.Provider {
 	return infer.Provider(options(nil))
 }
@@ -40,6 +43,10 @@ func options(factory remote.Factory) infer.Options {
 		WithNamespace("antimatter-studios").
 		WithRepository("https://github.com/antimatter-studios/pulumi-homelab").
 		WithLicense("MIT").
+		WithPluginDownloadURL(PluginDownloadURL).
+		// The npm name the generated SDK carries. Left unset, Pulumi names it @pulumi/homelab, which
+		// claims Pulumi's own scope for a package they do not publish.
+		WithLanguageMap(map[string]any{"nodejs": map[string]any{"packageName": "@antimatter-studios/homelab"}}).
 		WithKeywords("homelab", "linux", "ssh", "category/infrastructure").
 		BuildOptions()
 }
