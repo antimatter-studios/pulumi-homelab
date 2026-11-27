@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupsToLose, lockoutRefusal } from './user.ts';
+import { groupsToLose, lockoutRefusal, parseUserRead, uidRefusal } from './user.ts';
 
 /**
  * `usermod -G` replaces the supplementary group list rather than adding to it. On the machine this
@@ -96,5 +96,28 @@ describe('refusing to lock somebody out', () => {
 
   it('has nothing to refuse for an account that does not exist yet', () => {
     expect(lockoutRefusal({ ...base, groups: ['audio'] }, 'admin', null)).toBeNull();
+  });
+});
+
+describe('pinned uids', () => {
+  it('accepts an account that already has the declared uid, or no declared uid at all', () => {
+    expect(uidRefusal('t3code', 995, 995)).toBeNull();
+    expect(uidRefusal('t3code', undefined, 995)).toBeNull();
+    expect(uidRefusal('t3code', 995, undefined)).toBeNull();
+  });
+
+  it('refuses to renumber an existing account, naming both numbers', () => {
+    const refusal = uidRefusal('t3code', 995, 1001);
+    expect(refusal).toContain('uid 1001');
+    expect(refusal).toContain('995');
+  });
+});
+
+describe('reading an account back', () => {
+  it('takes the uid from passwd and leaves the primary group out of the memberships', () => {
+    const read = parseUserRead('smbguest', 'smbguest:x:999:100::/home/smbguest:/usr/sbin/nologin\nusers rogroup\nusers\n');
+    expect(read.uid).toBe(999);
+    expect(read.group).toBe('users');
+    expect(read.groups).toEqual(['rogroup']);
   });
 });

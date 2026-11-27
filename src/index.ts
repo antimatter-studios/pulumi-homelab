@@ -176,7 +176,7 @@ export {
   instanceUnit,
   type SystemdInstanceArgs,
 } from './resources/instance.ts';
-export { User, readUser, groupsToLose, lockoutRefusal, type UserArgs } from './resources/user.ts';
+export { User, readUser, parseUserRead, uidRefusal, groupsToLose, lockoutRefusal, type UserArgs } from './resources/user.ts';
 export {
   AuthorizedKey,
   readAuthorizedKey,

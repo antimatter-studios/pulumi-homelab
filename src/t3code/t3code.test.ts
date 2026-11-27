@@ -10,7 +10,7 @@ describe('the harness release this package was tested against', () => {
 
   it('builds the url from the version, so the two cannot disagree', () => {
     expect(T3_DEFAULT.url('1.2.3-nightly.4.5')).toContain('/v1.2.3-nightly.4.5/');
-    expect(T3_DEFAULT.url('1.2.3-nightly.4.5')).toContain('t3-1.2.3-nightly.4.5-linux-arm64.tar.gz');
+    expect(T3_DEFAULT.url('1.2.3-nightly.4.5')).toContain('t3-1.2.3-nightly.4.5-linux-x64.tar.gz');
   });
 
   /**
@@ -27,36 +27,33 @@ describe('the agent CLIs installed by default', () => {
     expect(AGENT_DEFAULTS.map((agent) => agent.key)).toEqual(['gh', 'claude', 'codex', 'opencode']);
   });
 
-  it('pins every one of them by checksum', () => {
-    for (const agent of AGENT_DEFAULTS) {
-      expect(agent.sha256, agent.key).toMatch(/^[0-9a-f]{64}$/);
-    }
-  });
-
-  it('names the executable inside each archive, never bare', () => {
-    // `--version` cannot tell a complete install from an incomplete one, so the path is the check
-    for (const agent of AGENT_DEFAULTS) {
-      expect(agent.bin, agent.key).toBeTruthy();
-      expect(agent.bin.startsWith('/'), agent.key).toBe(false);
+  it('pins gh by checksum', () => {
+    for (const agent of AGENT_DEFAULTS.filter((a) => !('installer' in a))) {
+      expect('sha256' in agent && agent.sha256, agent.key).toMatch(/^[0-9a-f]{64}$/);
     }
   });
 
   /**
-   * codex ships both a lone executable and a package, and only the second is a working install: the
-   * bare binary runs and reports its version and then fails at the first session with
-   * `codex-code-mode-host: No such file or directory`. The package has no top-level directory, which
-   * is why its strip is 0 where everything else is 1.
+   * The coding agents update themselves and T3 refuses versions it has outgrown, so they are
+   * installed the vendors' way and left to update: a pinned copy owned by the deployment cannot.
    */
-  it('takes the codex package rather than the bare binary', () => {
-    const codex = AGENT_DEFAULTS.find((agent) => agent.key === 'codex');
-    expect(codex?.url).toContain('codex-package');
-    expect(codex?.strip).toBe(0);
-    expect(codex?.bin).toBe('bin/codex');
+  it('installs the three coding agents with their vendors\' own installers', () => {
+    const official = AGENT_DEFAULTS.filter((a) => 'installer' in a).map((a) => a.key);
+    expect(official).toEqual(['claude', 'codex', 'opencode']);
+    for (const agent of AGENT_DEFAULTS) {
+      if (!('installer' in agent)) continue;
+      expect(agent.installer, agent.key).toMatch(/^curl -fsSL https:\/\//);
+      // relative to the account's home, and never asks a question nobody is there to answer
+      expect(agent.bin.startsWith('/'), agent.key).toBe(false);
+    }
+    const codex = AGENT_DEFAULTS.find((a) => a.key === 'codex');
+    expect(codex && 'installer' in codex && codex.installer).toContain('CODEX_NON_INTERACTIVE=1');
   });
 
-  it('strips the wrapping directory for the archives that have one', () => {
-    for (const agent of AGENT_DEFAULTS.filter((a) => a.key !== 'codex')) {
-      expect(agent.strip, agent.key).toBe(1);
+  it('names the executable, never bare', () => {
+    for (const agent of AGENT_DEFAULTS) {
+      expect(agent.bin, agent.key).toBeTruthy();
+      expect(agent.bin.startsWith('/'), agent.key).toBe(false);
     }
   });
 });

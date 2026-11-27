@@ -1,3 +1,4 @@
+import { APT_GET } from './aptget.ts';
 import { describe, expect, it } from 'vitest';
 import { autoMarked } from '../aptmark.ts';
 import { missingFrom, packagesChanged, parseInstalled, parsePackageState, parseSimulatedRemovals, presentCommands } from './packages.ts';
@@ -152,13 +153,18 @@ describe('composing what brings the present half into line', () => {
     // a package apt has just installed on request is already manual, so a mark computed from the
     // earlier reading asks for work apt has already done
     const commands = presentCommands({ missing: ['nginx'], auto: ['ovmf'], update: false });
-    expect(commands.findIndex((c) => c.includes('apt-get install')))
+    expect(commands.findIndex((c) => c.includes(`${APT_GET} install`)))
       .toBeLessThan(commands.findIndex((c) => c.includes('apt-mark')));
+  });
+
+  it('waits for the dpkg lock rather than failing on it', () => {
+    const commands = presentCommands({ missing: ['nginx'], auto: [], update: true });
+    expect(commands.every((c) => c.includes('-o DPkg::Lock::Timeout='))).toBe(true);
   });
 
   it('refreshes the lists first when asked', () => {
     const commands = presentCommands({ missing: ['nginx'], auto: [], update: true });
-    expect(commands[0]).toBe('apt-get update -qq');
+    expect(commands[0]).toBe(`${APT_GET} update -qq`);
   });
 
   it('refreshes nothing when not asked', () => {
@@ -227,5 +233,12 @@ describe('deciding whether the list has stopped being true', () => {
     // an imported resource has no reading behind it, and calling that agreement would be a machine
     // nobody ever looks at
     expect(packagesChanged({}, next)).toBe(true);
+  });
+});
+
+describe('unattended installs', () => {
+  it('keeps a configuration file that is already there instead of asking about it', () => {
+    const commands = presentCommands({ missing: ['containerd.io'], auto: [], update: false });
+    expect(commands[0]).toContain('--force-confold');
   });
 });

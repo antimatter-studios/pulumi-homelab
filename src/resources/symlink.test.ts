@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Symlink, interpretSymlink } from './symlink.ts';
+import { Symlink, interpretSymlink, launcherTarget } from './symlink.ts';
 
 /**
  * The interesting behaviour of this resource is in its `read`, which needs a machine to answer.
@@ -43,5 +43,18 @@ describe('deciding what is at the path', () => {
     expect(interpretSymlink(0, '/mnt/data/never-mounted')).toEqual({
       state: 'link', target: '/mnt/data/never-mounted',
     });
+  });
+});
+
+describe('launcher scripts', () => {
+  it('reads the program a launcher script execs', () => {
+    expect(launcherTarget("#!/bin/sh\nexec '/home/a/.t3/runtime/versions/0.1.13/t3' \"$@\"\n")).toBe('/home/a/.t3/runtime/versions/0.1.13/t3');
+    expect(launcherTarget('#!/bin/sh\nexec /opt/t3/t3 "$@"\n')).toBe('/opt/t3/t3');
+  });
+
+  it('refuses anything that is not a small exec script', () => {
+    expect(launcherTarget('ELF binary')).toBeNull();
+    expect(launcherTarget('#!/bin/sh\necho hello\n')).toBeNull();
+    expect(launcherTarget(`#!/bin/sh\nexec /x\n${'#'.repeat(5000)}`)).toBeNull();
   });
 });

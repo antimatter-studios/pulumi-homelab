@@ -1,3 +1,4 @@
+import { APT_GET } from './aptget.ts';
 import { describe, expect, it } from 'vitest';
 import { installScript } from './deb.ts';
 
@@ -15,7 +16,7 @@ const args = {
 describe('composing the install', () => {
   it('verifies before it installs', () => {
     const script = installScript(args);
-    expect(script.indexOf('sha256sum -c')).toBeLessThan(script.indexOf('apt-get install'));
+    expect(script.indexOf('sha256sum -c')).toBeLessThan(script.indexOf(`${APT_GET} install`));
   });
 
   it('stops the whole command when verification fails', () => {
@@ -37,7 +38,7 @@ describe('composing the install', () => {
 
   it('installs through apt rather than dpkg, so dependencies resolve', () => {
     const script = installScript(args);
-    expect(script).toContain('apt-get install');
+    expect(script).toContain(`${APT_GET} install`);
     expect(script).not.toContain('dpkg -i');
   });
 
@@ -87,7 +88,7 @@ describe('what an update actually does', () => {
   it('uses apt rather than dpkg, so dependencies are resolved', () => {
     // dpkg -i on a package with an absent dependency leaves it unpacked but unconfigured, which
     // breaks the next unrelated apt run and gives no hint why
-    expect(installScript(args)).toContain('apt-get install');
+    expect(installScript(args)).toContain(`${APT_GET} install`);
     expect(installScript(args)).not.toContain('dpkg -i');
   });
 });

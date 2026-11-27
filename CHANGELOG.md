@@ -20,6 +20,14 @@ breaking changes live.
 
 ### Added
 
+- **`OfficialInstall`** — a self-updating tool installed by its vendor's own installer, as the
+  account that uses it, and then left alone: missing or unable to run means install, anything else
+  is success, and the version is never enforced.
+- **`Symlink` `acceptLauncherScript`** — accept a small `exec` launcher script the software wrote in
+  place of its link (T3 Code does, since 0.1.13), instead of refusing it as data.
+- **`User` `uid` and `group`** — pin the uid and primary group of an account whose files outlive the
+  machine (a disk carried over records numbers, not names). An existing account with a different
+  uid is refused rather than renumbered.
 - **`PosixAcl` `normalise`** — corrects directories that already exist under the path when the ACL
   is applied: one exact mode owned by one group, skipping the paths named in `ignore`. A directory
   created as `2755` has a mask that caps the `rwx` it inherited, and default entries cannot reach it.
@@ -105,6 +113,10 @@ breaking changes live.
 
 ### Changed
 
+- **T3 Code: the coding agents come from their vendors' installers** (Claude Code, Codex,
+  opencode) and update themselves; `gh` stays pinned. t3 is pinned to 0.1.13-nightly.20261125.5245.
+  `t3codeResource` gains `uid`, `primaryGroup`, `accountDependsOn` and `sudo: false`, and a second
+  account prefixes its resource names so two installs can share a stack.
 - **`Directory` takes `setgid` and `sticky` as fields** rather than leaving them to a leading digit
   on `mode`. `2775` is correct the day it is written and quietly wrong the first time
   somebody edits the mode without knowing why there were four digits, and the bit that goes is the
@@ -121,6 +133,11 @@ breaking changes live.
 
 ### Fixed
 
+- **Unattended `apt-get` waits for the dpkg lock and keeps existing configuration files.** Package
+  resources created in parallel failed at once with "Could not get lock"; and a package whose
+  configuration Pulumi had already written (containerd's `config.toml`) hung the deployment on a
+  dpkg prompt nobody could answer. Every install, purge and update now uses
+  `-o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold`.
 - **`SshTunnel` wrote a unit file with the shell command inside it.** The heredoc terminator and
   everything chained after it landed as file content — `PULUMI_EOF && chmod 0644 … && systemctl
   restart …` on one line — so systemd reported `Missing '=', ignoring line` four times per start
