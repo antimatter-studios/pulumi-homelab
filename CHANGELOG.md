@@ -121,6 +121,11 @@ breaking changes live.
 
 ### Fixed
 
+- **Unattended `apt-get` waits for the dpkg lock and keeps existing configuration files.** Package
+  resources created in parallel failed at once with "Could not get lock"; and a package whose
+  configuration Pulumi had already written (containerd's `config.toml`) hung the deployment on a
+  dpkg prompt nobody could answer. Every install, purge and update now uses
+  `-o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold`.
 - **`SshTunnel` wrote a unit file with the shell command inside it.** The heredoc terminator and
   everything chained after it landed as file content — `PULUMI_EOF && chmod 0644 … && systemctl
   restart …` on one line — so systemd reported `Missing '=', ignoring line` four times per start

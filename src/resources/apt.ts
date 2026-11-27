@@ -1,3 +1,4 @@
+import { APT_GET } from './aptget.ts';
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
@@ -76,11 +77,11 @@ export async function readManual(host: Target, name: string): Promise<boolean> {
 
 function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackageArgs, AptPackageState> {
   const install = async (args: AptPackageArgs): Promise<string> => {
-    const refresh = args.update ? 'apt-get update -qq && ' : '';
+    const refresh = args.update ? `${APT_GET} update -qq && ` : '';
     // noninteractive or a package with a config prompt hangs the deployment for ever behind a
     // dialogue nobody can see, let alone answer
     await must(host, escalate(host,
-      `${refresh}DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${shellQuote(args.name)}`,
+      `${refresh}DEBIAN_FRONTEND=noninteractive ${APT_GET} install -y -qq ${shellQuote(args.name)}`,
     ));
     const version = await readPackage(host, args.name);
     if (version === null) throw new Error(`apt said it installed ${args.name}, but dpkg cannot find it`);
@@ -145,7 +146,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackageAr
       // purge rather than remove, so configuration does not linger to surprise a later install.
       // Autoremove is deliberately not run: it reaches beyond this resource and could take out a
       // dependency something undeclared on the machine still needs.
-      await must(host, escalate(host, `DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq ${shellQuote(id)}`));
+      await must(host, escalate(host, `DEBIAN_FRONTEND=noninteractive ${APT_GET} purge -y -qq ${shellQuote(id)}`));
     },
   };
 }

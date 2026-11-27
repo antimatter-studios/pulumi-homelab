@@ -1,3 +1,4 @@
+import { APT_GET } from './aptget.ts';
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
@@ -71,7 +72,7 @@ export function installScript(args: DebPackageArgs): string {
     `echo ${sha}"  $dir/pkg.deb" | sha256sum -c - >/dev/null`,
     // noninteractive for the same reason as AptPackage: a config prompt nobody can see is a
     // deployment that hangs for ever.
-    'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$dir/pkg.deb"',
+    `DEBIAN_FRONTEND=noninteractive ${APT_GET} install -y -qq "$dir/pkg.deb"`,
   ].join('; ');
 }
 
@@ -141,7 +142,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<DebPackageAr
       // surprise a later install. Autoremove is deliberately not run: it reaches beyond this
       // resource and could take out something another resource is relying on.
       await must(host, escalate(host,
-        `DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq ${shellQuote(id)}`,
+        `DEBIAN_FRONTEND=noninteractive ${APT_GET} purge -y -qq ${shellQuote(id)}`,
       ));
     },
   };

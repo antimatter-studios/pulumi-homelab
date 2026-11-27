@@ -1,3 +1,4 @@
+import { APT_GET } from './aptget.ts';
 import * as pulumi from '@pulumi/pulumi';
 import { escalate, ask, must, shellQuote, type Target, describe } from '../ssh.ts';
 import { stamped, transportChanged, withLegacyAlias } from '../upgrade.ts';
@@ -147,13 +148,13 @@ export function presentCommands(args: {
   update: boolean;
 }): string[] {
   const commands: string[] = [];
-  if (args.update) commands.push('apt-get update -qq');
+  if (args.update) commands.push(`${APT_GET} update -qq`);
   if (args.missing.length > 0) {
     // one apt-get for the whole set: apt resolves them together rather than against twenty
     // different intermediate states, and noninteractive because a package with a configuration
     // prompt otherwise hangs the deployment behind a dialogue nobody can see
     commands.push(
-      `DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${args.missing.map(shellQuote).join(' ')}`,
+      `DEBIAN_FRONTEND=noninteractive ${APT_GET} install -y -qq ${args.missing.map(shellQuote).join(' ')}`,
     );
   }
   const mark = markManualCommand(args.auto);
@@ -252,7 +253,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<AptPackagesA
         `Declaring a package absent is a statement about that package, not permission to remove what depends on it.`,
       );
     }
-    await must(host, escalate(host, `DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq ${quoted}`));
+    await must(host, escalate(host, `DEBIAN_FRONTEND=noninteractive ${APT_GET} purge -y -qq ${quoted}`));
   };
 
   const settle = async (args: AptPackagesArgs): Promise<AptPackagesState> => {
