@@ -23,6 +23,9 @@ func TestAgainstNode(t *testing.T) {
 	if node == "" {
 		var err error
 		if node, err = exec.LookPath("node"); err != nil {
+			if os.Getenv("JSCOMPAT_REQUIRE_NODE") != "" {
+				t.Fatal("node not found, and JSCOMPAT_REQUIRE_NODE says this run must compare against it")
+			}
 			t.Skip("node not found; set JSCOMPAT_NODE to run the differential test")
 		}
 	}
@@ -46,6 +49,7 @@ func TestAgainstNode(t *testing.T) {
 	}
 	var res struct {
 		Unicode    string     `json:"unicode"`
+		Unassigned [][2]rune  `json:"unassigned"`
 		Spaces     []rune     `json:"spaces"`
 		Cases      [][3]any   `json:"cases"`
 		Trim       [][4]any   `json:"trim"`
@@ -139,6 +143,17 @@ func TestAgainstNode(t *testing.T) {
 	})
 
 	t.Run("Case", func(t *testing.T) {
+		t.Logf("Unicode: Go %s, node %s", unicode.Version, res.Unicode)
+		// A code point node's Unicode does not assign yet is a version difference, not a bug here:
+		// Go 1.27 (Unicode 17) case-maps U+A7CE and others that node 23 (Unicode 16) leaves alone.
+		nodeUnassigned := func(r rune) bool {
+			for _, run := range res.Unassigned {
+				if r >= run[0] && r <= run[1] {
+					return true
+				}
+			}
+			return false
+		}
 		// Code points Go's tables do not know yet (and the ones paired with them) are documented
 		// divergences, as are İ and final sigma; everything else must match.
 		known := func(s string) bool {
@@ -155,7 +170,7 @@ func TestAgainstNode(t *testing.T) {
 			changed[r] = true
 			upper, lower := c[1].(string), c[2].(string)
 			s := string(r)
-			if !known(s) || !known(upper) || !known(lower) {
+			if !known(s) || !known(upper) || !known(lower) || nodeUnassigned(r) {
 				continue
 			}
 			if got := ToUpper(s); got != upper {
@@ -166,7 +181,7 @@ func TestAgainstNode(t *testing.T) {
 			}
 		}
 		for r := rune(0); r <= unicode.MaxRune; r++ {
-			if changed[r] || (r >= 0xD800 && r <= 0xDFFF) {
+			if changed[r] || (r >= 0xD800 && r <= 0xDFFF) || nodeUnassigned(r) {
 				continue
 			}
 			s := string(r)
