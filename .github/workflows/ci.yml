@@ -54,6 +54,9 @@ jobs:
         # wrong three times before this check existed, so it is asked here rather than remembered.
         run: pnpm run check:revision
 
+  # test, go and the CI gate run on the homelab's own ARC runners (ryzen-linux-x64). On a public
+  # repository that is safe only while fork pull requests need approval before they run: the
+  # organisation and repository setting must stay "all_external_contributors".
   go:
     # The Go provider plugin that replaces the dynamic providers in src/ (#31). It lives in its own
     # module under provider/, so everything here runs from there.
@@ -129,7 +132,8 @@ jobs:
           cache-dependency-path: provider/go.sum
 
       - name: Integration tests (Debian 13 containers)
-        run: go test -count=1 -tags integration -run Debian13 ./transport/
+        # Every integration suite in the module, so a new one is picked up without a CI change.
+        run: go test -count=1 -tags integration ./...
 
   ci:
     # One always-run job for branch protection to require, so the jobs above can be renamed, split
