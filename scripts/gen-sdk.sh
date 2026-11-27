@@ -29,6 +29,8 @@ const f = process.argv[1], p = JSON.parse(require("fs").readFileSync(f, "utf8"))
 // release pins it with the version option of the provider resource.
 p.version = "0.0.0-dev";
 if (p.pulumi) p.pulumi.version = "0.0.0-dev";
+// exact build tools, so a new TypeScript patch cannot change the committed output under CI check
+p.devDependencies = { "@types/node": "14.18.63", "typescript": "4.9.5" };
 p.main = "bin/index.js";
 p.types = "bin/index.d.ts";
 require("fs").writeFileSync(f, JSON.stringify(p, null, 4) + "\n");' "$root/sdk/nodejs/package.json"
