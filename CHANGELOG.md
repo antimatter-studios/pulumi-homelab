@@ -113,6 +113,10 @@ breaking changes live.
 
 ### Changed
 
+- **T3 Code: the coding agents come from their vendors' installers** (Claude Code, Codex,
+  opencode) and update themselves; `gh` stays pinned. t3 is pinned to 0.1.13-nightly.20261125.5245.
+  `t3codeResource` gains `uid`, `primaryGroup`, `accountDependsOn` and `sudo: false`, and a second
+  account prefixes its resource names so two installs can share a stack.
 - **`Directory` takes `setgid` and `sticky` as fields** rather than leaving them to a leading digit
   on `mode`. `2775` is correct the day it is written and quietly wrong the first time
   somebody edits the mode without knowing why there were four digits, and the bit that goes is the

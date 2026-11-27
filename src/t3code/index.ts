@@ -1,5 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { Archive } from '../resources/archive.ts';
+import { OfficialInstall } from '../resources/installer.ts';
 import { AptPackages } from '../resources/packages.ts';
 import { Directory } from '../resources/directory.ts';
 import { ManagedFile } from '../resources/file.ts';
@@ -8,11 +9,12 @@ import { SudoRule } from '../resources/sudo.ts';
 import { Symlink } from '../resources/symlink.ts';
 import { SystemdUnit } from '../resources/systemd.ts';
 import { User } from '../resources/user.ts';
+import type { Group } from '../resources/group.ts';
 import type { Target } from '../ssh.ts';
 
 
 /** One agent CLI, as a checksummed tarball and the path to its executable inside it. */
-export interface AgentSpec {
+export interface ArchiveAgentSpec {
   /** Names the resources — `archive-claude`, `link-claude` — and the command on PATH. */
   key: string;
   /** Where the executable is inside the unpacked tree: 'bin/gh', or 'claude' at the top. */
@@ -22,6 +24,28 @@ export interface AgentSpec {
   /** Leading path components to drop. 0 when the archive has no top-level directory. */
   strip: number;
 }
+
+/**
+ * One agent CLI, installed by its vendor's own installer and then left to update itself.
+ * See `OfficialInstall` for why the coding agents are installed this way and not pinned.
+ */
+export interface OfficialAgentSpec {
+  key: string;
+  /** The vendor's install command, run as the account. */
+  installer: string;
+  /** Where the installer leaves the executable, relative to the account's home. */
+  bin: string;
+  /**
+   * Set when the installer does not put the command in ~/.local/bin itself: a link is made there,
+   * to `bin`, so it is on the unit's PATH. The link names a fixed path, and the tool updates the
+   * file behind it in place.
+   */
+  link?: boolean;
+}
+
+export type AgentSpec = ArchiveAgentSpec | OfficialAgentSpec;
+
+const isOfficial = (spec: AgentSpec): spec is OfficialAgentSpec => 'installer' in spec;
 
 export interface T3CodeArgs {
   /** The service account. Names every resource, so changing it makes a second install. */
@@ -46,6 +70,13 @@ export interface T3CodeArgs {
   workspace: string;
   /** Supplementary groups. `kvm` if agents are to use hardware virtualisation. */
   groups?: string[];
+  /**
+   * The account's uid, for a home carried over from another machine: its files are owned by number.
+   * See `User.uid`; an existing account with a different uid is refused, not renumbered.
+   */
+  uid?: number;
+  /** The primary group, declared with its gid, for the same reason. Made before the account. */
+  primaryGroup?: Group;
   git: {
     /**
      * The whole of `~/.gitconfig`, as content.
@@ -67,8 +98,10 @@ export interface T3CodeArgs {
    * The sudoers file. Unrestricted root, and the doc on the resource says why a list is not a
    * boundary.
    */
-  sudo?: { file?: string };
+  sudo?: { file?: string } | false;
   unit?: UnitArgs;
+  /** Resources the account itself must wait for, such as a supplementary group made elsewhere. */
+  accountDependsOn?: pulumi.Resource[];
 }
 
 export interface UnitArgs {
@@ -187,8 +220,10 @@ const DEFAULT_ACCOUNT = 't3code';
  * artefact, and a release asset can be replaced under a fixed url.
  */
 export const T3_DEFAULT = {
-  version: '0.0.41-nightly.20260914.1707',
-  sha256: 'ce9d72764a8942fecd6e7ed88d80dd318fb97f0b4fa2eb70904242ab34ee933c',
+  // The build the Pi was running when it was retired (2026-11-25), so the move to x86 is not also
+  // a downgrade: its data had been migrated by this version, and an older one may not read it.
+  version: '0.1.13-nightly.20261125.5245',
+  sha256: 'de331775c0ef436edf446021c05b92d21787424efe5e8b33699c04710f175152',
   url: (version: string) =>
     `https://github.com/pingdotgg/t3code/releases/download/v${version}/t3-${version}-linux-x64.tar.gz`,
 };
@@ -207,44 +242,26 @@ export const AGENT_DEFAULTS: AgentSpec[] = [
      * serves both the API and the transport rather than needing two.
      */
     key: 'gh', bin: 'bin/gh',
-    url: 'https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_amd64.tar.gz',
+    url: 'https://github.com/cli/cli/releases/download/v2.106.0/gh_2.106.0_linux_amd64.tar.gz',
     // From the release's own gh_2.100.0_checksums.txt, reverified against the fetched file.
-    sha256: 'e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be',
+    sha256: 'a476449fa9625413c54a3734eded62e9e480e49f421ff08e7f3b3879c059a033',
     strip: 1,
   },
+  /**
+   * The three coding agents, the vendors' way. They ship every few days and update themselves, and
+   * T3 refuses versions it has outgrown; a pin here was out of date within the week, and the tools'
+   * own `update` could not replace a copy the deployment owned.
+   */
+  { key: 'claude', installer: 'curl -fsSL https://claude.ai/install.sh | bash', bin: '.local/bin/claude' },
   {
-    key: 'claude', bin: 'claude',
-    url: 'https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.270.tgz',
-    sha256: 'a2c0b69773f9da730b0616c19771094de51ffd23f0dfaa7c34ccead34eb76dd0',
-    strip: 1,
+    // the standalone installer, with companion binaries (codex-code-mode-host) beside it
+    key: 'codex', installer: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
+    bin: '.local/bin/codex',
   },
   {
-    /**
-     * The `codex-package` asset, not the bare `codex` binary beside it.
-     *
-     * The bare executable installs and runs and reports its version perfectly, and then fails
-     * the moment an agent session starts, with
-     * `codex-code-mode-host: No such file or directory`. Codex ships companion binaries it
-     * expects as siblings, and the release publishes both a lone executable and a complete
-     * package; only the second is a working install. The same trap as the rest of this file --
-     * something that verifies green and is not actually usable -- and `--version` is exactly the
-     * check that cannot tell them apart, which is why `healthCommand` is a weaker guarantee here
-     * than it looks.
-     *
-     * The package carries bin/codex, bin/codex-code-mode-host, ripgrep, bwrap and a zsh.
-     */
-    key: 'codex', bin: 'bin/codex',
-    url: 'https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-package-x86_64-unknown-linux-musl.tar.gz',
-    // From the release's own codex-package_SHA256SUMS, reverified against the fetched file.
-    sha256: 'fc6e3e3b85f2cf7d664520ee5c66a7fe4aa12bae7d46834f47e2f165fd0d6f78',
-    // No top-level directory: bin/, codex-path/ and codex-resources/ sit at the root.
-    strip: 0,
-  },
-  {
-    key: 'opencode', bin: 'bin/opencode',
-    url: 'https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.18.30.tgz',
-    sha256: 'aa31a7e68ce5c73cba302c6a4f31c2e308398db125e49d3dbea32f61862fe6de',
-    strip: 1,
+    // installs to ~/.opencode/bin and would edit .bashrc to find it; the link replaces that
+    key: 'opencode', installer: 'curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path',
+    bin: '.opencode/bin/opencode', link: true,
   },
 ];
 
@@ -275,6 +292,9 @@ export const AGENT_DEFAULTS: AgentSpec[] = [
  */
 export function t3codeResource(host: Target, args: T3CodeArgs): T3Code {
   const account_ = args.account ?? DEFAULT_ACCOUNT;
+  // Resource names that existed before a second account was possible keep their old form for the
+  // default account, so its state is not replaced; any other account prefixes them with its name.
+  const named = (base: string): string => (account_ === DEFAULT_ACCOUNT ? base : `${account_}-${base}`);
   const HOME = args.home;
   const WORKSPACE = args.workspace;
   const unitName = args.unit?.name ?? account_;
@@ -310,7 +330,9 @@ export function t3codeResource(host: Target, args: T3CodeArgs): T3Code {
     // does not, and nothing records why it was there. Declared membership is the same access,
     // permanently, and visible in the description of the machine.
     groups: args.groups ?? [],
-  });
+    uid: args.uid,
+    group: args.primaryGroup ? account_ : undefined,
+  }, { dependsOn: [...(args.primaryGroup ? [args.primaryGroup] : []), ...(args.accountDependsOn ?? [])] });
 
   /**
    * Its home, stated so the permissions are a decision rather than whatever `useradd` defaulted to.
@@ -414,7 +436,7 @@ export function t3codeResource(host: Target, args: T3CodeArgs): T3Code {
    * too. Anywhere else and the bootstrap and every later self-update would live in separate trees,
    * with the launcher walking away from what Pulumi installed.
    */
-  const t3 = new Archive('archive-t3', host, {
+  const t3 = new Archive(named('archive-t3'), host, {
     name: 't3',
     url: (args.t3?.url ?? T3_DEFAULT.url)(t3version),
     // From the release's own SHA256SUMS, and recomputed from the downloaded file. So it pins what
@@ -436,7 +458,7 @@ export function t3codeResource(host: Target, args: T3CodeArgs): T3Code {
    * The marker t3's own tooling looks for. Without it a version directory can read as a half-
    * finished install — cheap to write, unpleasant to diagnose.
    */
-  new ManagedFile('file-t3-install-complete', host, {
+  new ManagedFile(named('file-t3-install-complete'), host, {
     path: `${t3prefix}/.install-complete`,
     content: `${t3version}\n`,
     owner: account_,
@@ -458,9 +480,11 @@ export function t3codeResource(host: Target, args: T3CodeArgs): T3Code {
    * also why the unit's ExecStart must name this path and not a versioned one: a versioned ExecStart
    * pins the service to whatever was bootstrapped while the program updates around it for ever.
    */
-  new Symlink('link-t3', host, {
+  new Symlink(named('link-t3'), host, {
     path: `${BIN}/t3`,
     target: `${t3prefix}/t3`,
+    // t3 1.13+ updates itself by writing a launcher script here instead of repointing the link
+    acceptLauncherScript: true,
   }, { dependsOn: [t3, bin], ignoreChanges: ['target'] });
 
   /**
@@ -479,7 +503,22 @@ export function t3codeResource(host: Target, args: T3CodeArgs): T3Code {
   const clis = args.agents ?? AGENT_DEFAULTS;
 
   for (const cli of clis) {
-    const archive = new Archive(`archive-${cli.key}`, host, {
+    if (isOfficial(cli)) {
+      const installed = new OfficialInstall(named(`install-${cli.key}`), host, {
+        account: account_,
+        home: HOME,
+        installer: cli.installer,
+        bin: `${HOME}/${cli.bin}`,
+      }, { dependsOn: [account, bin] });
+      if (cli.link) {
+        new Symlink(named(`link-${cli.key}`), host, {
+          path: `${BIN}/${cli.key}`,
+          target: `${HOME}/${cli.bin}`,
+        }, { dependsOn: [installed] });
+      }
+      continue;
+    }
+    const archive = new Archive(named(`archive-${cli.key}`), host, {
       name: cli.key,
       url: cli.url,
       sha256: cli.sha256,
@@ -492,7 +531,7 @@ export function t3codeResource(host: Target, args: T3CodeArgs): T3Code {
       group: account_,
     }, { dependsOn: [account, opt] });
 
-    new Symlink(`link-${cli.key}`, host, {
+    new Symlink(named(`link-${cli.key}`), host, {
       path: `${BIN}/${cli.key}`,
       target: `${OPT}/${cli.key}/${cli.bin}`,
     }, { dependsOn: [archive, bin] });
@@ -589,7 +628,8 @@ export function t3codeResource(host: Target, args: T3CodeArgs): T3Code {
    * The honest way back is not a shorter list. It is package installation returning to Pulumi and
    * this file disappearing, which is what everything else on this machine looks like.
    */
-  new SudoRule(`sudo-${account_}-apt`, host, {
+  // `sudo: false` is an account with no root at all: a person's own agents, rather than the machine's.
+  if (args.sudo !== false) new SudoRule(`sudo-${account_}-apt`, host, {
     file: args.sudo?.file ?? `030_${account_}`,
     user: account_,
     runAs: 'root',
