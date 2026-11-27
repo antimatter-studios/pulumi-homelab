@@ -35,11 +35,13 @@ type ManagedFileArgs struct {
 // ManagedFileState is what is kept in state: the facts about the file, and the digest of its
 // content in place of the content.
 type ManagedFileState struct {
-	Path          string `pulumi:"path"`
-	Mode          string `pulumi:"mode"`
-	Owner         string `pulumi:"owner"`
-	Group         string `pulumi:"group"`
-	ReloadSystemd bool   `pulumi:"reloadSystemd"`
+	Path  string `pulumi:"path"`
+	Mode  string `pulumi:"mode"`
+	Owner string `pulumi:"owner"`
+	Group string `pulumi:"group"`
+	// ReloadSystemd is nil after an import: it is a behaviour, not a fact the file shows, so an
+	// imported file cannot know it and Diff does not compare it until a write records it.
+	ReloadSystemd *bool  `pulumi:"reloadSystemd,optional"`
 	Digest        string `pulumi:"digest"`
 }
 
@@ -175,7 +177,7 @@ func readManagedFile(ctx context.Context, m *machine, path string) (*actualFile,
 
 func (w wantedFile) state() ManagedFileState {
 	return ManagedFileState{Path: w.path, Mode: w.mode, Owner: w.owner, Group: w.group,
-		ReloadSystemd: w.reloadSystemd, Digest: digestOf([]byte(w.content))}
+		ReloadSystemd: &w.reloadSystemd, Digest: digestOf([]byte(w.content))}
 }
 
 // Create writes the file.
@@ -208,14 +210,15 @@ func (ManagedFile) Read(ctx context.Context, req infer.ReadRequest[ManagedFileAr
 	}
 	state := req.State
 	if req.Inputs.ReloadSystemd != nil {
-		state.ReloadSystemd = *req.Inputs.ReloadSystemd
+		reload := *req.Inputs.ReloadSystemd
+		state.ReloadSystemd = &reload
 	}
 	state.Path, state.Mode, state.Owner, state.Group = req.ID, actual.Mode, actual.Owner, actual.Group
 	state.Digest = digestOf([]byte(actual.Content))
 	inputs := req.Inputs
 	if inputs.Path == "" {
 		inputs = ManagedFileArgs{Path: req.ID, Content: actual.Content, Mode: &state.Mode, Owner: &state.Owner,
-			Group: &state.Group, ReloadSystemd: &state.ReloadSystemd}
+			Group: &state.Group, ReloadSystemd: state.ReloadSystemd}
 	}
 	return infer.ReadResponse[ManagedFileArgs, ManagedFileState]{ID: req.ID, Inputs: inputs, State: state}, nil
 }
@@ -265,7 +268,7 @@ func (ManagedFile) Diff(_ context.Context, req infer.DiffRequest[ManagedFileArgs
 	if old.Group != w.group {
 		diff["group"] = p.PropertyDiff{Kind: p.Update}
 	}
-	if old.ReloadSystemd != w.reloadSystemd {
+	if old.ReloadSystemd != nil && *old.ReloadSystemd != w.reloadSystemd {
 		diff["reloadSystemd"] = p.PropertyDiff{Kind: p.Update}
 	}
 	if old.Path != w.path {

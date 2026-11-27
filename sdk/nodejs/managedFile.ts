@@ -42,7 +42,7 @@ export class ManagedFile extends pulumi.CustomResource {
     public readonly mode!: pulumi.Output<string>;
     public readonly owner!: pulumi.Output<string>;
     public readonly path!: pulumi.Output<string>;
-    public readonly reloadSystemd!: pulumi.Output<boolean>;
+    public readonly reloadSystemd!: pulumi.Output<boolean | undefined>;
 
     /**
      * Create a ManagedFile resource with the given unique name, arguments, and options.

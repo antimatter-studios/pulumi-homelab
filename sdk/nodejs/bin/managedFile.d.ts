@@ -25,7 +25,7 @@ export declare class ManagedFile extends pulumi.CustomResource {
     readonly mode: pulumi.Output<string>;
     readonly owner: pulumi.Output<string>;
     readonly path: pulumi.Output<string>;
-    readonly reloadSystemd: pulumi.Output<boolean>;
+    readonly reloadSystemd: pulumi.Output<boolean | undefined>;
     /**
      * Create a ManagedFile resource with the given unique name, arguments, and options.
      *

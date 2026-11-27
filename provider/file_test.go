@@ -256,3 +256,32 @@ func TestSudoPasswordNeverMixesThePasswordIntoTheContent(t *testing.T) {
 		t.Fatalf("calls %+v", fake.Calls)
 	}
 }
+
+// The #38 switch adopts each existing file with `import:`. The engine's Read for an import has no
+// inputs and no state, so it cannot know reloadSystemd, a behaviour rather than a fact the file
+// shows; the program's declaration must still diff clean against it, or the import is refused.
+func TestManagedFileImportIgnoresReloadSystemd(t *testing.T) {
+	const path = "/srv/www/page.html"
+	disk := &fakeDisk{path: path}
+	fake := disk.runner()
+	disk.write(fake, pageFile("one"))
+	s := configured(t, fake)
+	if _, err := s.Create(p.CreateRequest{Urn: fileURN, Properties: fileInputs(path, "one\n")}); err != nil {
+		t.Fatal(err)
+	}
+
+	imported, err := s.Read(p.ReadRequest{ID: path, Urn: fileURN})
+	if err != nil || imported.ID != path {
+		t.Fatalf("import read %+v %v", imported, err)
+	}
+	if v, ok := imported.Properties.GetOk("reloadSystemd"); ok && !v.IsNull() {
+		t.Fatalf("an import claimed to know reloadSystemd: %v", v)
+	}
+	for _, reload := range []bool{true, false} {
+		declared := fileInputs(path, "one\n").Set("reloadSystemd", property.New(reload))
+		d, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: imported.Properties, Inputs: declared})
+		if err != nil || d.HasChanges {
+			t.Fatalf("reloadSystemd %v: import diff %+v %v", reload, d, err)
+		}
+	}
+}
