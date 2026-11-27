@@ -89,9 +89,6 @@ jobs:
           JSCOMPAT_REQUIRE_NODE: '1'
         run: go test -v -count=1 -run TestAgainstNode ./jscompat/
 
-      - name: Integration tests (Debian 13 sshd in Docker)
-        run: go test -tags integration -run Debian13 ./transport/
-
       - uses: pulumi/actions@v6
         with:
           pulumi-version: 3.150.0
@@ -114,17 +111,37 @@ jobs:
           echo "next release: $(./scripts/release.sh next || true)"
           ./scripts/release.sh notes
 
+  integration:
+    # The Debian 13 container suites. They need real Docker (an sshd container with a published port,
+    # its own networks, privileged systemd containers), which the Ryzen runners do not offer: Docker
+    # there is rootless podman in an unprivileged sidecar. So this job alone stays on GitHub-hosted
+    # runners; everything else runs on the Ryzen.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: provider
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: provider/go.mod
+          cache-dependency-path: provider/go.sum
+
+      - name: Integration tests (Debian 13 containers)
+        run: go test -count=1 -tags integration -run Debian13 ./transport/
+
   ci:
     # One always-run job for branch protection to require, so the jobs above can be renamed, split
     # into a matrix or made conditional without ever stranding a merge on a check that never reports.
     name: CI
-    needs: [test, go]
+    needs: [test, go, integration]
     if: always()
     runs-on: ryzen-linux-x64
     steps:
       - name: Result
         run: |
-          for result in '${{ needs.test.result }}' '${{ needs.go.result }}'; do
+          for result in '${{ needs.test.result }}' '${{ needs.go.result }}' '${{ needs.integration.result }}'; do
             case "$result" in
               success|skipped) ;;
               *) echo "a required job did not pass: $result" >&2; exit 1 ;;
