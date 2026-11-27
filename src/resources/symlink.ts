@@ -24,11 +24,29 @@ export interface SymlinkArgs {
   path: string;
   /** What it points at. Not required to exist — a link to a mount point that is not up yet is normal. */
   target: string;
+  /**
+   * Accept a launcher script in place of the link: a small `#!/bin/sh` file whose job is to
+   * `exec '<program>'`. Its program is read back as the target.
+   *
+   * For software that updates itself by rewriting its own launcher, and has changed from repointing
+   * a symlink to writing a script (T3 Code did, in November 2026). Without this the resource finds
+   * a regular file where its link was and stops the deployment, though nothing is wrong. Only a
+   * script that small and that shape is accepted; anything else is still refused as data.
+   */
+  acceptLauncherScript?: boolean;
 }
 
 interface SymlinkState {
   path: string;
   target: string;
+  acceptLauncherScript?: boolean;
+}
+
+/** The program a launcher script execs, or null when the text is not a launcher script. */
+export function launcherTarget(text: string): string | null {
+  if (!text.startsWith('#!') || text.length > 4096) return null;
+  const match = text.match(/^\s*exec\s+(?:'([^']+)'|"([^"]+)"|(\S+))/m);
+  return match ? (match[1] ?? match[2] ?? match[3] ?? null) : null;
 }
 
 /**
@@ -53,7 +71,7 @@ export function interpretSymlink(
  * Throws where something real is in the way, because that is a machine in a state the code did not
  * anticipate and every possible automatic answer to it is worse than stopping.
  */
-export async function readSymlink(host: Target, path: string): Promise<SymlinkState | null> {
+export async function readSymlink(host: Target, path: string, acceptLauncherScript = false): Promise<SymlinkState | null> {
   const quoted = shellQuote(path);
   const asked = await ask(host, escalate(host,
     // readlink succeeds for a broken link too, which is right: a link pointing at a filesystem that
@@ -67,6 +85,11 @@ export async function readSymlink(host: Target, path: string): Promise<SymlinkSt
   }
   const found = interpretSymlink(asked.code, asked.out);
   if (found.state === 'absent') return null;
+  if (found.state === 'occupied' && acceptLauncherScript && found.kind === 'regular file') {
+    const script = await ask(host, escalate(host, `head -c 4097 ${quoted}`));
+    const target = script.code === 0 ? launcherTarget(script.out) : null;
+    if (target) return { path, target };
+  }
   if (found.state === 'occupied') {
     throw new Error(
       `${path} on ${describe(host)} is a ${found.kind}, not a symlink. ` +
@@ -80,9 +103,11 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SymlinkArgs,
   const link = async (args: SymlinkState): Promise<void> => {
     // readSymlink throws on anything real in the way, which is the check that has to happen before
     // -f is allowed anywhere near the path
-    const current = await readSymlink(host, args.path);
+    const current = await readSymlink(host, args.path, args.acceptLauncherScript);
     // already pointing where it should: an update caused by a provider upgrade does nothing
     if (current && current.target === args.target) return;
+    // a launcher script the software wrote for itself is never replaced, only accepted
+    if (current && args.acceptLauncherScript) return;
     const parent = args.path.replace(/\/[^/]*$/, '') || '/';
     await must(host, escalate(host,
       `mkdir -p ${shellQuote(parent)} && ` +
@@ -100,7 +125,7 @@ function providerFor(host: Target): pulumi.dynamic.ResourceProvider<SymlinkArgs,
     },
 
     async read(id, state) {
-      const actual = await readSymlink(host, id);
+      const actual = await readSymlink(host, id, state?.acceptLauncherScript);
       if (!actual) return { id: undefined, props: undefined };
       return { id, props: { ...state, ...actual } };
     },

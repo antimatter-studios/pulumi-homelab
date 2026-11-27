@@ -20,6 +20,8 @@ breaking changes live.
 
 ### Added
 
+- **`Symlink` `acceptLauncherScript`** — accept a small `exec` launcher script the software wrote in
+  place of its link (T3 Code does, since 0.1.13), instead of refusing it as data.
 - **`User` `uid` and `group`** — pin the uid and primary group of an account whose files outlive the
   machine (a disk carried over records numbers, not names). An existing account with a different
   uid is refused rather than renumbered.
