@@ -13,6 +13,864 @@ import (
 
 var _ = internal.GetEnvOrDefault
 
+type AclEntryActual struct {
+	Effective string `pulumi:"effective"`
+	Name      string `pulumi:"name"`
+	Perms     string `pulumi:"perms"`
+	Type      string `pulumi:"type"`
+}
+
+type AclEntryActualOutput struct{ *pulumi.OutputState }
+
+func (AclEntryActualOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*AclEntryActual)(nil)).Elem()
+}
+
+func (o AclEntryActualOutput) ToAclEntryActualOutput() AclEntryActualOutput {
+	return o
+}
+
+func (o AclEntryActualOutput) ToAclEntryActualOutputWithContext(ctx context.Context) AclEntryActualOutput {
+	return o
+}
+
+func (o AclEntryActualOutput) Effective() pulumi.StringOutput {
+	return o.ApplyT(func(v AclEntryActual) string { return v.Effective }).(pulumi.StringOutput)
+}
+
+func (o AclEntryActualOutput) Name() pulumi.StringOutput {
+	return o.ApplyT(func(v AclEntryActual) string { return v.Name }).(pulumi.StringOutput)
+}
+
+func (o AclEntryActualOutput) Perms() pulumi.StringOutput {
+	return o.ApplyT(func(v AclEntryActual) string { return v.Perms }).(pulumi.StringOutput)
+}
+
+func (o AclEntryActualOutput) Type() pulumi.StringOutput {
+	return o.ApplyT(func(v AclEntryActual) string { return v.Type }).(pulumi.StringOutput)
+}
+
+type AclEntryActualArrayOutput struct{ *pulumi.OutputState }
+
+func (AclEntryActualArrayOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]AclEntryActual)(nil)).Elem()
+}
+
+func (o AclEntryActualArrayOutput) ToAclEntryActualArrayOutput() AclEntryActualArrayOutput {
+	return o
+}
+
+func (o AclEntryActualArrayOutput) ToAclEntryActualArrayOutputWithContext(ctx context.Context) AclEntryActualArrayOutput {
+	return o
+}
+
+func (o AclEntryActualArrayOutput) Index(i pulumi.IntInput) AclEntryActualOutput {
+	return pulumi.All(o, i).ApplyT(func(vs []interface{}) AclEntryActual {
+		return vs[0].([]AclEntryActual)[vs[1].(int)]
+	}).(AclEntryActualOutput)
+}
+
+type AclEntryArgs struct {
+	// Who the entry is for. Empty or absent for the owning entries, which only defaultEntries may set.
+	Name *string `pulumi:"name"`
+	// rwx, r-x, rw, an octal digit... settled to the three-letter form getfacl prints.
+	Perms string `pulumi:"perms"`
+	// user, group, mask or other. A mask is refused; user, group and other without a name are refused as access entries.
+	Type string `pulumi:"type"`
+}
+
+// AclEntryArgsInput is an input type that accepts AclEntryArgsArgs and AclEntryArgsOutput values.
+// You can construct a concrete instance of `AclEntryArgsInput` via:
+//
+//	AclEntryArgsArgs{...}
+type AclEntryArgsInput interface {
+	pulumi.Input
+
+	ToAclEntryArgsOutput() AclEntryArgsOutput
+	ToAclEntryArgsOutputWithContext(context.Context) AclEntryArgsOutput
+}
+
+type AclEntryArgsArgs struct {
+	// Who the entry is for. Empty or absent for the owning entries, which only defaultEntries may set.
+	Name pulumi.StringPtrInput `pulumi:"name"`
+	// rwx, r-x, rw, an octal digit... settled to the three-letter form getfacl prints.
+	Perms pulumi.StringInput `pulumi:"perms"`
+	// user, group, mask or other. A mask is refused; user, group and other without a name are refused as access entries.
+	Type pulumi.StringInput `pulumi:"type"`
+}
+
+func (AclEntryArgsArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*AclEntryArgs)(nil)).Elem()
+}
+
+func (i AclEntryArgsArgs) ToAclEntryArgsOutput() AclEntryArgsOutput {
+	return i.ToAclEntryArgsOutputWithContext(context.Background())
+}
+
+func (i AclEntryArgsArgs) ToAclEntryArgsOutputWithContext(ctx context.Context) AclEntryArgsOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(AclEntryArgsOutput)
+}
+
+// AclEntryArgsArrayInput is an input type that accepts AclEntryArgsArray and AclEntryArgsArrayOutput values.
+// You can construct a concrete instance of `AclEntryArgsArrayInput` via:
+//
+//	AclEntryArgsArray{ AclEntryArgsArgs{...} }
+type AclEntryArgsArrayInput interface {
+	pulumi.Input
+
+	ToAclEntryArgsArrayOutput() AclEntryArgsArrayOutput
+	ToAclEntryArgsArrayOutputWithContext(context.Context) AclEntryArgsArrayOutput
+}
+
+type AclEntryArgsArray []AclEntryArgsInput
+
+func (AclEntryArgsArray) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]AclEntryArgs)(nil)).Elem()
+}
+
+func (i AclEntryArgsArray) ToAclEntryArgsArrayOutput() AclEntryArgsArrayOutput {
+	return i.ToAclEntryArgsArrayOutputWithContext(context.Background())
+}
+
+func (i AclEntryArgsArray) ToAclEntryArgsArrayOutputWithContext(ctx context.Context) AclEntryArgsArrayOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(AclEntryArgsArrayOutput)
+}
+
+type AclEntryArgsOutput struct{ *pulumi.OutputState }
+
+func (AclEntryArgsOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*AclEntryArgs)(nil)).Elem()
+}
+
+func (o AclEntryArgsOutput) ToAclEntryArgsOutput() AclEntryArgsOutput {
+	return o
+}
+
+func (o AclEntryArgsOutput) ToAclEntryArgsOutputWithContext(ctx context.Context) AclEntryArgsOutput {
+	return o
+}
+
+// Who the entry is for. Empty or absent for the owning entries, which only defaultEntries may set.
+func (o AclEntryArgsOutput) Name() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v AclEntryArgs) *string { return v.Name }).(pulumi.StringPtrOutput)
+}
+
+// rwx, r-x, rw, an octal digit... settled to the three-letter form getfacl prints.
+func (o AclEntryArgsOutput) Perms() pulumi.StringOutput {
+	return o.ApplyT(func(v AclEntryArgs) string { return v.Perms }).(pulumi.StringOutput)
+}
+
+// user, group, mask or other. A mask is refused; user, group and other without a name are refused as access entries.
+func (o AclEntryArgsOutput) Type() pulumi.StringOutput {
+	return o.ApplyT(func(v AclEntryArgs) string { return v.Type }).(pulumi.StringOutput)
+}
+
+type AclEntryArgsArrayOutput struct{ *pulumi.OutputState }
+
+func (AclEntryArgsArrayOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]AclEntryArgs)(nil)).Elem()
+}
+
+func (o AclEntryArgsArrayOutput) ToAclEntryArgsArrayOutput() AclEntryArgsArrayOutput {
+	return o
+}
+
+func (o AclEntryArgsArrayOutput) ToAclEntryArgsArrayOutputWithContext(ctx context.Context) AclEntryArgsArrayOutput {
+	return o
+}
+
+func (o AclEntryArgsArrayOutput) Index(i pulumi.IntInput) AclEntryArgsOutput {
+	return pulumi.All(o, i).ApplyT(func(vs []interface{}) AclEntryArgs {
+		return vs[0].([]AclEntryArgs)[vs[1].(int)]
+	}).(AclEntryArgsOutput)
+}
+
+type AclEntrySettled struct {
+	Name  string `pulumi:"name"`
+	Perms string `pulumi:"perms"`
+	Type  string `pulumi:"type"`
+}
+
+type AclEntrySettledOutput struct{ *pulumi.OutputState }
+
+func (AclEntrySettledOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*AclEntrySettled)(nil)).Elem()
+}
+
+func (o AclEntrySettledOutput) ToAclEntrySettledOutput() AclEntrySettledOutput {
+	return o
+}
+
+func (o AclEntrySettledOutput) ToAclEntrySettledOutputWithContext(ctx context.Context) AclEntrySettledOutput {
+	return o
+}
+
+func (o AclEntrySettledOutput) Name() pulumi.StringOutput {
+	return o.ApplyT(func(v AclEntrySettled) string { return v.Name }).(pulumi.StringOutput)
+}
+
+func (o AclEntrySettledOutput) Perms() pulumi.StringOutput {
+	return o.ApplyT(func(v AclEntrySettled) string { return v.Perms }).(pulumi.StringOutput)
+}
+
+func (o AclEntrySettledOutput) Type() pulumi.StringOutput {
+	return o.ApplyT(func(v AclEntrySettled) string { return v.Type }).(pulumi.StringOutput)
+}
+
+type AclEntrySettledArrayOutput struct{ *pulumi.OutputState }
+
+func (AclEntrySettledArrayOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]AclEntrySettled)(nil)).Elem()
+}
+
+func (o AclEntrySettledArrayOutput) ToAclEntrySettledArrayOutput() AclEntrySettledArrayOutput {
+	return o
+}
+
+func (o AclEntrySettledArrayOutput) ToAclEntrySettledArrayOutputWithContext(ctx context.Context) AclEntrySettledArrayOutput {
+	return o
+}
+
+func (o AclEntrySettledArrayOutput) Index(i pulumi.IntInput) AclEntrySettledOutput {
+	return pulumi.All(o, i).ApplyT(func(vs []interface{}) AclEntrySettled {
+		return vs[0].([]AclEntrySettled)[vs[1].(int)]
+	}).(AclEntrySettledOutput)
+}
+
+type AclNormaliseArgs struct {
+	// The exact mode to find, as in 2755.
+	From string `pulumi:"from"`
+	// The group whose directories are corrected.
+	Group string `pulumi:"group"`
+	// Paths relative to the ACL's path that the walk never enters.
+	Ignore []string `pulumi:"ignore"`
+	// The mode to set instead, as in 2775.
+	To string `pulumi:"to"`
+}
+
+// AclNormaliseArgsInput is an input type that accepts AclNormaliseArgsArgs and AclNormaliseArgsOutput values.
+// You can construct a concrete instance of `AclNormaliseArgsInput` via:
+//
+//	AclNormaliseArgsArgs{...}
+type AclNormaliseArgsInput interface {
+	pulumi.Input
+
+	ToAclNormaliseArgsOutput() AclNormaliseArgsOutput
+	ToAclNormaliseArgsOutputWithContext(context.Context) AclNormaliseArgsOutput
+}
+
+type AclNormaliseArgsArgs struct {
+	// The exact mode to find, as in 2755.
+	From pulumi.StringInput `pulumi:"from"`
+	// The group whose directories are corrected.
+	Group pulumi.StringInput `pulumi:"group"`
+	// Paths relative to the ACL's path that the walk never enters.
+	Ignore pulumi.StringArrayInput `pulumi:"ignore"`
+	// The mode to set instead, as in 2775.
+	To pulumi.StringInput `pulumi:"to"`
+}
+
+func (AclNormaliseArgsArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*AclNormaliseArgs)(nil)).Elem()
+}
+
+func (i AclNormaliseArgsArgs) ToAclNormaliseArgsOutput() AclNormaliseArgsOutput {
+	return i.ToAclNormaliseArgsOutputWithContext(context.Background())
+}
+
+func (i AclNormaliseArgsArgs) ToAclNormaliseArgsOutputWithContext(ctx context.Context) AclNormaliseArgsOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(AclNormaliseArgsOutput)
+}
+
+func (i AclNormaliseArgsArgs) ToAclNormaliseArgsPtrOutput() AclNormaliseArgsPtrOutput {
+	return i.ToAclNormaliseArgsPtrOutputWithContext(context.Background())
+}
+
+func (i AclNormaliseArgsArgs) ToAclNormaliseArgsPtrOutputWithContext(ctx context.Context) AclNormaliseArgsPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(AclNormaliseArgsOutput).ToAclNormaliseArgsPtrOutputWithContext(ctx)
+}
+
+// AclNormaliseArgsPtrInput is an input type that accepts AclNormaliseArgsArgs, AclNormaliseArgsPtr and AclNormaliseArgsPtrOutput values.
+// You can construct a concrete instance of `AclNormaliseArgsPtrInput` via:
+//
+//	        AclNormaliseArgsArgs{...}
+//
+//	or:
+//
+//	        nil
+type AclNormaliseArgsPtrInput interface {
+	pulumi.Input
+
+	ToAclNormaliseArgsPtrOutput() AclNormaliseArgsPtrOutput
+	ToAclNormaliseArgsPtrOutputWithContext(context.Context) AclNormaliseArgsPtrOutput
+}
+
+type aclNormaliseArgsPtrType AclNormaliseArgsArgs
+
+func AclNormaliseArgsPtr(v *AclNormaliseArgsArgs) AclNormaliseArgsPtrInput {
+	return (*aclNormaliseArgsPtrType)(v)
+}
+
+func (*aclNormaliseArgsPtrType) ElementType() reflect.Type {
+	return reflect.TypeOf((**AclNormaliseArgs)(nil)).Elem()
+}
+
+func (i *aclNormaliseArgsPtrType) ToAclNormaliseArgsPtrOutput() AclNormaliseArgsPtrOutput {
+	return i.ToAclNormaliseArgsPtrOutputWithContext(context.Background())
+}
+
+func (i *aclNormaliseArgsPtrType) ToAclNormaliseArgsPtrOutputWithContext(ctx context.Context) AclNormaliseArgsPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(AclNormaliseArgsPtrOutput)
+}
+
+type AclNormaliseArgsOutput struct{ *pulumi.OutputState }
+
+func (AclNormaliseArgsOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*AclNormaliseArgs)(nil)).Elem()
+}
+
+func (o AclNormaliseArgsOutput) ToAclNormaliseArgsOutput() AclNormaliseArgsOutput {
+	return o
+}
+
+func (o AclNormaliseArgsOutput) ToAclNormaliseArgsOutputWithContext(ctx context.Context) AclNormaliseArgsOutput {
+	return o
+}
+
+func (o AclNormaliseArgsOutput) ToAclNormaliseArgsPtrOutput() AclNormaliseArgsPtrOutput {
+	return o.ToAclNormaliseArgsPtrOutputWithContext(context.Background())
+}
+
+func (o AclNormaliseArgsOutput) ToAclNormaliseArgsPtrOutputWithContext(ctx context.Context) AclNormaliseArgsPtrOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, v AclNormaliseArgs) *AclNormaliseArgs {
+		return &v
+	}).(AclNormaliseArgsPtrOutput)
+}
+
+// The exact mode to find, as in 2755.
+func (o AclNormaliseArgsOutput) From() pulumi.StringOutput {
+	return o.ApplyT(func(v AclNormaliseArgs) string { return v.From }).(pulumi.StringOutput)
+}
+
+// The group whose directories are corrected.
+func (o AclNormaliseArgsOutput) Group() pulumi.StringOutput {
+	return o.ApplyT(func(v AclNormaliseArgs) string { return v.Group }).(pulumi.StringOutput)
+}
+
+// Paths relative to the ACL's path that the walk never enters.
+func (o AclNormaliseArgsOutput) Ignore() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v AclNormaliseArgs) []string { return v.Ignore }).(pulumi.StringArrayOutput)
+}
+
+// The mode to set instead, as in 2775.
+func (o AclNormaliseArgsOutput) To() pulumi.StringOutput {
+	return o.ApplyT(func(v AclNormaliseArgs) string { return v.To }).(pulumi.StringOutput)
+}
+
+type AclNormaliseArgsPtrOutput struct{ *pulumi.OutputState }
+
+func (AclNormaliseArgsPtrOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((**AclNormaliseArgs)(nil)).Elem()
+}
+
+func (o AclNormaliseArgsPtrOutput) ToAclNormaliseArgsPtrOutput() AclNormaliseArgsPtrOutput {
+	return o
+}
+
+func (o AclNormaliseArgsPtrOutput) ToAclNormaliseArgsPtrOutputWithContext(ctx context.Context) AclNormaliseArgsPtrOutput {
+	return o
+}
+
+func (o AclNormaliseArgsPtrOutput) Elem() AclNormaliseArgsOutput {
+	return o.ApplyT(func(v *AclNormaliseArgs) AclNormaliseArgs {
+		if v != nil {
+			return *v
+		}
+		var ret AclNormaliseArgs
+		return ret
+	}).(AclNormaliseArgsOutput)
+}
+
+// The exact mode to find, as in 2755.
+func (o AclNormaliseArgsPtrOutput) From() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *AclNormaliseArgs) *string {
+		if v == nil {
+			return nil
+		}
+		return &v.From
+	}).(pulumi.StringPtrOutput)
+}
+
+// The group whose directories are corrected.
+func (o AclNormaliseArgsPtrOutput) Group() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *AclNormaliseArgs) *string {
+		if v == nil {
+			return nil
+		}
+		return &v.Group
+	}).(pulumi.StringPtrOutput)
+}
+
+// Paths relative to the ACL's path that the walk never enters.
+func (o AclNormaliseArgsPtrOutput) Ignore() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *AclNormaliseArgs) []string {
+		if v == nil {
+			return nil
+		}
+		return v.Ignore
+	}).(pulumi.StringArrayOutput)
+}
+
+// The mode to set instead, as in 2775.
+func (o AclNormaliseArgsPtrOutput) To() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *AclNormaliseArgs) *string {
+		if v == nil {
+			return nil
+		}
+		return &v.To
+	}).(pulumi.StringPtrOutput)
+}
+
+type BootSettings struct {
+	Arm_64bit              *bool    `pulumi:"arm_64bit"`
+	Arm_boost              *bool    `pulumi:"arm_boost"`
+	Audio                  *string  `pulumi:"audio"`
+	Auto_initramfs         *bool    `pulumi:"auto_initramfs"`
+	Camera_auto_detect     *bool    `pulumi:"camera_auto_detect"`
+	Disable_fw_kms_setup   *bool    `pulumi:"disable_fw_kms_setup"`
+	Disable_overscan       *bool    `pulumi:"disable_overscan"`
+	Disable_splash         *bool    `pulumi:"disable_splash"`
+	Display_auto_detect    *bool    `pulumi:"display_auto_detect"`
+	Display_rotate         *float64 `pulumi:"display_rotate"`
+	Gpu_mem                *float64 `pulumi:"gpu_mem"`
+	Hdmi_drive             *float64 `pulumi:"hdmi_drive"`
+	Hdmi_force_hotplug     *bool    `pulumi:"hdmi_force_hotplug"`
+	Hdmi_group             *float64 `pulumi:"hdmi_group"`
+	Hdmi_mode              *float64 `pulumi:"hdmi_mode"`
+	Max_framebuffers       *float64 `pulumi:"max_framebuffers"`
+	Otg_mode               *bool    `pulumi:"otg_mode"`
+	Sdram_freq             *float64 `pulumi:"sdram_freq"`
+	Usb_max_current_enable *bool    `pulumi:"usb_max_current_enable"`
+}
+
+// BootSettingsInput is an input type that accepts BootSettingsArgs and BootSettingsOutput values.
+// You can construct a concrete instance of `BootSettingsInput` via:
+//
+//	BootSettingsArgs{...}
+type BootSettingsInput interface {
+	pulumi.Input
+
+	ToBootSettingsOutput() BootSettingsOutput
+	ToBootSettingsOutputWithContext(context.Context) BootSettingsOutput
+}
+
+type BootSettingsArgs struct {
+	Arm_64bit              pulumi.BoolPtrInput    `pulumi:"arm_64bit"`
+	Arm_boost              pulumi.BoolPtrInput    `pulumi:"arm_boost"`
+	Audio                  pulumi.StringPtrInput  `pulumi:"audio"`
+	Auto_initramfs         pulumi.BoolPtrInput    `pulumi:"auto_initramfs"`
+	Camera_auto_detect     pulumi.BoolPtrInput    `pulumi:"camera_auto_detect"`
+	Disable_fw_kms_setup   pulumi.BoolPtrInput    `pulumi:"disable_fw_kms_setup"`
+	Disable_overscan       pulumi.BoolPtrInput    `pulumi:"disable_overscan"`
+	Disable_splash         pulumi.BoolPtrInput    `pulumi:"disable_splash"`
+	Display_auto_detect    pulumi.BoolPtrInput    `pulumi:"display_auto_detect"`
+	Display_rotate         pulumi.Float64PtrInput `pulumi:"display_rotate"`
+	Gpu_mem                pulumi.Float64PtrInput `pulumi:"gpu_mem"`
+	Hdmi_drive             pulumi.Float64PtrInput `pulumi:"hdmi_drive"`
+	Hdmi_force_hotplug     pulumi.BoolPtrInput    `pulumi:"hdmi_force_hotplug"`
+	Hdmi_group             pulumi.Float64PtrInput `pulumi:"hdmi_group"`
+	Hdmi_mode              pulumi.Float64PtrInput `pulumi:"hdmi_mode"`
+	Max_framebuffers       pulumi.Float64PtrInput `pulumi:"max_framebuffers"`
+	Otg_mode               pulumi.BoolPtrInput    `pulumi:"otg_mode"`
+	Sdram_freq             pulumi.Float64PtrInput `pulumi:"sdram_freq"`
+	Usb_max_current_enable pulumi.BoolPtrInput    `pulumi:"usb_max_current_enable"`
+}
+
+func (BootSettingsArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*BootSettings)(nil)).Elem()
+}
+
+func (i BootSettingsArgs) ToBootSettingsOutput() BootSettingsOutput {
+	return i.ToBootSettingsOutputWithContext(context.Background())
+}
+
+func (i BootSettingsArgs) ToBootSettingsOutputWithContext(ctx context.Context) BootSettingsOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(BootSettingsOutput)
+}
+
+func (i BootSettingsArgs) ToBootSettingsPtrOutput() BootSettingsPtrOutput {
+	return i.ToBootSettingsPtrOutputWithContext(context.Background())
+}
+
+func (i BootSettingsArgs) ToBootSettingsPtrOutputWithContext(ctx context.Context) BootSettingsPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(BootSettingsOutput).ToBootSettingsPtrOutputWithContext(ctx)
+}
+
+// BootSettingsPtrInput is an input type that accepts BootSettingsArgs, BootSettingsPtr and BootSettingsPtrOutput values.
+// You can construct a concrete instance of `BootSettingsPtrInput` via:
+//
+//	        BootSettingsArgs{...}
+//
+//	or:
+//
+//	        nil
+type BootSettingsPtrInput interface {
+	pulumi.Input
+
+	ToBootSettingsPtrOutput() BootSettingsPtrOutput
+	ToBootSettingsPtrOutputWithContext(context.Context) BootSettingsPtrOutput
+}
+
+type bootSettingsPtrType BootSettingsArgs
+
+func BootSettingsPtr(v *BootSettingsArgs) BootSettingsPtrInput {
+	return (*bootSettingsPtrType)(v)
+}
+
+func (*bootSettingsPtrType) ElementType() reflect.Type {
+	return reflect.TypeOf((**BootSettings)(nil)).Elem()
+}
+
+func (i *bootSettingsPtrType) ToBootSettingsPtrOutput() BootSettingsPtrOutput {
+	return i.ToBootSettingsPtrOutputWithContext(context.Background())
+}
+
+func (i *bootSettingsPtrType) ToBootSettingsPtrOutputWithContext(ctx context.Context) BootSettingsPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(BootSettingsPtrOutput)
+}
+
+type BootSettingsOutput struct{ *pulumi.OutputState }
+
+func (BootSettingsOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*BootSettings)(nil)).Elem()
+}
+
+func (o BootSettingsOutput) ToBootSettingsOutput() BootSettingsOutput {
+	return o
+}
+
+func (o BootSettingsOutput) ToBootSettingsOutputWithContext(ctx context.Context) BootSettingsOutput {
+	return o
+}
+
+func (o BootSettingsOutput) ToBootSettingsPtrOutput() BootSettingsPtrOutput {
+	return o.ToBootSettingsPtrOutputWithContext(context.Background())
+}
+
+func (o BootSettingsOutput) ToBootSettingsPtrOutputWithContext(ctx context.Context) BootSettingsPtrOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, v BootSettings) *BootSettings {
+		return &v
+	}).(BootSettingsPtrOutput)
+}
+
+func (o BootSettingsOutput) Arm_64bit() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Arm_64bit }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Arm_boost() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Arm_boost }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Audio() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v BootSettings) *string { return v.Audio }).(pulumi.StringPtrOutput)
+}
+
+func (o BootSettingsOutput) Auto_initramfs() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Auto_initramfs }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Camera_auto_detect() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Camera_auto_detect }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Disable_fw_kms_setup() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Disable_fw_kms_setup }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Disable_overscan() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Disable_overscan }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Disable_splash() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Disable_splash }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Display_auto_detect() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Display_auto_detect }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Display_rotate() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v BootSettings) *float64 { return v.Display_rotate }).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsOutput) Gpu_mem() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v BootSettings) *float64 { return v.Gpu_mem }).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsOutput) Hdmi_drive() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v BootSettings) *float64 { return v.Hdmi_drive }).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsOutput) Hdmi_force_hotplug() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Hdmi_force_hotplug }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Hdmi_group() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v BootSettings) *float64 { return v.Hdmi_group }).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsOutput) Hdmi_mode() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v BootSettings) *float64 { return v.Hdmi_mode }).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsOutput) Max_framebuffers() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v BootSettings) *float64 { return v.Max_framebuffers }).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsOutput) Otg_mode() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Otg_mode }).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsOutput) Sdram_freq() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v BootSettings) *float64 { return v.Sdram_freq }).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsOutput) Usb_max_current_enable() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v BootSettings) *bool { return v.Usb_max_current_enable }).(pulumi.BoolPtrOutput)
+}
+
+type BootSettingsPtrOutput struct{ *pulumi.OutputState }
+
+func (BootSettingsPtrOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((**BootSettings)(nil)).Elem()
+}
+
+func (o BootSettingsPtrOutput) ToBootSettingsPtrOutput() BootSettingsPtrOutput {
+	return o
+}
+
+func (o BootSettingsPtrOutput) ToBootSettingsPtrOutputWithContext(ctx context.Context) BootSettingsPtrOutput {
+	return o
+}
+
+func (o BootSettingsPtrOutput) Elem() BootSettingsOutput {
+	return o.ApplyT(func(v *BootSettings) BootSettings {
+		if v != nil {
+			return *v
+		}
+		var ret BootSettings
+		return ret
+	}).(BootSettingsOutput)
+}
+
+func (o BootSettingsPtrOutput) Arm_64bit() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Arm_64bit
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Arm_boost() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Arm_boost
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Audio() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Audio
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Auto_initramfs() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Auto_initramfs
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Camera_auto_detect() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Camera_auto_detect
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Disable_fw_kms_setup() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Disable_fw_kms_setup
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Disable_overscan() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Disable_overscan
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Disable_splash() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Disable_splash
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Display_auto_detect() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Display_auto_detect
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Display_rotate() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *BootSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.Display_rotate
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Gpu_mem() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *BootSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.Gpu_mem
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Hdmi_drive() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *BootSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.Hdmi_drive
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Hdmi_force_hotplug() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Hdmi_force_hotplug
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Hdmi_group() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *BootSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.Hdmi_group
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Hdmi_mode() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *BootSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.Hdmi_mode
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Max_framebuffers() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *BootSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.Max_framebuffers
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Otg_mode() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Otg_mode
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Sdram_freq() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *BootSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.Sdram_freq
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o BootSettingsPtrOutput) Usb_max_current_enable() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *BootSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Usb_max_current_enable
+	}).(pulumi.BoolPtrOutput)
+}
+
+type HostnameEffective struct {
+	HostsLine string `pulumi:"hostsLine"`
+	NamesHost bool   `pulumi:"namesHost"`
+	Static    string `pulumi:"static"`
+	Transient string `pulumi:"transient"`
+}
+
+type HostnameEffectiveOutput struct{ *pulumi.OutputState }
+
+func (HostnameEffectiveOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*HostnameEffective)(nil)).Elem()
+}
+
+func (o HostnameEffectiveOutput) ToHostnameEffectiveOutput() HostnameEffectiveOutput {
+	return o
+}
+
+func (o HostnameEffectiveOutput) ToHostnameEffectiveOutputWithContext(ctx context.Context) HostnameEffectiveOutput {
+	return o
+}
+
+func (o HostnameEffectiveOutput) HostsLine() pulumi.StringOutput {
+	return o.ApplyT(func(v HostnameEffective) string { return v.HostsLine }).(pulumi.StringOutput)
+}
+
+func (o HostnameEffectiveOutput) NamesHost() pulumi.BoolOutput {
+	return o.ApplyT(func(v HostnameEffective) bool { return v.NamesHost }).(pulumi.BoolOutput)
+}
+
+func (o HostnameEffectiveOutput) Static() pulumi.StringOutput {
+	return o.ApplyT(func(v HostnameEffective) string { return v.Static }).(pulumi.StringOutput)
+}
+
+func (o HostnameEffectiveOutput) Transient() pulumi.StringOutput {
+	return o.ApplyT(func(v HostnameEffective) string { return v.Transient }).(pulumi.StringOutput)
+}
+
 type Jump struct {
 	Address  string   `pulumi:"address"`
 	HostKeys []string `pulumi:"hostKeys"`
@@ -125,9 +983,1099 @@ func (o JumpArrayOutput) Index(i pulumi.IntInput) JumpOutput {
 	}).(JumpOutput)
 }
 
+type Source struct {
+	// For exec and execFile: the program and its arguments, run without a shell. execFile needs a {} somewhere in it.
+	Argv []string `pulumi:"argv"`
+	// exec (the material is stdout), execFile (the material is what the command wrote to {}) or file (a file on the deploying machine).
+	Kind string `pulumi:"kind"`
+	// For file: the path on the deploying machine.
+	Path *string `pulumi:"path"`
+}
+
+// SourceInput is an input type that accepts SourceArgs and SourceOutput values.
+// You can construct a concrete instance of `SourceInput` via:
+//
+//	SourceArgs{...}
+type SourceInput interface {
+	pulumi.Input
+
+	ToSourceOutput() SourceOutput
+	ToSourceOutputWithContext(context.Context) SourceOutput
+}
+
+type SourceArgs struct {
+	// For exec and execFile: the program and its arguments, run without a shell. execFile needs a {} somewhere in it.
+	Argv pulumi.StringArrayInput `pulumi:"argv"`
+	// exec (the material is stdout), execFile (the material is what the command wrote to {}) or file (a file on the deploying machine).
+	Kind pulumi.StringInput `pulumi:"kind"`
+	// For file: the path on the deploying machine.
+	Path pulumi.StringPtrInput `pulumi:"path"`
+}
+
+func (SourceArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*Source)(nil)).Elem()
+}
+
+func (i SourceArgs) ToSourceOutput() SourceOutput {
+	return i.ToSourceOutputWithContext(context.Background())
+}
+
+func (i SourceArgs) ToSourceOutputWithContext(ctx context.Context) SourceOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(SourceOutput)
+}
+
+type SourceOutput struct{ *pulumi.OutputState }
+
+func (SourceOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*Source)(nil)).Elem()
+}
+
+func (o SourceOutput) ToSourceOutput() SourceOutput {
+	return o
+}
+
+func (o SourceOutput) ToSourceOutputWithContext(ctx context.Context) SourceOutput {
+	return o
+}
+
+// For exec and execFile: the program and its arguments, run without a shell. execFile needs a {} somewhere in it.
+func (o SourceOutput) Argv() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v Source) []string { return v.Argv }).(pulumi.StringArrayOutput)
+}
+
+// exec (the material is stdout), execFile (the material is what the command wrote to {}) or file (a file on the deploying machine).
+func (o SourceOutput) Kind() pulumi.StringOutput {
+	return o.ApplyT(func(v Source) string { return v.Kind }).(pulumi.StringOutput)
+}
+
+// For file: the path on the deploying machine.
+func (o SourceOutput) Path() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v Source) *string { return v.Path }).(pulumi.StringPtrOutput)
+}
+
+type SshdMatch struct {
+	Address      *string `pulumi:"Address"`
+	Group        *string `pulumi:"Group"`
+	Host         *string `pulumi:"Host"`
+	LocalAddress *string `pulumi:"LocalAddress"`
+	LocalPort    *string `pulumi:"LocalPort"`
+	User         *string `pulumi:"User"`
+}
+
+// SshdMatchInput is an input type that accepts SshdMatchArgs and SshdMatchOutput values.
+// You can construct a concrete instance of `SshdMatchInput` via:
+//
+//	SshdMatchArgs{...}
+type SshdMatchInput interface {
+	pulumi.Input
+
+	ToSshdMatchOutput() SshdMatchOutput
+	ToSshdMatchOutputWithContext(context.Context) SshdMatchOutput
+}
+
+type SshdMatchArgs struct {
+	Address      pulumi.StringPtrInput `pulumi:"Address"`
+	Group        pulumi.StringPtrInput `pulumi:"Group"`
+	Host         pulumi.StringPtrInput `pulumi:"Host"`
+	LocalAddress pulumi.StringPtrInput `pulumi:"LocalAddress"`
+	LocalPort    pulumi.StringPtrInput `pulumi:"LocalPort"`
+	User         pulumi.StringPtrInput `pulumi:"User"`
+}
+
+func (SshdMatchArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*SshdMatch)(nil)).Elem()
+}
+
+func (i SshdMatchArgs) ToSshdMatchOutput() SshdMatchOutput {
+	return i.ToSshdMatchOutputWithContext(context.Background())
+}
+
+func (i SshdMatchArgs) ToSshdMatchOutputWithContext(ctx context.Context) SshdMatchOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(SshdMatchOutput)
+}
+
+func (i SshdMatchArgs) ToSshdMatchPtrOutput() SshdMatchPtrOutput {
+	return i.ToSshdMatchPtrOutputWithContext(context.Background())
+}
+
+func (i SshdMatchArgs) ToSshdMatchPtrOutputWithContext(ctx context.Context) SshdMatchPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(SshdMatchOutput).ToSshdMatchPtrOutputWithContext(ctx)
+}
+
+// SshdMatchPtrInput is an input type that accepts SshdMatchArgs, SshdMatchPtr and SshdMatchPtrOutput values.
+// You can construct a concrete instance of `SshdMatchPtrInput` via:
+//
+//	        SshdMatchArgs{...}
+//
+//	or:
+//
+//	        nil
+type SshdMatchPtrInput interface {
+	pulumi.Input
+
+	ToSshdMatchPtrOutput() SshdMatchPtrOutput
+	ToSshdMatchPtrOutputWithContext(context.Context) SshdMatchPtrOutput
+}
+
+type sshdMatchPtrType SshdMatchArgs
+
+func SshdMatchPtr(v *SshdMatchArgs) SshdMatchPtrInput {
+	return (*sshdMatchPtrType)(v)
+}
+
+func (*sshdMatchPtrType) ElementType() reflect.Type {
+	return reflect.TypeOf((**SshdMatch)(nil)).Elem()
+}
+
+func (i *sshdMatchPtrType) ToSshdMatchPtrOutput() SshdMatchPtrOutput {
+	return i.ToSshdMatchPtrOutputWithContext(context.Background())
+}
+
+func (i *sshdMatchPtrType) ToSshdMatchPtrOutputWithContext(ctx context.Context) SshdMatchPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(SshdMatchPtrOutput)
+}
+
+type SshdMatchOutput struct{ *pulumi.OutputState }
+
+func (SshdMatchOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*SshdMatch)(nil)).Elem()
+}
+
+func (o SshdMatchOutput) ToSshdMatchOutput() SshdMatchOutput {
+	return o
+}
+
+func (o SshdMatchOutput) ToSshdMatchOutputWithContext(ctx context.Context) SshdMatchOutput {
+	return o
+}
+
+func (o SshdMatchOutput) ToSshdMatchPtrOutput() SshdMatchPtrOutput {
+	return o.ToSshdMatchPtrOutputWithContext(context.Background())
+}
+
+func (o SshdMatchOutput) ToSshdMatchPtrOutputWithContext(ctx context.Context) SshdMatchPtrOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, v SshdMatch) *SshdMatch {
+		return &v
+	}).(SshdMatchPtrOutput)
+}
+
+func (o SshdMatchOutput) Address() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdMatch) *string { return v.Address }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchOutput) Group() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdMatch) *string { return v.Group }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchOutput) Host() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdMatch) *string { return v.Host }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchOutput) LocalAddress() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdMatch) *string { return v.LocalAddress }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchOutput) LocalPort() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdMatch) *string { return v.LocalPort }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchOutput) User() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdMatch) *string { return v.User }).(pulumi.StringPtrOutput)
+}
+
+type SshdMatchPtrOutput struct{ *pulumi.OutputState }
+
+func (SshdMatchPtrOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((**SshdMatch)(nil)).Elem()
+}
+
+func (o SshdMatchPtrOutput) ToSshdMatchPtrOutput() SshdMatchPtrOutput {
+	return o
+}
+
+func (o SshdMatchPtrOutput) ToSshdMatchPtrOutputWithContext(ctx context.Context) SshdMatchPtrOutput {
+	return o
+}
+
+func (o SshdMatchPtrOutput) Elem() SshdMatchOutput {
+	return o.ApplyT(func(v *SshdMatch) SshdMatch {
+		if v != nil {
+			return *v
+		}
+		var ret SshdMatch
+		return ret
+	}).(SshdMatchOutput)
+}
+
+func (o SshdMatchPtrOutput) Address() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdMatch) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Address
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchPtrOutput) Group() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdMatch) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Group
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchPtrOutput) Host() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdMatch) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Host
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchPtrOutput) LocalAddress() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdMatch) *string {
+		if v == nil {
+			return nil
+		}
+		return v.LocalAddress
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchPtrOutput) LocalPort() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdMatch) *string {
+		if v == nil {
+			return nil
+		}
+		return v.LocalPort
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdMatchPtrOutput) User() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdMatch) *string {
+		if v == nil {
+			return nil
+		}
+		return v.User
+	}).(pulumi.StringPtrOutput)
+}
+
+type SshdSettings struct {
+	AllowAgentForwarding         *bool    `pulumi:"allowAgentForwarding"`
+	AllowGroups                  []string `pulumi:"allowGroups"`
+	AllowTcpForwarding           *string  `pulumi:"allowTcpForwarding"`
+	AllowUsers                   []string `pulumi:"allowUsers"`
+	Ciphers                      []string `pulumi:"ciphers"`
+	ClientAliveCountMax          *float64 `pulumi:"clientAliveCountMax"`
+	ClientAliveInterval          *float64 `pulumi:"clientAliveInterval"`
+	Compression                  *string  `pulumi:"compression"`
+	DenyGroups                   []string `pulumi:"denyGroups"`
+	DenyUsers                    []string `pulumi:"denyUsers"`
+	GatewayPorts                 *string  `pulumi:"gatewayPorts"`
+	IgnoreRhosts                 *bool    `pulumi:"ignoreRhosts"`
+	KbdInteractiveAuthentication *bool    `pulumi:"kbdInteractiveAuthentication"`
+	KexAlgorithms                []string `pulumi:"kexAlgorithms"`
+	ListenAddress                []string `pulumi:"listenAddress"`
+	LogLevel                     *string  `pulumi:"logLevel"`
+	LoginGraceTime               *float64 `pulumi:"loginGraceTime"`
+	Macs                         []string `pulumi:"macs"`
+	MaxAuthTries                 *float64 `pulumi:"maxAuthTries"`
+	MaxSessions                  *float64 `pulumi:"maxSessions"`
+	MaxStartups                  *string  `pulumi:"maxStartups"`
+	PasswordAuthentication       *bool    `pulumi:"passwordAuthentication"`
+	PermitEmptyPasswords         *bool    `pulumi:"permitEmptyPasswords"`
+	PermitRootLogin              *string  `pulumi:"permitRootLogin"`
+	Port                         *float64 `pulumi:"port"`
+	PrintMotd                    *bool    `pulumi:"printMotd"`
+	PubkeyAuthentication         *bool    `pulumi:"pubkeyAuthentication"`
+	StrictModes                  *bool    `pulumi:"strictModes"`
+	TcpKeepAlive                 *bool    `pulumi:"tcpKeepAlive"`
+	UseDNS                       *bool    `pulumi:"useDNS"`
+	UsePAM                       *bool    `pulumi:"usePAM"`
+	X11Forwarding                *bool    `pulumi:"x11Forwarding"`
+}
+
+// SshdSettingsInput is an input type that accepts SshdSettingsArgs and SshdSettingsOutput values.
+// You can construct a concrete instance of `SshdSettingsInput` via:
+//
+//	SshdSettingsArgs{...}
+type SshdSettingsInput interface {
+	pulumi.Input
+
+	ToSshdSettingsOutput() SshdSettingsOutput
+	ToSshdSettingsOutputWithContext(context.Context) SshdSettingsOutput
+}
+
+type SshdSettingsArgs struct {
+	AllowAgentForwarding         pulumi.BoolPtrInput     `pulumi:"allowAgentForwarding"`
+	AllowGroups                  pulumi.StringArrayInput `pulumi:"allowGroups"`
+	AllowTcpForwarding           pulumi.StringPtrInput   `pulumi:"allowTcpForwarding"`
+	AllowUsers                   pulumi.StringArrayInput `pulumi:"allowUsers"`
+	Ciphers                      pulumi.StringArrayInput `pulumi:"ciphers"`
+	ClientAliveCountMax          pulumi.Float64PtrInput  `pulumi:"clientAliveCountMax"`
+	ClientAliveInterval          pulumi.Float64PtrInput  `pulumi:"clientAliveInterval"`
+	Compression                  pulumi.StringPtrInput   `pulumi:"compression"`
+	DenyGroups                   pulumi.StringArrayInput `pulumi:"denyGroups"`
+	DenyUsers                    pulumi.StringArrayInput `pulumi:"denyUsers"`
+	GatewayPorts                 pulumi.StringPtrInput   `pulumi:"gatewayPorts"`
+	IgnoreRhosts                 pulumi.BoolPtrInput     `pulumi:"ignoreRhosts"`
+	KbdInteractiveAuthentication pulumi.BoolPtrInput     `pulumi:"kbdInteractiveAuthentication"`
+	KexAlgorithms                pulumi.StringArrayInput `pulumi:"kexAlgorithms"`
+	ListenAddress                pulumi.StringArrayInput `pulumi:"listenAddress"`
+	LogLevel                     pulumi.StringPtrInput   `pulumi:"logLevel"`
+	LoginGraceTime               pulumi.Float64PtrInput  `pulumi:"loginGraceTime"`
+	Macs                         pulumi.StringArrayInput `pulumi:"macs"`
+	MaxAuthTries                 pulumi.Float64PtrInput  `pulumi:"maxAuthTries"`
+	MaxSessions                  pulumi.Float64PtrInput  `pulumi:"maxSessions"`
+	MaxStartups                  pulumi.StringPtrInput   `pulumi:"maxStartups"`
+	PasswordAuthentication       pulumi.BoolPtrInput     `pulumi:"passwordAuthentication"`
+	PermitEmptyPasswords         pulumi.BoolPtrInput     `pulumi:"permitEmptyPasswords"`
+	PermitRootLogin              pulumi.StringPtrInput   `pulumi:"permitRootLogin"`
+	Port                         pulumi.Float64PtrInput  `pulumi:"port"`
+	PrintMotd                    pulumi.BoolPtrInput     `pulumi:"printMotd"`
+	PubkeyAuthentication         pulumi.BoolPtrInput     `pulumi:"pubkeyAuthentication"`
+	StrictModes                  pulumi.BoolPtrInput     `pulumi:"strictModes"`
+	TcpKeepAlive                 pulumi.BoolPtrInput     `pulumi:"tcpKeepAlive"`
+	UseDNS                       pulumi.BoolPtrInput     `pulumi:"useDNS"`
+	UsePAM                       pulumi.BoolPtrInput     `pulumi:"usePAM"`
+	X11Forwarding                pulumi.BoolPtrInput     `pulumi:"x11Forwarding"`
+}
+
+func (SshdSettingsArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*SshdSettings)(nil)).Elem()
+}
+
+func (i SshdSettingsArgs) ToSshdSettingsOutput() SshdSettingsOutput {
+	return i.ToSshdSettingsOutputWithContext(context.Background())
+}
+
+func (i SshdSettingsArgs) ToSshdSettingsOutputWithContext(ctx context.Context) SshdSettingsOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(SshdSettingsOutput)
+}
+
+func (i SshdSettingsArgs) ToSshdSettingsPtrOutput() SshdSettingsPtrOutput {
+	return i.ToSshdSettingsPtrOutputWithContext(context.Background())
+}
+
+func (i SshdSettingsArgs) ToSshdSettingsPtrOutputWithContext(ctx context.Context) SshdSettingsPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(SshdSettingsOutput).ToSshdSettingsPtrOutputWithContext(ctx)
+}
+
+// SshdSettingsPtrInput is an input type that accepts SshdSettingsArgs, SshdSettingsPtr and SshdSettingsPtrOutput values.
+// You can construct a concrete instance of `SshdSettingsPtrInput` via:
+//
+//	        SshdSettingsArgs{...}
+//
+//	or:
+//
+//	        nil
+type SshdSettingsPtrInput interface {
+	pulumi.Input
+
+	ToSshdSettingsPtrOutput() SshdSettingsPtrOutput
+	ToSshdSettingsPtrOutputWithContext(context.Context) SshdSettingsPtrOutput
+}
+
+type sshdSettingsPtrType SshdSettingsArgs
+
+func SshdSettingsPtr(v *SshdSettingsArgs) SshdSettingsPtrInput {
+	return (*sshdSettingsPtrType)(v)
+}
+
+func (*sshdSettingsPtrType) ElementType() reflect.Type {
+	return reflect.TypeOf((**SshdSettings)(nil)).Elem()
+}
+
+func (i *sshdSettingsPtrType) ToSshdSettingsPtrOutput() SshdSettingsPtrOutput {
+	return i.ToSshdSettingsPtrOutputWithContext(context.Background())
+}
+
+func (i *sshdSettingsPtrType) ToSshdSettingsPtrOutputWithContext(ctx context.Context) SshdSettingsPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(SshdSettingsPtrOutput)
+}
+
+type SshdSettingsOutput struct{ *pulumi.OutputState }
+
+func (SshdSettingsOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*SshdSettings)(nil)).Elem()
+}
+
+func (o SshdSettingsOutput) ToSshdSettingsOutput() SshdSettingsOutput {
+	return o
+}
+
+func (o SshdSettingsOutput) ToSshdSettingsOutputWithContext(ctx context.Context) SshdSettingsOutput {
+	return o
+}
+
+func (o SshdSettingsOutput) ToSshdSettingsPtrOutput() SshdSettingsPtrOutput {
+	return o.ToSshdSettingsPtrOutputWithContext(context.Background())
+}
+
+func (o SshdSettingsOutput) ToSshdSettingsPtrOutputWithContext(ctx context.Context) SshdSettingsPtrOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, v SshdSettings) *SshdSettings {
+		return &v
+	}).(SshdSettingsPtrOutput)
+}
+
+func (o SshdSettingsOutput) AllowAgentForwarding() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.AllowAgentForwarding }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) AllowGroups() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v SshdSettings) []string { return v.AllowGroups }).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsOutput) AllowTcpForwarding() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *string { return v.AllowTcpForwarding }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsOutput) AllowUsers() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v SshdSettings) []string { return v.AllowUsers }).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsOutput) Ciphers() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v SshdSettings) []string { return v.Ciphers }).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsOutput) ClientAliveCountMax() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v SshdSettings) *float64 { return v.ClientAliveCountMax }).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsOutput) ClientAliveInterval() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v SshdSettings) *float64 { return v.ClientAliveInterval }).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsOutput) Compression() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *string { return v.Compression }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsOutput) DenyGroups() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v SshdSettings) []string { return v.DenyGroups }).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsOutput) DenyUsers() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v SshdSettings) []string { return v.DenyUsers }).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsOutput) GatewayPorts() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *string { return v.GatewayPorts }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsOutput) IgnoreRhosts() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.IgnoreRhosts }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) KbdInteractiveAuthentication() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.KbdInteractiveAuthentication }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) KexAlgorithms() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v SshdSettings) []string { return v.KexAlgorithms }).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsOutput) ListenAddress() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v SshdSettings) []string { return v.ListenAddress }).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsOutput) LogLevel() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *string { return v.LogLevel }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsOutput) LoginGraceTime() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v SshdSettings) *float64 { return v.LoginGraceTime }).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsOutput) Macs() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v SshdSettings) []string { return v.Macs }).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsOutput) MaxAuthTries() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v SshdSettings) *float64 { return v.MaxAuthTries }).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsOutput) MaxSessions() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v SshdSettings) *float64 { return v.MaxSessions }).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsOutput) MaxStartups() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *string { return v.MaxStartups }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsOutput) PasswordAuthentication() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.PasswordAuthentication }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) PermitEmptyPasswords() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.PermitEmptyPasswords }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) PermitRootLogin() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *string { return v.PermitRootLogin }).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsOutput) Port() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v SshdSettings) *float64 { return v.Port }).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsOutput) PrintMotd() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.PrintMotd }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) PubkeyAuthentication() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.PubkeyAuthentication }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) StrictModes() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.StrictModes }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) TcpKeepAlive() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.TcpKeepAlive }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) UseDNS() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.UseDNS }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) UsePAM() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.UsePAM }).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsOutput) X11Forwarding() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v SshdSettings) *bool { return v.X11Forwarding }).(pulumi.BoolPtrOutput)
+}
+
+type SshdSettingsPtrOutput struct{ *pulumi.OutputState }
+
+func (SshdSettingsPtrOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((**SshdSettings)(nil)).Elem()
+}
+
+func (o SshdSettingsPtrOutput) ToSshdSettingsPtrOutput() SshdSettingsPtrOutput {
+	return o
+}
+
+func (o SshdSettingsPtrOutput) ToSshdSettingsPtrOutputWithContext(ctx context.Context) SshdSettingsPtrOutput {
+	return o
+}
+
+func (o SshdSettingsPtrOutput) Elem() SshdSettingsOutput {
+	return o.ApplyT(func(v *SshdSettings) SshdSettings {
+		if v != nil {
+			return *v
+		}
+		var ret SshdSettings
+		return ret
+	}).(SshdSettingsOutput)
+}
+
+func (o SshdSettingsPtrOutput) AllowAgentForwarding() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.AllowAgentForwarding
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) AllowGroups() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *SshdSettings) []string {
+		if v == nil {
+			return nil
+		}
+		return v.AllowGroups
+	}).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsPtrOutput) AllowTcpForwarding() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *string {
+		if v == nil {
+			return nil
+		}
+		return v.AllowTcpForwarding
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) AllowUsers() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *SshdSettings) []string {
+		if v == nil {
+			return nil
+		}
+		return v.AllowUsers
+	}).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsPtrOutput) Ciphers() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *SshdSettings) []string {
+		if v == nil {
+			return nil
+		}
+		return v.Ciphers
+	}).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsPtrOutput) ClientAliveCountMax() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.ClientAliveCountMax
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) ClientAliveInterval() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.ClientAliveInterval
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) Compression() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Compression
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) DenyGroups() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *SshdSettings) []string {
+		if v == nil {
+			return nil
+		}
+		return v.DenyGroups
+	}).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsPtrOutput) DenyUsers() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *SshdSettings) []string {
+		if v == nil {
+			return nil
+		}
+		return v.DenyUsers
+	}).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsPtrOutput) GatewayPorts() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *string {
+		if v == nil {
+			return nil
+		}
+		return v.GatewayPorts
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) IgnoreRhosts() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.IgnoreRhosts
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) KbdInteractiveAuthentication() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.KbdInteractiveAuthentication
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) KexAlgorithms() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *SshdSettings) []string {
+		if v == nil {
+			return nil
+		}
+		return v.KexAlgorithms
+	}).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsPtrOutput) ListenAddress() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *SshdSettings) []string {
+		if v == nil {
+			return nil
+		}
+		return v.ListenAddress
+	}).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsPtrOutput) LogLevel() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *string {
+		if v == nil {
+			return nil
+		}
+		return v.LogLevel
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) LoginGraceTime() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.LoginGraceTime
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) Macs() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *SshdSettings) []string {
+		if v == nil {
+			return nil
+		}
+		return v.Macs
+	}).(pulumi.StringArrayOutput)
+}
+
+func (o SshdSettingsPtrOutput) MaxAuthTries() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.MaxAuthTries
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) MaxSessions() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.MaxSessions
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) MaxStartups() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *string {
+		if v == nil {
+			return nil
+		}
+		return v.MaxStartups
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) PasswordAuthentication() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.PasswordAuthentication
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) PermitEmptyPasswords() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.PermitEmptyPasswords
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) PermitRootLogin() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *string {
+		if v == nil {
+			return nil
+		}
+		return v.PermitRootLogin
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) Port() pulumi.Float64PtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *float64 {
+		if v == nil {
+			return nil
+		}
+		return v.Port
+	}).(pulumi.Float64PtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) PrintMotd() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.PrintMotd
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) PubkeyAuthentication() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.PubkeyAuthentication
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) StrictModes() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.StrictModes
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) TcpKeepAlive() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.TcpKeepAlive
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) UseDNS() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.UseDNS
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) UsePAM() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.UsePAM
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o SshdSettingsPtrOutput) X11Forwarding() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SshdSettings) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.X11Forwarding
+	}).(pulumi.BoolPtrOutput)
+}
+
+type SwapActive struct {
+	Kind     string  `pulumi:"kind"`
+	Path     string  `pulumi:"path"`
+	Priority float64 `pulumi:"priority"`
+	SizeMb   int     `pulumi:"sizeMb"`
+}
+
+type SwapActiveOutput struct{ *pulumi.OutputState }
+
+func (SwapActiveOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*SwapActive)(nil)).Elem()
+}
+
+func (o SwapActiveOutput) ToSwapActiveOutput() SwapActiveOutput {
+	return o
+}
+
+func (o SwapActiveOutput) ToSwapActiveOutputWithContext(ctx context.Context) SwapActiveOutput {
+	return o
+}
+
+func (o SwapActiveOutput) Kind() pulumi.StringOutput {
+	return o.ApplyT(func(v SwapActive) string { return v.Kind }).(pulumi.StringOutput)
+}
+
+func (o SwapActiveOutput) Path() pulumi.StringOutput {
+	return o.ApplyT(func(v SwapActive) string { return v.Path }).(pulumi.StringOutput)
+}
+
+func (o SwapActiveOutput) Priority() pulumi.Float64Output {
+	return o.ApplyT(func(v SwapActive) float64 { return v.Priority }).(pulumi.Float64Output)
+}
+
+func (o SwapActiveOutput) SizeMb() pulumi.IntOutput {
+	return o.ApplyT(func(v SwapActive) int { return v.SizeMb }).(pulumi.IntOutput)
+}
+
+type SwapActiveArrayOutput struct{ *pulumi.OutputState }
+
+func (SwapActiveArrayOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]SwapActive)(nil)).Elem()
+}
+
+func (o SwapActiveArrayOutput) ToSwapActiveArrayOutput() SwapActiveArrayOutput {
+	return o
+}
+
+func (o SwapActiveArrayOutput) ToSwapActiveArrayOutputWithContext(ctx context.Context) SwapActiveArrayOutput {
+	return o
+}
+
+func (o SwapActiveArrayOutput) Index(i pulumi.IntInput) SwapActiveOutput {
+	return pulumi.All(o, i).ApplyT(func(vs []interface{}) SwapActive {
+		return vs[0].([]SwapActive)[vs[1].(int)]
+	}).(SwapActiveOutput)
+}
+
+type TunnelForward struct {
+	// A bind address for the far end to accept or ignore.
+	Bind *string `pulumi:"bind"`
+	// The port on this machine it reaches.
+	Local int `pulumi:"local"`
+	// The port published on the far end.
+	Remote int `pulumi:"remote"`
+	// What the forward is for, written into the unit as a comment.
+	What *string `pulumi:"what"`
+}
+
+// TunnelForwardInput is an input type that accepts TunnelForwardArgs and TunnelForwardOutput values.
+// You can construct a concrete instance of `TunnelForwardInput` via:
+//
+//	TunnelForwardArgs{...}
+type TunnelForwardInput interface {
+	pulumi.Input
+
+	ToTunnelForwardOutput() TunnelForwardOutput
+	ToTunnelForwardOutputWithContext(context.Context) TunnelForwardOutput
+}
+
+type TunnelForwardArgs struct {
+	// A bind address for the far end to accept or ignore.
+	Bind pulumi.StringPtrInput `pulumi:"bind"`
+	// The port on this machine it reaches.
+	Local pulumi.IntInput `pulumi:"local"`
+	// The port published on the far end.
+	Remote pulumi.IntInput `pulumi:"remote"`
+	// What the forward is for, written into the unit as a comment.
+	What pulumi.StringPtrInput `pulumi:"what"`
+}
+
+func (TunnelForwardArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*TunnelForward)(nil)).Elem()
+}
+
+func (i TunnelForwardArgs) ToTunnelForwardOutput() TunnelForwardOutput {
+	return i.ToTunnelForwardOutputWithContext(context.Background())
+}
+
+func (i TunnelForwardArgs) ToTunnelForwardOutputWithContext(ctx context.Context) TunnelForwardOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(TunnelForwardOutput)
+}
+
+// TunnelForwardArrayInput is an input type that accepts TunnelForwardArray and TunnelForwardArrayOutput values.
+// You can construct a concrete instance of `TunnelForwardArrayInput` via:
+//
+//	TunnelForwardArray{ TunnelForwardArgs{...} }
+type TunnelForwardArrayInput interface {
+	pulumi.Input
+
+	ToTunnelForwardArrayOutput() TunnelForwardArrayOutput
+	ToTunnelForwardArrayOutputWithContext(context.Context) TunnelForwardArrayOutput
+}
+
+type TunnelForwardArray []TunnelForwardInput
+
+func (TunnelForwardArray) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]TunnelForward)(nil)).Elem()
+}
+
+func (i TunnelForwardArray) ToTunnelForwardArrayOutput() TunnelForwardArrayOutput {
+	return i.ToTunnelForwardArrayOutputWithContext(context.Background())
+}
+
+func (i TunnelForwardArray) ToTunnelForwardArrayOutputWithContext(ctx context.Context) TunnelForwardArrayOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(TunnelForwardArrayOutput)
+}
+
+type TunnelForwardOutput struct{ *pulumi.OutputState }
+
+func (TunnelForwardOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*TunnelForward)(nil)).Elem()
+}
+
+func (o TunnelForwardOutput) ToTunnelForwardOutput() TunnelForwardOutput {
+	return o
+}
+
+func (o TunnelForwardOutput) ToTunnelForwardOutputWithContext(ctx context.Context) TunnelForwardOutput {
+	return o
+}
+
+// A bind address for the far end to accept or ignore.
+func (o TunnelForwardOutput) Bind() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v TunnelForward) *string { return v.Bind }).(pulumi.StringPtrOutput)
+}
+
+// The port on this machine it reaches.
+func (o TunnelForwardOutput) Local() pulumi.IntOutput {
+	return o.ApplyT(func(v TunnelForward) int { return v.Local }).(pulumi.IntOutput)
+}
+
+// The port published on the far end.
+func (o TunnelForwardOutput) Remote() pulumi.IntOutput {
+	return o.ApplyT(func(v TunnelForward) int { return v.Remote }).(pulumi.IntOutput)
+}
+
+// What the forward is for, written into the unit as a comment.
+func (o TunnelForwardOutput) What() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v TunnelForward) *string { return v.What }).(pulumi.StringPtrOutput)
+}
+
+type TunnelForwardArrayOutput struct{ *pulumi.OutputState }
+
+func (TunnelForwardArrayOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]TunnelForward)(nil)).Elem()
+}
+
+func (o TunnelForwardArrayOutput) ToTunnelForwardArrayOutput() TunnelForwardArrayOutput {
+	return o
+}
+
+func (o TunnelForwardArrayOutput) ToTunnelForwardArrayOutputWithContext(ctx context.Context) TunnelForwardArrayOutput {
+	return o
+}
+
+func (o TunnelForwardArrayOutput) Index(i pulumi.IntInput) TunnelForwardOutput {
+	return pulumi.All(o, i).ApplyT(func(vs []interface{}) TunnelForward {
+		return vs[0].([]TunnelForward)[vs[1].(int)]
+	}).(TunnelForwardOutput)
+}
+
 func init() {
+	pulumi.RegisterInputType(reflect.TypeOf((*AclEntryArgsInput)(nil)).Elem(), AclEntryArgsArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*AclEntryArgsArrayInput)(nil)).Elem(), AclEntryArgsArray{})
+	pulumi.RegisterInputType(reflect.TypeOf((*AclNormaliseArgsInput)(nil)).Elem(), AclNormaliseArgsArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*AclNormaliseArgsPtrInput)(nil)).Elem(), AclNormaliseArgsArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*BootSettingsInput)(nil)).Elem(), BootSettingsArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*BootSettingsPtrInput)(nil)).Elem(), BootSettingsArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*JumpInput)(nil)).Elem(), JumpArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*JumpArrayInput)(nil)).Elem(), JumpArray{})
+	pulumi.RegisterInputType(reflect.TypeOf((*SourceInput)(nil)).Elem(), SourceArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*SshdMatchInput)(nil)).Elem(), SshdMatchArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*SshdMatchPtrInput)(nil)).Elem(), SshdMatchArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*SshdSettingsInput)(nil)).Elem(), SshdSettingsArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*SshdSettingsPtrInput)(nil)).Elem(), SshdSettingsArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*TunnelForwardInput)(nil)).Elem(), TunnelForwardArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*TunnelForwardArrayInput)(nil)).Elem(), TunnelForwardArray{})
+	pulumi.RegisterOutputType(AclEntryActualOutput{})
+	pulumi.RegisterOutputType(AclEntryActualArrayOutput{})
+	pulumi.RegisterOutputType(AclEntryArgsOutput{})
+	pulumi.RegisterOutputType(AclEntryArgsArrayOutput{})
+	pulumi.RegisterOutputType(AclEntrySettledOutput{})
+	pulumi.RegisterOutputType(AclEntrySettledArrayOutput{})
+	pulumi.RegisterOutputType(AclNormaliseArgsOutput{})
+	pulumi.RegisterOutputType(AclNormaliseArgsPtrOutput{})
+	pulumi.RegisterOutputType(BootSettingsOutput{})
+	pulumi.RegisterOutputType(BootSettingsPtrOutput{})
+	pulumi.RegisterOutputType(HostnameEffectiveOutput{})
 	pulumi.RegisterOutputType(JumpOutput{})
 	pulumi.RegisterOutputType(JumpArrayOutput{})
+	pulumi.RegisterOutputType(SourceOutput{})
+	pulumi.RegisterOutputType(SshdMatchOutput{})
+	pulumi.RegisterOutputType(SshdMatchPtrOutput{})
+	pulumi.RegisterOutputType(SshdSettingsOutput{})
+	pulumi.RegisterOutputType(SshdSettingsPtrOutput{})
+	pulumi.RegisterOutputType(SwapActiveOutput{})
+	pulumi.RegisterOutputType(SwapActiveArrayOutput{})
+	pulumi.RegisterOutputType(TunnelForwardOutput{})
+	pulumi.RegisterOutputType(TunnelForwardArrayOutput{})
 }

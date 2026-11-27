@@ -21,12 +21,70 @@ func (m *module) Version() semver.Version {
 
 func (m *module) Construct(ctx *pulumi.Context, name, typ, urn string) (r pulumi.Resource, err error) {
 	switch typ {
+	case "homelab:index:AptPackage":
+		r = &AptPackage{}
+	case "homelab:index:AptPackages":
+		r = &AptPackages{}
+	case "homelab:index:Archive":
+		r = &Archive{}
+	case "homelab:index:AuthorizedKey":
+		r = &AuthorizedKey{}
+	case "homelab:index:BootConfig":
+		r = &BootConfig{}
+	case "homelab:index:DebPackage":
+		r = &DebPackage{}
 	case "homelab:index:Directory":
 		r = &Directory{}
+	case "homelab:index:FstabEntry":
+		r = &FstabEntry{}
+	case "homelab:index:GitCheckout":
+		r = &GitCheckout{}
 	case "homelab:index:Group":
 		r = &Group{}
+	case "homelab:index:Hostname":
+		r = &Hostname{}
+	case "homelab:index:Journald":
+		r = &Journald{}
+	case "homelab:index:KernelCmdline":
+		r = &KernelCmdline{}
+	case "homelab:index:ManagedFile":
+		r = &ManagedFile{}
+	case "homelab:index:ManagedLine":
+		r = &ManagedLine{}
+	case "homelab:index:OfficialInstall":
+		r = &OfficialInstall{}
+	case "homelab:index:PosixAcl":
+		r = &PosixAcl{}
+	case "homelab:index:Precondition":
+		r = &Precondition{}
+	case "homelab:index:ProtectedFile":
+		r = &ProtectedFile{}
+	case "homelab:index:RcloneRemote":
+		r = &RcloneRemote{}
+	case "homelab:index:SambaSetting":
+		r = &SambaSetting{}
+	case "homelab:index:SambaShare":
+		r = &SambaShare{}
+	case "homelab:index:SambaUser":
+		r = &SambaUser{}
+	case "homelab:index:SshKey":
+		r = &SshKey{}
+	case "homelab:index:SshTunnel":
+		r = &SshTunnel{}
+	case "homelab:index:SshdConfig":
+		r = &SshdConfig{}
+	case "homelab:index:SudoRule":
+		r = &SudoRule{}
+	case "homelab:index:Swap":
+		r = &Swap{}
 	case "homelab:index:Symlink":
 		r = &Symlink{}
+	case "homelab:index:SystemdInstance":
+		r = &SystemdInstance{}
+	case "homelab:index:SystemdUnit":
+		r = &SystemdUnit{}
+	case "homelab:index:User":
+		r = &User{}
 	default:
 		return nil, fmt.Errorf("unknown resource type: %s", typ)
 	}
