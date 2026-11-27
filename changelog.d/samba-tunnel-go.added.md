@@ -1,0 +1,1 @@
+- The Go provider ports SambaShare, SambaSetting, SambaUser and SshTunnel from TypeScript and supports the import-based switch. SambaUser sends passwords over stdin and redacts them from errors.

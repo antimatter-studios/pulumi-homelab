@@ -1,0 +1,1 @@
+- The Go provider has `Symlink` (with `acceptLauncherScript`) and `Directory`, at parity with the TypeScript resources: the same commands, refusals, diff and replace rules, and deletes that never remove a real directory or a non-empty one. Both support import.

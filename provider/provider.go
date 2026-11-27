@@ -59,16 +59,7 @@ func keepEngineVersion(prov p.Provider) p.Provider {
 func options(factory remote.Factory) infer.Options {
 	return infer.NewProviderBuilder().
 		WithConfig(infer.Config(&Config{factory: factory})).
-		WithResources(
-			infer.Resource(Group{}),
-			infer.Resource(AptPackage{}),
-			infer.Resource(AptPackages{}),
-			infer.Resource(DebPackage{}),
-			infer.Resource(Archive{}),
-			infer.Resource(OfficialInstall{}),
-			infer.Resource(GitCheckout{}),
-			infer.Resource(RcloneRemote{}),
-		).
+		WithResources(infer.Resource(Group{}), infer.Resource(AptPackage{}), infer.Resource(AptPackages{}), infer.Resource(DebPackage{}), infer.Resource(Archive{}), infer.Resource(OfficialInstall{}), infer.Resource(GitCheckout{}), infer.Resource(RcloneRemote{}), infer.Resource(PosixAcl{}), infer.Resource(SambaShare{}), infer.Resource(SambaSetting{}), infer.Resource(SambaUser{}), infer.Resource(SshTunnel{}), infer.Resource(Symlink{}), infer.Resource(Directory{}), infer.Resource(Precondition{}), infer.Resource(User{}), infer.Resource(SudoRule{}), infer.Resource(AuthorizedKey{}), infer.Resource(SshKey{}), infer.Resource(ManagedLine{}), infer.Resource(KernelCmdline{}), infer.Resource(SystemdUnit{}), infer.Resource(SystemdInstance{}), infer.Resource(Journald{}), infer.Resource(Hostname{}), infer.Resource(FstabEntry{}), infer.Resource(Swap{}), infer.Resource(SshdConfig{}), infer.Resource(BootConfig{}), infer.Resource(ManagedFile{}), infer.Resource(ProtectedFile{})).
 		WithDisplayName("homelab").
 		WithDescription("Desired state for a Linux machine you own.").
 		WithNamespace("antimatter-studios").

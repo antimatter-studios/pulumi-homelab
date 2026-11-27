@@ -1,0 +1,1 @@
+- Ported ManagedFile and ProtectedFile to the Go provider. File content streams over SSH on stdin. ManagedFile stages large writes beside the target. ManagedFile outputs store a SHA-256 digest, and ProtectedFile keeps its material out of state.
