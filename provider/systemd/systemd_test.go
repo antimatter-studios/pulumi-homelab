@@ -75,7 +75,7 @@ func TestParseShowTrimsAsJavaScriptDoes(t *testing.T) {
 	if got := ParseShow("ActiveState=active\u0085")["ActiveState"]; got != "active\u0085" {
 		t.Fatalf("NEL: got %q", got)
 	}
-	if got := ParseShow("ActiveState=active﻿")["ActiveState"]; got != "active" {
+	if got := ParseShow("ActiveState=active\ufeff")["ActiveState"]; got != "active" {
 		t.Fatalf("BOM: got %q", got)
 	}
 }
