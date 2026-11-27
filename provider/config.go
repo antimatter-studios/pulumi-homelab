@@ -242,7 +242,7 @@ func (c *Config) Configure(ctx context.Context) error {
 	}
 	factory := c.factory
 	if factory == nil {
-		factory = transportNotBuilt
+		factory = sshRunner
 	}
 	runner, err := factory(ctx, c.RunnerConfig())
 	if err != nil {
@@ -251,9 +251,4 @@ func (c *Config) Configure(ctx context.Context) error {
 	c.runner = runner
 	c.machine = &machine{runner: runner, cfg: c.RunnerConfig()}
 	return nil
-}
-
-// transportNotBuilt is the real factory until the ssh transport lands.
-func transportNotBuilt(context.Context, remote.Config) (remote.Runner, error) {
-	return nil, errors.New("the ssh transport is not built yet (#34)")
 }
