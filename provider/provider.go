@@ -7,6 +7,7 @@ package homelab
 
 import (
 	"context"
+	"slices"
 
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
@@ -61,6 +62,12 @@ func keepEngineVersion(prov p.Provider) p.Provider {
 // import) encodes what it found on the machine as plain values, and the engine stores them so.
 var secretsOnRead = map[string][]string{"homelab:index:RcloneRemote": {"secrets"}}
 
+// secretsOnImport names fields that may hold credentials the provider cannot pick out when a Read
+// starts from an id alone: an S3 remote keeps its keys in settings, in the clear, because rclone
+// obscures whatever is under secrets and an obscured S3 key does not work. The whole field is marked
+// secret on such a Read; a later Read keeps whatever marking the state then has.
+var secretsOnImport = map[string][]string{"homelab:index:RcloneRemote": {"settings"}}
+
 func markSecretsOnRead(prov p.Provider) p.Provider {
 	read := prov.Read
 	prov.Read = func(ctx context.Context, req p.ReadRequest) (p.ReadResponse, error) {
@@ -68,7 +75,11 @@ func markSecretsOnRead(prov p.Provider) p.Provider {
 		if err != nil {
 			return resp, err
 		}
-		for _, key := range secretsOnRead[string(req.Urn.Type())] {
+		keys := secretsOnRead[string(req.Urn.Type())]
+		if req.Properties.Len() == 0 && req.Inputs.Len() == 0 {
+			keys = append(slices.Clone(keys), secretsOnImport[string(req.Urn.Type())]...)
+		}
+		for _, key := range keys {
 			if v, ok := resp.Properties.GetOk(key); ok {
 				resp.Properties = resp.Properties.Set(key, v.WithSecret(true))
 			}
