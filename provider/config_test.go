@@ -391,3 +391,46 @@ func TestCheckConfigAcceptsEngineFields(t *testing.T) {
 		t.Fatal("an unknown key was accepted")
 	}
 }
+
+// The engine keeps the checked inputs as the provider's state, and diffs its "version" against the
+// next program's. So the version must survive Check, or every later preview shows the provider
+// changing (+version) and no switch can ever show zero changes.
+func TestEngineVersionSurvivesCheckAndDoesNotDiff(t *testing.T) {
+	s := newServer(t, nil)
+	urn := presource.URN("urn:pulumi:s::p::pulumi:providers:homelab::machine")
+	news := property.NewMap(with(homelabServerConfig(), "version", property.New("0.0.0-dev")))
+	checked, err := s.CheckConfig(p.CheckRequest{Urn: urn, Inputs: news})
+	if err != nil || len(checked.Failures) > 0 {
+		t.Fatalf("check: %v %v", err, checked.Failures)
+	}
+	if v, ok := checked.Inputs.GetOk("version"); !ok || v.AsString() != "0.0.0-dev" {
+		t.Fatalf("checked inputs lost version: %v", checked.Inputs)
+	}
+	diff, err := s.DiffConfig(p.DiffRequest{Urn: urn, State: checked.Inputs, Inputs: checked.Inputs})
+	if err != nil || diff.HasChanges {
+		t.Fatalf("same config diffs: %+v %v", diff, err)
+	}
+}
+
+// A plugin upgrade (a new version) updates the provider in place and never replaces it, so no
+// resource is touched.
+func TestVersionChangeUpdatesTheProviderInPlace(t *testing.T) {
+	s := newServer(t, nil)
+	urn := presource.URN("urn:pulumi:s::p::pulumi:providers:homelab::machine")
+	check := func(v string) property.Map {
+		r, err := s.CheckConfig(p.CheckRequest{Urn: urn, Inputs: property.NewMap(with(homelabServerConfig(), "version", property.New(v)))})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Inputs
+	}
+	diff, err := s.DiffConfig(p.DiffRequest{Urn: urn, State: check("0.0.0-dev"), Inputs: check("0.4.0")})
+	if err != nil || !diff.HasChanges || diff.DetailedDiff["version"].Kind != p.Update || diff.DeleteBeforeReplace {
+		t.Fatalf("version change: %+v %v", diff, err)
+	}
+	for k, d := range diff.DetailedDiff {
+		if d.Kind == p.UpdateReplace || d.Kind == p.AddReplace || d.Kind == p.DeleteReplace {
+			t.Fatalf("%s would replace the provider: %+v", k, d)
+		}
+	}
+}
