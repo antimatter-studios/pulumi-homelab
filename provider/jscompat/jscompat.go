@@ -255,7 +255,7 @@ func CompareUTF16(a, b string) int {
 // ToLower is String.prototype.toLowerCase except for two context- and length-dependent mappings:
 // U+0130 (İ) lowers to "i̇" (two code points) in JavaScript and to "i" here, and a capital sigma at
 // the end of a word lowers to ς in JavaScript and to σ here. Characters whose case pairs are newer
-// than the Unicode version Go ships (node 24 has Unicode 17, Go 1.26 has 15) are left alone. ASCII
+// than the Unicode version of the Go toolchain that builds the plugin (Go 1.26 has 15, Go 1.27 has 17) are left alone. ASCII
 // is exact.
 func ToLower(s string) string { return strings.Map(unicode.ToLower, s) }
 
