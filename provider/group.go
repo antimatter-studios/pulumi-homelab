@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
+	"math"
 	"strings"
 
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 )
@@ -57,7 +58,7 @@ type GroupEntry struct {
 
 // parseGroupEntry reads `storage:x:1002:admin,player`, or returns nil for a line that is not a group.
 func parseGroupEntry(line string) *GroupEntry {
-	fields := strings.Split(strings.TrimSpace(line), ":")
+	fields := strings.Split(jscompat.Trim(line), ":")
 	if len(fields) < 3 {
 		return nil
 	}
@@ -78,12 +79,8 @@ func parseGroupEntry(line string) *GroupEntry {
 
 // jsNumber is Number(text) followed by Number.isFinite, restricted to the integers a gid can be.
 func jsNumber(text string) (int, bool) {
-	t := strings.TrimSpace(text)
-	if t == "" {
-		return 0, true // Number('') is 0
-	}
-	f, err := strconv.ParseFloat(t, 64)
-	if err != nil || f != f || f > 1e15 || f < -1e15 {
+	f := jscompat.Number(text)
+	if math.IsNaN(f) || f > 1e15 || f < -1e15 {
 		return 0, false
 	}
 	return int(f), true

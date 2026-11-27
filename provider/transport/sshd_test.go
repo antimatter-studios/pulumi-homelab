@@ -169,7 +169,12 @@ func (d *testSSHD) session(nch ssh.NewChannel) {
 			break
 		}
 	}
-	defer d.sessions.Add(-1)
+	// The session stops counting once its exit status is decided, before that status is sent: the
+	// client may open its next session as soon as it reads the status, and counting until this
+	// handler's deferred cleanup ran would race with that and record one session too many.
+	var once sync.Once
+	done := func() { once.Do(func() { d.sessions.Add(-1) }) }
+	defer done()
 	defer ch.Close()
 	for req := range reqs {
 		switch req.Type {
@@ -211,6 +216,7 @@ func (d *testSSHD) session(nch ssh.NewChannel) {
 			}
 			status := make([]byte, 4)
 			binary.BigEndian.PutUint32(status, uint32(code))
+			done()
 			ch.SendRequest("exit-status", false, status)
 			return
 		default:
