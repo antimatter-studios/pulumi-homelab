@@ -59,7 +59,7 @@ func keepEngineVersion(prov p.Provider) p.Provider {
 func options(factory remote.Factory) infer.Options {
 	return infer.NewProviderBuilder().
 		WithConfig(infer.Config(&Config{factory: factory})).
-		WithResources(infer.Resource(Group{})).
+		WithResources(infer.Resource(Group{}), infer.Resource(PosixAcl{}), infer.Resource(SambaShare{}), infer.Resource(SambaSetting{}), infer.Resource(SambaUser{}), infer.Resource(SshTunnel{})).
 		WithDisplayName("homelab").
 		WithDescription("Desired state for a Linux machine you own.").
 		WithNamespace("antimatter-studios").

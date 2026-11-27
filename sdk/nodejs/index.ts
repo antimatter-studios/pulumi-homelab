@@ -10,10 +10,35 @@ export type Group = import("./group").Group;
 export const Group: typeof import("./group").Group = null as any;
 utilities.lazyLoad(exports, ["Group"], () => require("./group"));
 
+export { PosixAclArgs } from "./posixAcl";
+export type PosixAcl = import("./posixAcl").PosixAcl;
+export const PosixAcl: typeof import("./posixAcl").PosixAcl = null as any;
+utilities.lazyLoad(exports, ["PosixAcl"], () => require("./posixAcl"));
+
 export { ProviderArgs } from "./provider";
 export type Provider = import("./provider").Provider;
 export const Provider: typeof import("./provider").Provider = null as any;
 utilities.lazyLoad(exports, ["Provider"], () => require("./provider"));
+
+export { SambaSettingArgs } from "./sambaSetting";
+export type SambaSetting = import("./sambaSetting").SambaSetting;
+export const SambaSetting: typeof import("./sambaSetting").SambaSetting = null as any;
+utilities.lazyLoad(exports, ["SambaSetting"], () => require("./sambaSetting"));
+
+export { SambaShareArgs } from "./sambaShare";
+export type SambaShare = import("./sambaShare").SambaShare;
+export const SambaShare: typeof import("./sambaShare").SambaShare = null as any;
+utilities.lazyLoad(exports, ["SambaShare"], () => require("./sambaShare"));
+
+export { SambaUserArgs } from "./sambaUser";
+export type SambaUser = import("./sambaUser").SambaUser;
+export const SambaUser: typeof import("./sambaUser").SambaUser = null as any;
+utilities.lazyLoad(exports, ["SambaUser"], () => require("./sambaUser"));
+
+export { SshTunnelArgs } from "./sshTunnel";
+export type SshTunnel = import("./sshTunnel").SshTunnel;
+export const SshTunnel: typeof import("./sshTunnel").SshTunnel = null as any;
+utilities.lazyLoad(exports, ["SshTunnel"], () => require("./sshTunnel"));
 
 
 // Export sub-modules:
@@ -31,6 +56,16 @@ const _module = {
         switch (type) {
             case "homelab:index:Group":
                 return new Group(name, <any>undefined, { urn })
+            case "homelab:index:PosixAcl":
+                return new PosixAcl(name, <any>undefined, { urn })
+            case "homelab:index:SambaSetting":
+                return new SambaSetting(name, <any>undefined, { urn })
+            case "homelab:index:SambaShare":
+                return new SambaShare(name, <any>undefined, { urn })
+            case "homelab:index:SambaUser":
+                return new SambaUser(name, <any>undefined, { urn })
+            case "homelab:index:SshTunnel":
+                return new SshTunnel(name, <any>undefined, { urn })
             default:
                 throw new Error(`unknown resource type ${type}`);
         }

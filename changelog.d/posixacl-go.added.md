@@ -1,0 +1,3 @@
+- The Go provider has `PosixAcl`, including `normalise`, at parity with the TypeScript resource: the same setfacl and find commands, refusals, diff and replace rules, and a delete that removes only the entries it declared. The normalise walk streams on the machine and does not hold up other resources.
+- `PosixAcl` entries sort exactly as node's `localeCompare` sorted them, Unicode names included, so entries stored by the TypeScript provider keep their order. Permission spellings and getfacl output are trimmed with JavaScript's whitespace.
+- Importing a `PosixAcl` whose path already grants the declared entries shows no change, and takes no ownership of entries on the path that it does not declare.

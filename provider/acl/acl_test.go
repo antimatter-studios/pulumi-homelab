@@ -229,3 +229,21 @@ func TestFormatEntry(t *testing.T) {
 		}
 	})
 }
+
+// Whitespace is JavaScript's, as String.prototype.trim sees it: a BOM is trimmed and NEL is not.
+func TestJavaScriptWhitespace(t *testing.T) {
+	if got, err := NormalisePerms("\ufeffrw"); err != nil || got != "rw-" {
+		t.Errorf("BOM: %q %v", got, err)
+	}
+	if _, err := NormalisePerms("\u0085rw"); err == nil {
+		t.Error("NEL was trimmed")
+	}
+	access, _ := ParseGetfacl("\ufeffuser:svc:rwx\t#effective:r-x\n")
+	if len(access) != 1 || access[0].Effective != "r-x" {
+		t.Errorf("BOM line: %+v", access)
+	}
+	access, _ = ParseGetfacl("user:svc:rwx\t#effective:\u0085r-x\u0085\n")
+	if len(access) != 1 || access[0].Effective != "\u0085r-x\u0085" {
+		t.Errorf("NEL effective: %+v", access)
+	}
+}
