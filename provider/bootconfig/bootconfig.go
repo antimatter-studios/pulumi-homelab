@@ -7,21 +7,27 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 // DefaultSection is the implicit section lines before any header belong to.
 const DefaultSection = "all"
 
+// jsDot is JavaScript's `.`, which, unlike RE2's, stops at \r, U+2028 and U+2029 as well as \n.
+const jsDot = `[^\n\r\x{2028}\x{2029}]`
+
 var (
-	headingLine = regexp.MustCompile(`^\[(.+)\]$`)
-	anyHeading  = regexp.MustCompile(`^\s*\[.+\]\s*$`)
+	headingLine = regexp.MustCompile(`^\[(` + jsDot + `+)\]$`)
+	anyHeading  = regexp.MustCompile(`^` + jscompat.SpaceClass + `*\[` + jsDot + `+\]` + jscompat.SpaceClass + `*$`)
 )
 
 // renderedAs holds the typed keys the file spells differently.
 var renderedAs = map[string]string{"audio": "dtparam=audio"}
 
 // Setting is one key and value. The TypeScript takes an object and writes its entries in
-// insertion order, so the Go takes an ordered list to keep the file byte-identical.
+// JavaScript's enumeration order, so the Go takes an ordered list to keep the file byte-identical;
+// RenderInput produces that list in the order the live provider wrote.
 type Setting struct {
 	Key   string
 	Value string
@@ -33,7 +39,7 @@ func ParseBootSections(text string) map[string][]string {
 	sections := map[string][]string{DefaultSection: {}}
 	current := DefaultSection
 	for _, line := range strings.Split(text, "\n") {
-		if heading := headingLine.FindStringSubmatch(strings.TrimSpace(line)); heading != nil {
+		if heading := headingLine.FindStringSubmatch(jscompat.Trim(line)); heading != nil {
 			current = heading[1]
 			if _, ok := sections[current]; !ok {
 				sections[current] = []string{}
@@ -47,7 +53,7 @@ func ParseBootSections(text string) map[string][]string {
 
 // KeyOf is the key a line sets; ok is false for a blank line, a comment or a header.
 func KeyOf(line string) (key string, ok bool) {
-	text := strings.TrimSpace(line)
+	text := jscompat.Trim(line)
 	if text == "" || strings.HasPrefix(text, "#") || strings.HasPrefix(text, "[") {
 		return "", false
 	}
@@ -55,17 +61,17 @@ func KeyOf(line string) (key string, ok bool) {
 	if equals <= 0 {
 		return "", false
 	}
-	return strings.TrimSpace(text[:equals]), true
+	return jscompat.Trim(text[:equals]), true
 }
 
 func setsKey(line, key string) bool {
 	_, ok := KeyOf(line)
-	return ok && strings.HasPrefix(strings.TrimSpace(line), key+"=")
+	return ok && strings.HasPrefix(jscompat.Trim(line), key+"=")
 }
 
 func carries(lines []string, wanted string) bool {
 	for _, line := range lines {
-		if strings.TrimSpace(line) == strings.TrimSpace(wanted) {
+		if jscompat.Trim(line) == jscompat.Trim(wanted) {
 			return true
 		}
 	}
@@ -83,7 +89,7 @@ func firstHeader(lines []string) int {
 
 func findHeader(lines []string, section string) int {
 	for i, line := range lines {
-		if strings.TrimSpace(line) == "["+section+"]" {
+		if jscompat.Trim(line) == "["+section+"]" {
 			return i
 		}
 	}
@@ -161,7 +167,7 @@ func ApplyToSection(text, section string, settings []Setting, overlays []string)
 func RemoveFromBootSection(text, section string, settings []Setting, overlays []string) string {
 	wanted := map[string]bool{}
 	for _, overlay := range overlays {
-		wanted[strings.TrimSpace(overlay)] = true
+		wanted[jscompat.Trim(overlay)] = true
 	}
 	lines := strings.Split(text, "\n")
 	header := findHeader(lines, section)
@@ -179,7 +185,7 @@ func RemoveFromBootSection(text, section string, settings []Setting, overlays []
 				break
 			}
 		}
-		if !named && !wanted[strings.TrimSpace(line)] {
+		if !named && !wanted[jscompat.Trim(line)] {
 			kept = append(kept, line)
 		}
 	}
@@ -190,7 +196,7 @@ func RemoveFromBootSection(text, section string, settings []Setting, overlays []
 func ParseVcgencmd(out string) map[string]string {
 	resolved := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
-		text := strings.TrimSpace(line)
+		text := jscompat.Trim(line)
 		equals := strings.Index(text, "=")
 		if equals <= 0 {
 			continue
@@ -200,16 +206,35 @@ func ParseVcgencmd(out string) map[string]string {
 	return resolved
 }
 
-// Typed is one typed setting: a bool, an int or a string; nil means never set. Ordered, as the
-// TypeScript object's insertion order is the order the lines are written in.
+// Typed is one typed setting: a bool, a number or a string; nil means never set (the TypeScript's
+// undefined; an explicit null, which Pulumi does not deliver for a declared field, would render as
+// "null" there). Ordered, as the TypeScript object's order is the order the lines are written in.
 type Typed struct {
 	Key   string
 	Value any
 }
 
+// RenderInput is RenderSettings for settings that arrive as resource inputs, in the order the
+// TypeScript provider wrote them. Inputs cross Pulumi's engine as a protobuf Struct whose keys
+// arrive sorted, so the TypeScript saw typed keys sorted by their TypeScript name (audio as audio,
+// not dtparam=audio) and unchecked keys sorted among themselves: jscompat.SortedKeys for both.
+func RenderInput(settings map[string]any, unchecked map[string]string) []Setting {
+	typed := make([]Typed, 0, len(settings))
+	for _, key := range jscompat.SortedKeys(settings) {
+		typed = append(typed, Typed{key, settings[key]})
+	}
+	extra := make([]Setting, 0, len(unchecked))
+	for _, key := range jscompat.SortedKeys(unchecked) {
+		extra = append(extra, Setting{key, unchecked[key]})
+	}
+	return RenderSettings(typed, extra)
+}
+
 // RenderSettings renders typed settings into the file's spelling: booleans as 1 and 0, numbers as
-// themselves, audio as dtparam=audio. Unchecked settings come last; one naming a key already
-// rendered replaces its value in place, as the TypeScript object spread does.
+// String() writes them (1000000, not 1e+06), audio as dtparam=audio. Unchecked settings come
+// last; one naming a key already rendered replaces its value in place, as the TypeScript object
+// spread does. The result is in JavaScript's enumeration order for { ...rendered, ...unchecked }:
+// array-index keys first, then the rest in the order they were set.
 func RenderSettings(settings []Typed, unchecked []Setting) []Setting {
 	var rendered []Setting
 	set := func(key, value string) {
@@ -237,11 +262,45 @@ func RenderSettings(settings []Typed, unchecked []Setting) []Setting {
 				set(key, "0")
 			}
 		default:
-			set(key, fmt.Sprint(value))
+			set(key, jsString(value))
 		}
 	}
 	for _, setting := range unchecked {
 		set(setting.Key, setting.Value)
 	}
-	return rendered
+	values := map[string]string{}
+	keys := make([]string, len(rendered))
+	for i, setting := range rendered {
+		keys[i], values[setting.Key] = setting.Key, setting.Value
+	}
+	var ordered []Setting
+	for _, key := range jscompat.KeyOrder(keys) {
+		ordered = append(ordered, Setting{key, values[key]})
+	}
+	return ordered
+}
+
+// jsString is String(value) for a typed setting's number or string.
+func jsString(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case float64:
+		return jscompat.FormatNumber(v)
+	case float32:
+		return jscompat.FormatNumber(float64(v))
+	case int:
+		return jscompat.FormatNumber(float64(v))
+	case int64:
+		return jscompat.FormatNumber(float64(v))
+	case int32:
+		return jscompat.FormatNumber(float64(v))
+	case uint:
+		return jscompat.FormatNumber(float64(v))
+	case uint64:
+		return jscompat.FormatNumber(float64(v))
+	case uint32:
+		return jscompat.FormatNumber(float64(v))
+	}
+	return fmt.Sprint(value)
 }

@@ -1,6 +1,7 @@
 package bootconfig
 
 import (
+	"math"
 	"reflect"
 	"slices"
 	"strings"
@@ -202,4 +203,42 @@ func TestRenderSettings(t *testing.T) {
 		updated := ApplyToSection("[pi5]\ngpu_mem=128\n", "pi5", RenderSettings([]Typed{{"gpu_mem", 76}}, nil), nil)
 		in(t, section(updated, "pi5"), "gpu_mem=76")
 	})
+}
+
+// Expectations below are the TypeScript's answers under node, with inputs passed through the
+// sorted key order a protobuf Struct gives them.
+func TestRenderInputWritesTheOrderTheTypeScriptProviderWrote(t *testing.T) {
+	settings := map[string]any{"disable_overscan": true, "disable_fw_kms_setup": true, "audio": "on", "gpu_mem": float64(1000000), "hdmi_mode": math.Copysign(0, -1)}
+	unchecked := map[string]string{"over_voltage": "2", "arm_freq": "2000", "7": "x", "disable_overscan": "5"}
+	want := []Setting{
+		{"7", "x"}, {"dtparam=audio", "on"}, {"disable_fw_kms_setup", "1"}, {"disable_overscan", "5"},
+		{"gpu_mem", "1000000"}, {"hdmi_mode", "0"}, {"arm_freq", "2000"}, {"over_voltage", "2"},
+	}
+	for range 20 { // map order is random; every run must give the same list
+		got := RenderInput(settings, unchecked)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("RenderInput = %q, want %q", got, want)
+		}
+	}
+	got := ApplyToSection("[all]\n", "all", RenderInput(settings, unchecked), nil)
+	if want := "[all]\n\n7=x\ndtparam=audio=on\ndisable_fw_kms_setup=1\ndisable_overscan=5\ngpu_mem=1000000\nhdmi_mode=0\narm_freq=2000\nover_voltage=2"; got != want {
+		t.Errorf("ApplyToSection = %q, want %q", got, want)
+	}
+}
+
+func TestBootConfigWhitespaceIsJavaScripts(t *testing.T) {
+	for _, c := range []struct {
+		name, text, section string
+		settings            []Setting
+		want                string
+	}{
+		{"a BOM before the first line does not hide its key", "\ufeffarm_64bit=0\n[pi4]\nx=1\n", "all", []Setting{{"arm_64bit", "1"}}, "arm_64bit=1\n[pi4]\nx=1\n"},
+		{"a BOM before a heading does not hide the heading", "\ufeff[pi4]\nx=1\n", "pi4", []Setting{{"x", "2"}}, "\ufeff[pi4]\nx=2\n"},
+		{"a vertical tab before a heading still ends the section", "[pi4]\nx=1\n\v[pi5]\ny=1\n", "pi4", []Setting{{"z", "3"}}, "[pi4]\nx=1\nz=3\n\v[pi5]\ny=1\n"},
+		{"a NEL is part of the key, not space around it", "x\u0085=1\n", "all", []Setting{{"x", "2"}}, "x\u0085=1\n\nx=2"},
+	} {
+		if got := ApplyToSection(c.text, c.section, c.settings, nil); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
 }
