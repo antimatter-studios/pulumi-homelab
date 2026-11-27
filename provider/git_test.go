@@ -11,7 +11,6 @@ const (
 	gitURL   = "https://github.com/example/widget.git"
 )
 
-func strp(s string) *string { return &s }
 
 // Ported from src/resources/git.test.ts: what counts as a commit.
 func TestLooksLikeCommit(t *testing.T) {

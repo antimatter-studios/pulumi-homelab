@@ -192,7 +192,6 @@ func whereOf(prefix, link string) string {
 	return prefix
 }
 
-var trailingSlashes = regexp.MustCompile(`/+$`)
 var leadingDotSlashes = regexp.MustCompile(`^\.?/+`)
 
 // binaryPath is an absolute path for binary, which may be given relative to the install.
@@ -211,9 +210,9 @@ func substitute(command, where string) string {
 	return strings.ReplaceAll(command, "{}", where)
 }
 
-// probeCommand answers presence, ownership and version in one round trip, never failing: absence
+// archiveProbeCommand answers presence, ownership and version in one round trip, never failing: absence
 // is an answer.
-func probeCommand(where, prefix, binary, healthCommand, versionCommand string) string {
+func archiveProbeCommand(where, prefix, binary, healthCommand, versionCommand string) string {
 	tests := []string{"test -d " + shellQuote(where)}
 	if binary != "" {
 		tests = append(tests, "test -x "+shellQuote(binary))
@@ -292,13 +291,6 @@ func archiveAct(actual probe, previous *archiveSource, wanted resolvedArchive) a
 	return actNothing
 }
 
-func orDefault(v *string, d string) string {
-	if v == nil {
-		return d
-	}
-	return *v
-}
-
 // resolveArchiveArgs settles the arguments, or refuses a url whose format it cannot tell.
 func resolveArchiveArgs(args ArchiveArgs) (resolvedArchive, error) {
 	format := archive.Format(orDefault(args.Format, ""))
@@ -342,7 +334,7 @@ func (s ArchiveState) source() archiveSource {
 // readArchive asks whether it is there and what it says it is. ask, not must: every way this can
 // fail is an answer about the machine.
 func readArchive(ctx context.Context, m *machine, where, prefix, binary, healthCommand, versionCommand, pattern string) (probe, error) {
-	asked, err := m.ask(ctx, m.escalate(probeCommand(where, prefix, binary, healthCommand, versionCommand)))
+	asked, err := m.ask(ctx, m.escalate(archiveProbeCommand(where, prefix, binary, healthCommand, versionCommand)))
 	if err != nil {
 		return probe{}, err
 	}

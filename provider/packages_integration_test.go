@@ -22,9 +22,9 @@ RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq 
 RUN git config --system user.email t@example.com && git config --system user.name t && git config --system init.defaultBranch main
 `
 
-type dockerRunner struct{ id string }
+type rootDockerRunner struct{ id string }
 
-func (d dockerRunner) Run(ctx context.Context, command string, stdin []byte) ([]byte, []byte, int, error) {
+func (d rootDockerRunner) Run(ctx context.Context, command string, stdin []byte) ([]byte, []byte, int, error) {
 	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", d.id, "sh", "-c", command)
 	var out, errb bytes.Buffer
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = bytes.NewReader(stdin), &out, &errb
@@ -49,7 +49,7 @@ func debian13(t *testing.T) *machine {
 	}
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", id).Run() })
-	return &machine{runner: dockerRunner{id}, cfg: remote.Config{Escalation: "none", User: "root", Address: "debian13"}}
+	return &machine{runner: rootDockerRunner{id}, cfg: remote.Config{Escalation: "none", User: "root", Address: "debian13"}}
 }
 
 func sh(t *testing.T, m *machine, command string) string {

@@ -95,8 +95,6 @@ func TestPresentCommands(t *testing.T) {
 	})
 }
 
-func boolp(v bool) *bool { return &v }
-
 // Ported from src/resources/packages.test.ts: deciding whether the list has stopped being true.
 func TestPackagesChanged(t *testing.T) {
 	next := packagesWanted{Present: []string{"ovmf"}, Absent: []string{"telnet"}, Update: false}

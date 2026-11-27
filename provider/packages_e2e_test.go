@@ -5,15 +5,10 @@ import (
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
-	presource "github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/remote/remotetest"
 )
-
-func urnOf(typ, name string) presource.URN {
-	return presource.URN("urn:pulumi:s::p::homelab:index:" + typ + "::" + name)
-}
 
 func props(m map[string]property.Value) property.Map { return property.NewMap(m) }
 

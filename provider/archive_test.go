@@ -42,7 +42,7 @@ func extract(t *testing.T, format archive.Format, file, into string, strip int) 
 	return c
 }
 
-func resolved(t *testing.T, args ArchiveArgs) resolvedArchive {
+func resolvedArchiveFor(t *testing.T, args ArchiveArgs) resolvedArchive {
 	t.Helper()
 	r, err := resolveArchiveArgs(args)
 	if err != nil {
@@ -51,7 +51,7 @@ func resolved(t *testing.T, args ArchiveArgs) resolvedArchive {
 	return r
 }
 
-func contains(t *testing.T, text string, parts ...string) {
+func containsAll(t *testing.T, text string, parts ...string) {
 	t.Helper()
 	for _, part := range parts {
 		if !strings.Contains(text, part) {
@@ -80,14 +80,14 @@ func before(t *testing.T, text, first, second string) {
 // Ported from src/resources/archive.test.ts: unpacking.
 func TestExtractCommand(t *testing.T) {
 	t.Run("uses the decompressor that matches the format", func(t *testing.T) {
-		contains(t, extract(t, archive.TarGz, "/t/a", "/t/u", 0), "tar -z")
-		contains(t, extract(t, archive.TarXz, "/t/a", "/t/u", 0), "tar -J")
-		contains(t, extract(t, archive.TarBz2, "/t/a", "/t/u", 0), "tar -j")
-		contains(t, extract(t, archive.Zip, "/t/a", "/t/u", 0), "unzip")
+		containsAll(t, extract(t, archive.TarGz, "/t/a", "/t/u", 0), "tar -z")
+		containsAll(t, extract(t, archive.TarXz, "/t/a", "/t/u", 0), "tar -J")
+		containsAll(t, extract(t, archive.TarBz2, "/t/a", "/t/u", 0), "tar -j")
+		containsAll(t, extract(t, archive.Zip, "/t/a", "/t/u", 0), "unzip")
 	})
 	t.Run("strips only when asked to", func(t *testing.T) {
 		lacks(t, extract(t, archive.TarGz, "/t/a", "/t/u", 0), "--strip-components")
-		contains(t, extract(t, archive.TarGz, "/t/a", "/t/u", 1), "--strip-components=1")
+		containsAll(t, extract(t, archive.TarGz, "/t/a", "/t/u", 1), "--strip-components=1")
 	})
 	t.Run("refuses a strip on a zip rather than ignoring one", func(t *testing.T) {
 		_, err := extractCommand(archive.Zip, "/t/a", "/t/u", 1)
@@ -99,7 +99,7 @@ func TestExtractCommand(t *testing.T) {
 		}
 	})
 	t.Run("quotes both paths", func(t *testing.T) {
-		contains(t, extract(t, archive.TarGz, "/t/it's", "/t/u", 0), `'/t/it'\''s'`)
+		containsAll(t, extract(t, archive.TarGz, "/t/it's", "/t/u", 0), `'/t/it'\''s'`)
 	})
 }
 
@@ -115,13 +115,13 @@ func TestArchiveInstallScript(t *testing.T) {
 		}
 	})
 	t.Run("downloads into a private directory rather than a predictable path", func(t *testing.T) {
-		contains(t, script, "mktemp -d")
+		containsAll(t, script, "mktemp -d")
 		if regexp.MustCompile(`-o ['"]?/tmp/[a-z]`).MatchString(script) {
 			t.Fatal(script)
 		}
 	})
 	t.Run("removes the download whether or not it was accepted", func(t *testing.T) {
-		contains(t, script, "trap")
+		containsAll(t, script, "trap")
 	})
 	t.Run("unpacks to a staging directory and moves it, so a half-extracted tree is never visible", func(t *testing.T) {
 		before(t, script, `-C "$dir/unpacked"`, `mv "$dir/unpacked"`)
@@ -131,25 +131,25 @@ func TestArchiveInstallScript(t *testing.T) {
 		before(t, script, `mv "$dir/unpacked"`, "ln -sfn")
 	})
 	t.Run("relinks with -n, so a link at a directory is replaced rather than written inside it", func(t *testing.T) {
-		contains(t, script, "ln -sfn")
+		containsAll(t, script, "ln -sfn")
 	})
 	t.Run("leaves the link step out when there is no link", func(t *testing.T) {
 		noLink := archiveSrc
 		noLink.Link = ""
 		lacks(t, installScript(t, noLink, "", ""), "ln -s")
 		// an undeclared link settles to "" too
-		r := resolved(t, ArchiveArgs{Name: "w", URL: &archiveSrc.URL, Sha256: strp("a"), Prefix: "/opt/w"})
+		r := resolvedArchiveFor(t, ArchiveArgs{Name: "w", URL: &archiveSrc.URL, Sha256: strp("a"), Prefix: "/opt/w"})
 		lacks(t, installScript(t, r.archiveSource, r.Owner, r.Group), "ln -s")
 	})
 	t.Run("passes the staging paths as shell variables rather than as quoted literals", func(t *testing.T) {
-		contains(t, script, `-C "$dir/unpacked"`)
+		containsAll(t, script, `-C "$dir/unpacked"`)
 		lacks(t, script, "'$dir")
 	})
 	t.Run("quotes the url, so a query string cannot become shell syntax", func(t *testing.T) {
 		src := archiveSrc
 		src.URL = "https://example.com/a.tar.gz?x=1&y=2"
 		s := installScript(t, src, "", "")
-		contains(t, s, "'https://example.com/a.tar.gz?x=1&y=2'")
+		containsAll(t, s, "'https://example.com/a.tar.gz?x=1&y=2'")
 		if regexp.MustCompile(`curl [^']*&y=2`).MatchString(s) {
 			t.Fatal(s)
 		}
@@ -157,7 +157,7 @@ func TestArchiveInstallScript(t *testing.T) {
 	t.Run("quotes the checksum and the prefix", func(t *testing.T) {
 		src := archiveSrc
 		src.Prefix = "/opt/it's"
-		contains(t, installScript(t, src, "", ""), "'"+strings.Repeat("a", 64)+"'", `'/opt/it'\''s'`)
+		containsAll(t, installScript(t, src, "", ""), "'"+strings.Repeat("a", 64)+"'", `'/opt/it'\''s'`)
 	})
 	t.Run("is the same string every time, so a refresh does not look like a change", func(t *testing.T) {
 		if installScript(t, archiveSrc, "", "") != installScript(t, archiveSrc, "", "") {
@@ -209,50 +209,50 @@ func TestWhereOf(t *testing.T) {
 func TestProbe(t *testing.T) {
 	const w = "/opt/w/current"
 	t.Run("answers on the directory alone when nothing stronger was asked for", func(t *testing.T) {
-		c := probeCommand(w, w, "", "", "")
-		contains(t, c, "test -d '/opt/w/current'")
+		c := archiveProbeCommand(w, w, "", "", "")
+		containsAll(t, c, "test -d '/opt/w/current'")
 		lacks(t, c, "test -x")
 	})
 	t.Run("requires the binary to be executable when one was named", func(t *testing.T) {
-		contains(t, probeCommand(w, w, "/opt/w/current/bin/widget", "", ""), "test -x '/opt/w/current/bin/widget'")
+		containsAll(t, archiveProbeCommand(w, w, "/opt/w/current/bin/widget", "", ""), "test -x '/opt/w/current/bin/widget'")
 	})
 	t.Run("requires the thing to run when a health command was given", func(t *testing.T) {
-		contains(t, probeCommand(w, w, "", "{}/bin/widget --version", ""), "/opt/w/current/bin/widget --version")
+		containsAll(t, archiveProbeCommand(w, w, "", "{}/bin/widget --version", ""), "/opt/w/current/bin/widget --version")
 	})
 	t.Run("discards what the health command printed, because only the exit code is the answer", func(t *testing.T) {
-		contains(t, probeCommand(w, w, "", "{}/bin/widget --version", ""), ">/dev/null 2>&1")
+		containsAll(t, archiveProbeCommand(w, w, "", "{}/bin/widget --version", ""), ">/dev/null 2>&1")
 	})
 	t.Run("requires every rung that was asked for, not any of them", func(t *testing.T) {
-		c := probeCommand(w, w, "/opt/w/current/bin/widget", "{}/bin/widget --version", "")
-		contains(t, c, "test -d", "test -x", "--version")
+		c := archiveProbeCommand(w, w, "/opt/w/current/bin/widget", "{}/bin/widget --version", "")
+		containsAll(t, c, "test -d", "test -x", "--version")
 		lacks(t, c, "||  ")
 		if n := len(strings.Split(c, "&&")); n <= 3 {
 			t.Fatalf("%d parts in %q", n, c)
 		}
 	})
 	t.Run("never fails the command over an absent install, because absence is an answer", func(t *testing.T) {
-		contains(t, probeCommand(w, w, "", "", ""), "|| true")
+		containsAll(t, archiveProbeCommand(w, w, "", "", ""), "|| true")
 	})
 	t.Run("substitutes the install path into both commands, everywhere it appears", func(t *testing.T) {
-		c := probeCommand(w, w, "", "{}/bin/widget check", "{}/bin/widget --version # {}")
-		contains(t, c, "/opt/w/current/bin/widget check", "/opt/w/current/bin/widget --version")
+		c := archiveProbeCommand(w, w, "", "{}/bin/widget check", "{}/bin/widget --version # {}")
+		containsAll(t, c, "/opt/w/current/bin/widget check", "/opt/w/current/bin/widget --version")
 		lacks(t, c, "{}")
 	})
 	t.Run("asks for the version in the same round trip, and never over ssh twice", func(t *testing.T) {
-		before(t, probeCommand(w, w, "", "", "{}/bin/widget --version"), "test -d", "--version")
+		before(t, archiveProbeCommand(w, w, "", "", "{}/bin/widget --version"), "test -d", "--version")
 	})
 	t.Run("leaves the version out entirely when nothing was given to ask with", func(t *testing.T) {
-		if c := probeCommand(w, w, "", "", ""); !strings.HasSuffix(c, "#pulumi-homelab#version'") {
+		if c := archiveProbeCommand(w, w, "", "", ""); !strings.HasSuffix(c, "#pulumi-homelab#version'") {
 			t.Fatal(c)
 		}
 	})
 	t.Run("asks who owns the prefix, not who owns the link", func(t *testing.T) {
-		c := probeCommand(w, "/opt/w/1.4.2", "", "", "")
-		contains(t, c, "stat -c '%U:%G' '/opt/w/1.4.2'")
+		c := archiveProbeCommand(w, "/opt/w/1.4.2", "", "", "")
+		containsAll(t, c, "stat -c '%U:%G' '/opt/w/1.4.2'")
 		lacks(t, c, "stat -c '%U:%G' '/opt/w/current'")
 	})
 	t.Run("never fails over a prefix it cannot stat", func(t *testing.T) {
-		contains(t, probeCommand("/opt/w", "/opt/w", "", "", ""), "2>/dev/null || true")
+		containsAll(t, archiveProbeCommand("/opt/w", "/opt/w", "", "", ""), "2>/dev/null || true")
 	})
 	t.Run("does not let a version command that exits non-zero look like absence", func(t *testing.T) {
 		out := "present\n#pulumi-homelab#owner\nroot:root\n#pulumi-homelab#version\nExec format error\n"
@@ -275,7 +275,7 @@ func TestProbe(t *testing.T) {
 	t.Run("is exactly the TypeScript command", func(t *testing.T) {
 		want := `{ test -d '/opt/w/current' && test -x '/opt/w/current/bin/w' && { /opt/w/current/bin/w ok ; } >/dev/null 2>&1 && echo present || true; }; ` +
 			`echo '#pulumi-homelab#owner'; stat -c '%U:%G' '/opt/w/1' 2>/dev/null || true; echo '#pulumi-homelab#version'; /opt/w/current/bin/w -v 2>&1 || true`
-		if got := probeCommand(w, "/opt/w/1", "/opt/w/current/bin/w", "{}/bin/w ok", "{}/bin/w -v"); got != want {
+		if got := archiveProbeCommand(w, "/opt/w/1", "/opt/w/current/bin/w", "{}/bin/w ok", "{}/bin/w -v"); got != want {
 			t.Fatalf("got\n%s\nwant\n%s", got, want)
 		}
 	})
@@ -314,14 +314,14 @@ func TestOwnership(t *testing.T) {
 		before(t, s, "chown -R", "ln -sfn")
 	})
 	t.Run("chowns the link itself rather than what it points at", func(t *testing.T) {
-		contains(t, installScript(t, archiveSrc, "svc", "svc"), "chown -h 'svc:svc' '/opt/widget/current'")
+		containsAll(t, installScript(t, archiveSrc, "svc", "svc"), "chown -h 'svc:svc' '/opt/widget/current'")
 	})
 	t.Run("defaults to root, so nothing declared before the field existed changes", func(t *testing.T) {
-		contains(t, installScript(t, archiveSrc, "", ""), "chown -R 'root:root'")
+		containsAll(t, installScript(t, archiveSrc, "", ""), "chown -R 'root:root'")
 	})
 	t.Run("does not let the archive choose who owns files on the machine", func(t *testing.T) {
-		contains(t, extract(t, archive.TarGz, "/t/a", "/t/u", 0), "--no-same-owner")
-		contains(t, installScript(t, archiveSrc, "", ""), "--no-same-owner")
+		containsAll(t, extract(t, archive.TarGz, "/t/a", "/t/u", 0), "--no-same-owner")
+		containsAll(t, installScript(t, archiveSrc, "", ""), "--no-same-owner")
 	})
 	t.Run("reports a prefix owned by somebody else as changed", func(t *testing.T) {
 		if !ownershipChanged("root", "root", "svc", "svc") || !ownershipChanged("svc", "root", "svc", "svc") || ownershipChanged("svc", "svc", "svc", "svc") {
@@ -334,7 +334,7 @@ func TestOwnership(t *testing.T) {
 		}
 	})
 	t.Run("is not part of the source, so a changed owner does not refetch the archive", func(t *testing.T) {
-		asRoot, asService := resolved(t, base), resolved(t, withOwner("svc", "svc"))
+		asRoot, asService := resolvedArchiveFor(t, base), resolvedArchiveFor(t, withOwner("svc", "svc"))
 		if sourceChanged(asRoot.archiveSource, asService.archiveSource) {
 			t.Fatal("source changed")
 		}
@@ -346,8 +346,8 @@ func TestOwnership(t *testing.T) {
 		}
 	})
 	t.Run("chowns rather than fetching when only the owner is wrong", func(t *testing.T) {
-		previous := resolved(t, base).archiveSource
-		if got := archiveAct(probe{Installed: true, Owner: "root", Group: "root"}, &previous, resolved(t, withOwner("svc", "svc"))); got != actChown {
+		previous := resolvedArchiveFor(t, base).archiveSource
+		if got := archiveAct(probe{Installed: true, Owner: "root", Group: "root"}, &previous, resolvedArchiveFor(t, withOwner("svc", "svc"))); got != actChown {
 			t.Fatalf("got %s", got)
 		}
 	})
@@ -355,18 +355,18 @@ func TestOwnership(t *testing.T) {
 		owner := "svc"
 		a := base
 		a.Owner = &owner
-		r := resolved(t, a)
+		r := resolvedArchiveFor(t, a)
 		if !installNeeded(false, &r.archiveSource, r.archiveSource) {
 			t.Fatal("not needed")
 		}
 	})
 	t.Run("settles to root when nothing was declared", func(t *testing.T) {
-		if r := resolved(t, base); r.Owner != "root" || r.Group != "root" {
+		if r := resolvedArchiveFor(t, base); r.Owner != "root" || r.Group != "root" {
 			t.Fatalf("got %s:%s", r.Owner, r.Group)
 		}
 	})
 	t.Run("carries a declared owner through", func(t *testing.T) {
-		if r := resolved(t, withOwner("svc", "agents")); r.Owner != "svc" || r.Group != "agents" {
+		if r := resolvedArchiveFor(t, withOwner("svc", "agents")); r.Owner != "svc" || r.Group != "agents" {
 			t.Fatalf("got %s:%s", r.Owner, r.Group)
 		}
 	})
@@ -376,7 +376,7 @@ func TestOwnership(t *testing.T) {
 func TestArchiveAct(t *testing.T) {
 	owner, group := "svc", "svc"
 	args := ArchiveArgs{Name: "w", URL: strp("https://x/a.tar.gz"), Sha256: strp("a"), Prefix: "/opt/w", Owner: &owner, Group: &group}
-	wanted := resolved(t, args)
+	wanted := resolvedArchiveFor(t, args)
 	right := probe{Installed: true, Owner: "svc", Group: "svc"}
 	absent := probe{}
 	t.Run("does nothing to an install that is there and owned correctly", func(t *testing.T) {
@@ -398,7 +398,7 @@ func TestArchiveAct(t *testing.T) {
 	t.Run("installs when the source moved, and does not merely chown", func(t *testing.T) {
 		moved := args
 		moved.Sha256 = strp("b")
-		previous := resolved(t, moved).archiveSource
+		previous := resolvedArchiveFor(t, moved).archiveSource
 		if got := archiveAct(right, &previous, wanted); got != actInstall {
 			t.Fatalf("got %s", got)
 		}
@@ -471,14 +471,14 @@ func TestResolveArgs(t *testing.T) {
 	t.Run("infers the format from the url", func(t *testing.T) {
 		a := base
 		a.URL = strp("https://x/a.tar.xz")
-		if got := resolved(t, a).Format; got != archive.TarXz {
+		if got := resolvedArchiveFor(t, a).Format; got != archive.TarXz {
 			t.Fatal(got)
 		}
 	})
 	t.Run("takes a given format over the url, for a download that carries no name", func(t *testing.T) {
 		a := base
 		a.URL, a.Format = strp("https://api.x/artifacts/1/download"), strp("zip")
-		if got := resolved(t, a).Format; got != archive.Zip {
+		if got := resolvedArchiveFor(t, a).Format; got != archive.Zip {
 			t.Fatal(got)
 		}
 	})
@@ -496,19 +496,19 @@ func TestResolveArgs(t *testing.T) {
 	t.Run("resolves the binary against the link rather than the versioned prefix", func(t *testing.T) {
 		a := base
 		a.Prefix, a.Link, a.Binary = "/opt/w/1.4.2", strp("/opt/w/current"), strp("bin/widget")
-		if got := resolved(t, a).Binary; got != "/opt/w/current/bin/widget" {
+		if got := resolvedArchiveFor(t, a).Binary; got != "/opt/w/current/bin/widget" {
 			t.Fatal(got)
 		}
 	})
 	t.Run("keeps the health command as given, since it is a command rather than a path", func(t *testing.T) {
 		a := base
 		a.HealthCommand = strp("{}/bin/w --version")
-		if got := resolved(t, a).HealthCommand; got != "{}/bin/w --version" {
+		if got := resolvedArchiveFor(t, a).HealthCommand; got != "{}/bin/w --version" {
 			t.Fatal(got)
 		}
 	})
 	t.Run("is the same answer every time, so nothing here can look like a change", func(t *testing.T) {
-		if !reflect.DeepEqual(resolved(t, base), resolved(t, base)) {
+		if !reflect.DeepEqual(resolvedArchiveFor(t, base), resolvedArchiveFor(t, base)) {
 			t.Fatal("differs")
 		}
 	})
