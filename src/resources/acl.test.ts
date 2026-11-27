@@ -8,6 +8,7 @@ import {
   formatEntry,
   formatRemoval,
   normaliseCheckCommand,
+  normaliseChanged,
   normaliseCommand,
   normalisePerms,
   normaliseRefusal,
@@ -388,6 +389,41 @@ describe('resolveNormalise', () => {
 
   it('raises the refusal', () => {
     expect(() => resolveNormalise({ group: 'g', from: '2775', to: '2775' })).toThrow(/change nothing/);
+  });
+});
+
+describe('normaliseChanged', () => {
+  const rule = { group: 'rwgroup', from: '2755', to: '2775', ignore: ['k3s', 'backups/.snapshots'] };
+
+  it('is no change when the state comes back with its keys in the order Pulumi stores them', () => {
+    // Pulumi returns stored objects with their keys sorted, not in the order they were written.
+    const stored = JSON.parse('{"from":"2755","group":"rwgroup","ignore":["backups/.snapshots","k3s"],"to":"2775"}');
+    expect(Object.keys(stored)).toEqual(['from', 'group', 'ignore', 'to']);
+    expect(normaliseChanged(stored, rule)).toBe(false);
+  });
+
+  it('is no change against the rule exactly as it was applied', () => {
+    expect(normaliseChanged(resolveNormalise(rule), rule)).toBe(false);
+  });
+
+  it('is no change between two spellings of one rule', () => {
+    expect(normaliseChanged({ group: 'g', from: '755', to: '775', ignore: ['k3s/'] }, { group: 'g', from: '0755', to: '0775', ignore: ['k3s'] })).toBe(false);
+  });
+
+  it('notices each field changing', () => {
+    const applied = resolveNormalise(rule);
+    expect(normaliseChanged(applied, { ...rule, group: 'other' })).toBe(true);
+    expect(normaliseChanged(applied, { ...rule, from: '2750' })).toBe(true);
+    expect(normaliseChanged(applied, { ...rule, to: '2770' })).toBe(true);
+    expect(normaliseChanged(applied, { ...rule, ignore: ['k3s'] })).toBe(true);
+    expect(normaliseChanged(applied, { ...rule, ignore: ['k3s', 'backups'] })).toBe(true);
+  });
+
+  it('notices a rule being added or removed, and not an absent one staying absent', () => {
+    expect(normaliseChanged(undefined, rule)).toBe(true);
+    expect(normaliseChanged(resolveNormalise(rule), undefined)).toBe(true);
+    expect(normaliseChanged(undefined, undefined)).toBe(false);
+    expect(normaliseChanged(null as unknown as undefined, undefined)).toBe(false);
   });
 });
 

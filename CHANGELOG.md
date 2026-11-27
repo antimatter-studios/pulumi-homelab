@@ -13,6 +13,9 @@ breaking changes live.
 
 ### Fixed
 
+- **`PosixAcl` `normalise` no longer shows as a change on every preview.** The diff compared the
+  stored rule and the declared one as JSON, and Pulumi stores an object's keys sorted, so the two
+  never matched and every `up` walked the whole tree again. The rules are now compared field by field.
 - **`ManagedFile` handles files over 128 KiB, and a command that cannot start now fails.** A file's
   content went into one ssh argument, which Linux caps at 128 KiB. The resulting `E2BIG` was thrown
   where nothing caught it, so `pulumi up` hung instead of failing. Large files now go up in pieces
