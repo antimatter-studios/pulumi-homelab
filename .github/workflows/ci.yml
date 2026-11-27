@@ -54,17 +54,41 @@ jobs:
         # wrong three times before this check existed, so it is asked here rather than remembered.
         run: pnpm run check:revision
 
+  go:
+    # The Go provider plugin that replaces the dynamic providers in src/ (#31). It lives in its own
+    # module under provider/, so everything here runs from there.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: provider
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: provider/go.mod
+          cache-dependency-path: provider/go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
   ci:
     # One always-run job for branch protection to require, so the jobs above can be renamed, split
     # into a matrix or made conditional without ever stranding a merge on a check that never reports.
     name: CI
-    needs: [test]
+    needs: [test, go]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Result
         run: |
-          case '${{ needs.test.result }}' in
-            success|skipped) echo 'ok' ;;
-            *) echo 'test job did not pass' >&2; exit 1 ;;
-          esac
+          for result in '${{ needs.test.result }}' '${{ needs.go.result }}'; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "a required job did not pass: $result" >&2; exit 1 ;;
+            esac
+          done
+          echo 'ok'
