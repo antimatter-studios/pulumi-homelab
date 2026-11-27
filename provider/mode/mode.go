@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 // jsLen is the length JavaScript reports for a string (UTF-16 code units), so the three-digit test
@@ -15,7 +17,7 @@ func jsLen(s string) int { return len(utf16.Encode([]rune(s))) }
 // NormaliseMode gives stat's three-digit answer the leading zero everybody writes, and leaves a
 // four-digit mode (a leading zero, or setuid/setgid/sticky bits) untouched.
 func NormaliseMode(raw string) string {
-	mode := strings.TrimSpace(raw)
+	mode := jscompat.Trim(raw)
 	if jsLen(mode) == 3 {
 		return "0" + mode
 	}
@@ -41,7 +43,7 @@ var modePattern = regexp.MustCompile(`^[0-7]{3,4}$`)
 
 // ModeRefusal says why a string is not written the way a mode is, or "" when it is.
 func ModeRefusal(mode string) string {
-	if modePattern.MatchString(strings.TrimSpace(mode)) {
+	if modePattern.MatchString(jscompat.Trim(mode)) {
 		return ""
 	}
 	return mode + " is not a mode: write three or four octal digits, as in '0755' or '2775'"

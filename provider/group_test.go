@@ -34,8 +34,30 @@ func TestParseGroupEntryReadsGidZero(t *testing.T) {
 	}
 }
 
+// The gid goes through Number(), as in the TypeScript: radix prefixes count, Go-only spellings do not.
+func TestParseGroupEntryReadsTheGidAsNumberDoes(t *testing.T) {
+	for line, want := range map[string]int{
+		"g:x:0x10:":        16,
+		"g:x:0o17:":        15,
+		"g:x:0b1:":         1,
+		"g:x: 1002 :":      1002,
+		"g:x:\u00a01002:":  1002,
+		"g:x::":            0, // Number('') is 0
+		"\ufeffg:x:1002:a": 1002,
+	} {
+		got := parseGroupEntry(line)
+		if got == nil || got.Gid != want {
+			t.Errorf("parseGroupEntry(%q) = %+v, want gid %d", line, got, want)
+		}
+	}
+	if got := parseGroupEntry("\ufeffg:x:1:"); got == nil || got.Name != "g" {
+		t.Errorf("a leading BOM is trimmed as String.prototype.trim does, got %+v", got)
+	}
+}
+
 func TestParseGroupEntrySaysNothingAboutALineThatIsNotAGroup(t *testing.T) {
-	for _, line := range []string{"", "getent: command not found", "storage:x:notanumber:"} {
+	for _, line := range []string{"", "getent: command not found", "storage:x:notanumber:",
+		"g:x:1_000:", "g:x:0x1p4:", "g:x:inf:", "g:x:Infinity:", "g:x:1e400:", "g:x:\u00851:"} {
 		if got := parseGroupEntry(line); got != nil {
 			t.Errorf("parseGroupEntry(%q) = %+v, want nil", line, got)
 		}
