@@ -5,13 +5,15 @@ package cmdline
 import (
 	"regexp"
 	"strings"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 func keyOf(parameter string) string { return strings.SplitN(parameter, "=", 2)[0] }
 
 // Merge sets the parameters asked for and changes nothing else: a parameter already on the line
 // (by key) is replaced in place, the rest are appended in the order asked for, and runs of
-// whitespace collapse to one space. Where two flags share a key, the later one wins.
+// whitespace (JavaScript's \s, so a BOM counts and a NEL does not) collapse to one space. Where two flags share a key, the later one wins.
 func Merge(current string, flags []string) string {
 	wanted := map[string]string{}
 	for _, flag := range flags {
@@ -19,7 +21,7 @@ func Merge(current string, flags []string) string {
 	}
 	replaced := map[string]bool{}
 	out := []string{}
-	for _, parameter := range strings.Fields(current) {
+	for _, parameter := range jscompat.Fields(current) {
 		key := keyOf(parameter)
 		if wants, ok := wanted[key]; ok {
 			replaced[key] = true

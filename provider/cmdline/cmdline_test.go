@@ -49,6 +49,12 @@ func TestMergeCmdline(t *testing.T) {
 	t.Run("collapses the whitespace a hand edit leaves behind, without dropping anything", func(t *testing.T) {
 		is(t, Merge("  quiet   rootwait  ", []string{"splash"}), "quiet rootwait splash")
 	})
+	t.Run("splits on JavaScript's whitespace: a BOM separates, a NEL does not", func(t *testing.T) {
+		is(t, Merge("\ufeffquiet rootwait", []string{"splash"}), "quiet rootwait splash")
+		is(t, Merge("quiet\u0085rootwait", []string{"rootwait"}), "quiet\u0085rootwait rootwait")
+		is(t, Merge("quiet\vrootwait\u00a0splash\u3000", nil), "quiet rootwait splash")
+		is(t, Merge(" \ufeff ", nil), "")
+	})
 }
 
 func TestBootedWith(t *testing.T) {
