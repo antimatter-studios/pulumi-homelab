@@ -183,8 +183,6 @@ func unitNameFor(to string, port int) string {
 	return fmt.Sprintf("autossh-%s-%d", b.String(), port)
 }
 
-func unitPath(unit, directory string) string { return directory + "/" + unit + ".service" }
-
 // resolvedTunnel is a declaration settled: defaults filled in and refusals raised.
 type resolvedTunnel struct {
 	To, Identity, RunAs, Unit, Directory string

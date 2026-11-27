@@ -3,9 +3,6 @@
 package homelab
 
 import (
-	"bytes"
-	"context"
-	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -23,20 +20,6 @@ import (
 // The image is the transport's Debian 13 sshd image (user chris, passwordless sudo); commands run
 // in it through docker exec as chris, with their stdin, which is all a remote.Runner promises.
 const fileTestImage = "pulumi-homelab-transport-sshd:debian13"
-
-type dockerRunner struct{ id string }
-
-func (d dockerRunner) Run(ctx context.Context, command string, stdin []byte) ([]byte, []byte, int, error) {
-	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", "-u", "chris", d.id, "sh", "-c", command)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = bytes.NewReader(stdin), &stdout, &stderr
-	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return stdout.Bytes(), stderr.Bytes(), exit.ExitCode(), nil
-	}
-	return stdout.Bytes(), stderr.Bytes(), 0, err
-}
 
 func dockerOut(t *testing.T, args ...string) string {
 	t.Helper()

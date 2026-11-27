@@ -4,8 +4,6 @@ import (
 	"testing"
 )
 
-func strp(s string) *string { return &s }
-
 // Ported from src/ssh.ts heredoc: the chained commands go on the command line, before the body.
 func TestHeredoc(t *testing.T) {
 	if got := heredoc("/a b", "x", "chmod 0644 '/a b'"); got != "cat > '/a b' <<'PULUMI_EOF' && chmod 0644 '/a b'\nx\nPULUMI_EOF\n" {

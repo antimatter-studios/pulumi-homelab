@@ -38,11 +38,75 @@ export namespace provider {
         to: string;
     }
 
+    export interface HostnameEffective {
+        hostsLine: string;
+        namesHost: boolean;
+        static: string;
+        transient: string;
+    }
+
     export interface Jump {
         address: string;
         hostKeys?: string[];
         port: number;
         user: string;
+    }
+
+    export interface Source {
+        /**
+         * For exec and execFile: the program and its arguments, run without a shell. execFile needs a {} somewhere in it.
+         */
+        argv?: string[];
+        /**
+         * exec (the material is stdout), execFile (the material is what the command wrote to {}) or file (a file on the deploying machine).
+         */
+        kind: string;
+        /**
+         * For file: the path on the deploying machine.
+         */
+        path?: string;
+    }
+
+    export interface SshdSettings {
+        allowAgentForwarding?: boolean;
+        allowGroups?: string[];
+        allowTcpForwarding?: string;
+        allowUsers?: string[];
+        ciphers?: string[];
+        clientAliveCountMax?: number;
+        clientAliveInterval?: number;
+        compression?: string;
+        denyGroups?: string[];
+        denyUsers?: string[];
+        gatewayPorts?: string;
+        ignoreRhosts?: boolean;
+        kbdInteractiveAuthentication?: boolean;
+        kexAlgorithms?: string[];
+        listenAddress?: string[];
+        logLevel?: string;
+        loginGraceTime?: number;
+        macs?: string[];
+        maxAuthTries?: number;
+        maxSessions?: number;
+        maxStartups?: string;
+        passwordAuthentication?: boolean;
+        permitEmptyPasswords?: boolean;
+        permitRootLogin?: string;
+        port?: number;
+        printMotd?: boolean;
+        pubkeyAuthentication?: boolean;
+        strictModes?: boolean;
+        tcpKeepAlive?: boolean;
+        useDNS?: boolean;
+        usePAM?: boolean;
+        x11Forwarding?: boolean;
+    }
+
+    export interface SwapActive {
+        kind: string;
+        path: string;
+        priority: number;
+        sizeMb: number;
     }
 
     export interface TunnelForward {

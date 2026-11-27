@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 	"github.com/antimatter-studios/pulumi-homelab/provider/samba"
@@ -71,20 +70,6 @@ func narrowTo(effective samba.Settings, keys []string) samba.Settings {
 		}
 	}
 	return kept
-}
-
-// heredocInto is src/ssh.ts heredocInto: write content into target, with the terminator alone on
-// its line and a trailing newline after it.
-func heredocInto(target, content string, after ...string) string {
-	body := content
-	if !strings.HasSuffix(body, "\n") {
-		body += "\n"
-	}
-	chain := ""
-	if len(after) > 0 {
-		chain = " && " + strings.Join(after, " && ")
-	}
-	return "cat > " + target + " <<'PULUMI_EOF'" + chain + "\n" + body + "PULUMI_EOF\n"
 }
 
 // sambaApplyCommand stages the new file, refuses one testparm cannot parse, installs it and asks

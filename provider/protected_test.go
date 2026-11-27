@@ -15,8 +15,6 @@ import (
 	"github.com/antimatter-studios/pulumi-homelab/provider/remote/remotetest"
 )
 
-func strp(s string) *string { return &s }
-
 // Ported from src/resources/protected.test.ts: substituting the temporary file into an argv.
 func TestSubstituteArgv(t *testing.T) {
 	cases := []struct {

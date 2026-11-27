@@ -3,9 +3,6 @@
 package homelab
 
 import (
-	"bytes"
-	"context"
-	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -23,20 +20,6 @@ import (
 // passwordless sudo, exactly as the provider sends them; the ssh hop itself is covered by
 // provider/transport's own integration test. Run with: go test -tags integration ./...
 const systemImage = "pulumi-homelab-transport-sshd:debian13"
-
-type dockerRunner struct{ id string }
-
-func (d dockerRunner) Run(ctx context.Context, command string, stdin []byte) ([]byte, []byte, int, error) {
-	cmd := exec.CommandContext(ctx, "docker", "exec", "-i", "-u", "chris", d.id, "sh", "-c", command)
-	var out, errb bytes.Buffer
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = bytes.NewReader(stdin), &out, &errb
-	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return out.Bytes(), errb.Bytes(), exit.ExitCode(), nil
-	}
-	return out.Bytes(), errb.Bytes(), 0, err
-}
 
 func debian(t *testing.T) (dockerRunner, func(string) string) {
 	t.Helper()

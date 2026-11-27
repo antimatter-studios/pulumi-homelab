@@ -106,18 +106,6 @@ func digestOf(content []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// parentOf is the directory a path is in: `args.path.replace(/\/[^/]*$/, ”) || '/'`.
-func parentOf(path string) string {
-	parent := path
-	if at := strings.LastIndex(path, "/"); at >= 0 {
-		parent = path[:at]
-	}
-	if parent == "" {
-		return "/"
-	}
-	return parent
-}
-
 // writeFileCommand keeps the TypeScript cutoff between direct and staged writes. Streaming
 // the body replaces both the small heredoc and the large base64 upload.
 func writeFileCommand(w wantedFile) string {
