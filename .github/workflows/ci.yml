@@ -16,7 +16,8 @@ jobs:
     # — `stat -c`, `dpkg-query`, `systemctl` — and six tests that exercise resources against a real
     # filesystem skip on macOS because BSD `stat` rejects `-c`. Here they run, which is the only
     # place they do.
-    runs-on: ryzen-linux-x64
+    # Temporarily hosted: back to ryzen-linux-x64 once homelab-server #165 is deployed.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +61,8 @@ jobs:
   go:
     # The Go provider plugin that replaces the dynamic providers in src/ (#31). It lives in its own
     # module under provider/, so everything here runs from there.
-    runs-on: ryzen-linux-x64
+    # Temporarily hosted: back to ryzen-linux-x64 once homelab-server #165 is deployed.
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: provider
@@ -144,7 +146,8 @@ jobs:
     name: CI
     needs: [test, go, integration]
     if: always()
-    runs-on: ryzen-linux-x64
+    # Temporarily hosted: back to ryzen-linux-x64 once homelab-server #165 is deployed.
+    runs-on: ubuntu-latest
     steps:
       - name: Result
         run: |
