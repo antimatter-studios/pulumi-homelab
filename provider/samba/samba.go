@@ -6,6 +6,8 @@ package samba
 import (
 	"regexp"
 	"strings"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 const parsesMarker = "#pulumi-homelab#parses"
@@ -18,8 +20,22 @@ type Setting struct {
 
 // Settings is a section's settings in the order they first appear. The TypeScript uses a plain
 // object, whose insertion order decides which of two keys that differ only in spacing a lookup
-// finds first and the order a section is written in, so the Go keeps an ordered list.
+// finds first and the order a section is written in, so the Go keeps an ordered list. Settings
+// parsed from a file keep file order; settings that arrive as a resource input must be built
+// with SettingsFromInput, which gives the order the TypeScript provider saw.
 type Settings []Setting
+
+// SettingsFromInput is a resource input's settings in the order the TypeScript provider saw them.
+// Inputs cross Pulumi's engine as a protobuf Struct whose keys arrive sorted, so the object the
+// TypeScript built had its keys in sorted order (UTF-16 code units), with array-index keys moved
+// ahead as JavaScript always does: jscompat.SortedKeys.
+func SettingsFromInput(input map[string]string) Settings {
+	settings := Settings{}
+	for _, key := range jscompat.SortedKeys(input) {
+		settings = append(settings, Setting{key, input[key]})
+	}
+	return settings
+}
 
 // Get is the value of exactly this key.
 func (s Settings) Get(key string) (string, bool) {
@@ -51,14 +67,17 @@ func (s Settings) Map() map[string]string {
 	return out
 }
 
+// jsDot is JavaScript's `.`, which, unlike RE2's, stops at \r, U+2028 and U+2029 as well as \n.
+const jsDot = `[^\n\r\x{2028}\x{2029}]`
+
 var (
-	headingLine = regexp.MustCompile(`^\[(.+)\]$`)
-	anyHeading  = regexp.MustCompile(`^\s*\[.+\]\s*$`)
-	spaces      = regexp.MustCompile(`\s+`)
+	headingLine = regexp.MustCompile(`^\[(` + jsDot + `+)\]$`)
+	anyHeading  = regexp.MustCompile(`^` + jscompat.SpaceClass + `*\[` + jsDot + `+\]` + jscompat.SpaceClass + `*$`)
+	spaces      = regexp.MustCompile(jscompat.SpaceClass + `+`)
 )
 
 func sameKey(a, b string) bool {
-	norm := func(s string) string { return spaces.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), " ") }
+	norm := func(s string) string { return spaces.ReplaceAllString(jscompat.ToLower(jscompat.Trim(s)), " ") }
 	return norm(a) == norm(b)
 }
 
@@ -68,7 +87,7 @@ func ParseSections(text string) map[string][]string {
 	sections := map[string][]string{}
 	current, inSection := "", false
 	for _, line := range strings.Split(text, "\n") {
-		if heading := headingLine.FindStringSubmatch(strings.TrimSpace(line)); heading != nil {
+		if heading := headingLine.FindStringSubmatch(jscompat.Trim(line)); heading != nil {
 			current, inSection = heading[1], true
 			if _, ok := sections[current]; !ok {
 				sections[current] = []string{}
@@ -87,7 +106,7 @@ func ParseSections(text string) map[string][]string {
 func ParseShareSettings(lines []string) Settings {
 	settings := Settings{}
 	for _, line := range lines {
-		text := strings.TrimSpace(line)
+		text := jscompat.Trim(line)
 		if text == "" || strings.HasPrefix(text, "#") || strings.HasPrefix(text, ";") {
 			continue
 		}
@@ -95,7 +114,7 @@ func ParseShareSettings(lines []string) Settings {
 		if equals <= 0 {
 			continue
 		}
-		settings = settings.set(strings.TrimSpace(text[:equals]), strings.TrimSpace(text[equals+1:]))
+		settings = settings.set(jscompat.Trim(text[:equals]), jscompat.Trim(text[equals+1:]))
 	}
 	return settings
 }
@@ -114,16 +133,23 @@ func FileShare(text, share string) (Settings, bool) {
 	return EffectiveShare(text, share)
 }
 
-// ShareSection renders a share's section with path first. A "path" in settings replaces the
-// value in that first position, as the TypeScript object spread does.
+// ShareSection renders a share's section as the TypeScript's Object.entries({ path, ...settings })
+// does: path first, then settings in the order given, a "path" in settings replacing the value in
+// path's position, and any array-index key ("0", "12") ahead of everything in numeric order, as
+// JavaScript enumerates them. Settings from a resource input must come from SettingsFromInput.
 func ShareSection(share, path string, settings Settings) string {
 	body := Settings{{"path", path}}
 	for _, setting := range settings {
 		body = body.set(setting.Key, setting.Value)
 	}
+	values := body.Map()
+	keys := make([]string, len(body))
+	for i, setting := range body {
+		keys[i] = setting.Key
+	}
 	lines := []string{"[" + share + "]"}
-	for _, setting := range body {
-		lines = append(lines, "   "+setting.Key+" = "+setting.Value)
+	for _, key := range jscompat.KeyOrder(keys) {
+		lines = append(lines, "   "+key+" = "+values[key])
 	}
 	return strings.Join(lines, "\n")
 }
@@ -132,7 +158,7 @@ func ShareSection(share, path string, settings Settings) string {
 func sectionBounds(lines []string, share string) (start, end int) {
 	start = -1
 	for i, line := range lines {
-		if strings.TrimSpace(line) == "["+share+"]" {
+		if jscompat.Trim(line) == "["+share+"]" {
 			start = i
 			break
 		}
@@ -181,7 +207,7 @@ func RemoveSection(text, share string) string {
 func ParseSambaUsers(out string) []string {
 	names := []string{}
 	for _, line := range strings.Split(out, "\n") {
-		if name := strings.TrimSpace(strings.Split(line, ":")[0]); name != "" {
+		if name := jscompat.Trim(strings.Split(line, ":")[0]); name != "" {
 			names = append(names, name)
 		}
 	}
@@ -189,7 +215,7 @@ func ParseSambaUsers(out string) []string {
 }
 
 func isSettingFor(line, key string) bool {
-	text := strings.TrimSpace(line)
+	text := jscompat.Trim(line)
 	if text == "" || strings.HasPrefix(text, "#") || strings.HasPrefix(text, ";") {
 		return false
 	}
@@ -254,7 +280,7 @@ func ParseShareRead(out, share string) ShareRead {
 		verdict = parts[1]
 	}
 	actual, found := FileShare(text, share)
-	return ShareRead{Actual: actual, Found: found, Parses: strings.TrimSpace(verdict) == "ok"}
+	return ShareRead{Actual: actual, Found: found, Parses: jscompat.Trim(verdict) == "ok"}
 }
 
 // FileSetting is one key's value in one section of the file, matched however it was spaced or

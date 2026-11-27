@@ -245,3 +245,70 @@ func TestFileSetting(t *testing.T) {
 		check(t, "global", "netbios name", "homelab", true)
 	})
 }
+
+// The live [public] share from the homelab stack, declared in hand-written order. The TypeScript
+// provider received it through a protobuf Struct, sorted, so that is the order on the machine; the
+// expected text is the TypeScript shareSection's output for that input, run under node.
+func TestShareSectionWritesAnInputInTheOrderTheTypeScriptProviderSaw(t *testing.T) {
+	declared := map[string]string{
+		"comment": "Public Read-Only Share", "browseable": "yes", "guest ok": "yes", "guest only": "yes",
+		"read only": "yes", "writeable": "no", "smb encrypt": "off", "force user": "smbguest",
+		"force group": "rogroup", "create mask": "0444", "directory mask": "0555",
+		"veto files": "/.DS_Store/._*/Thumbs.db/", "delete veto files": "no", "inherit acls": "yes",
+		"inherit permissions": "yes", "acl allow execute always": "yes", "map acl inherit": "yes",
+		"oplocks": "no", "level2 oplocks": "no", "vfs objects": "catia fruit streams_xattr acl_xattr",
+		"fruit:metadata": "stream", "fruit:resource": "file", "fruit:locking": "none", "fruit:aapl": "yes",
+		"spotlight": "no",
+	}
+	want := "[public]\n   path = /mnt/storage\n   acl allow execute always = yes\n   browseable = yes\n   comment = Public Read-Only Share\n   create mask = 0444\n   delete veto files = no\n   directory mask = 0555\n   force group = rogroup\n   force user = smbguest\n   fruit:aapl = yes\n   fruit:locking = none\n   fruit:metadata = stream\n   fruit:resource = file\n   guest ok = yes\n   guest only = yes\n   inherit acls = yes\n   inherit permissions = yes\n   level2 oplocks = no\n   map acl inherit = yes\n   oplocks = no\n   read only = yes\n   smb encrypt = off\n   spotlight = no\n   veto files = /.DS_Store/._*/Thumbs.db/\n   vfs objects = catia fruit streams_xattr acl_xattr\n   writeable = no"
+	for range 20 { // map order is random; every run must give the same text
+		if got := ShareSection("public", "/mnt/storage", SettingsFromInput(declared)); got != want {
+			t.Fatalf("got\n%s\nwant\n%s", got, want)
+		}
+	}
+}
+
+func TestShareSectionPutsArrayIndexKeysAheadOfPath(t *testing.T) {
+	got := ShareSection("x", "/p", SettingsFromInput(map[string]string{"b": "c", "1": "a", "path": "/q"}))
+	if want := "[x]\n   1 = a\n   path = /q\n   b = c"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// Each expectation is what the TypeScript gives for the same input under node.
+func TestWhitespaceIsJavaScripts(t *testing.T) {
+	t.Run("a BOM before the first heading does not hide it", func(t *testing.T) {
+		got := UpsertSection("\ufeff[global]\n   a = b\n[public]\n   path = /x\n", "global", "[global]\n   a = c")
+		if want := "[global]\n   a = c\n[public]\n   path = /x\n"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("a vertical tab before a heading still ends the section", func(t *testing.T) {
+		got := UpsertSetting("[global]\n   a = b\n\v[public]\n   path = /x\n", "global", "c", "d")
+		if want := "[global]\n   a = b\n   c = d\n\v[public]\n   path = /x\n"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("an NBSP or U+3000 inside a key is a space", func(t *testing.T) {
+		if got, want := UpsertSetting("[g]\n   read\u00a0only = yes\n", "g", "read only", "no"), "[g]\n   read only = no\n"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+		if got, want := RemoveSetting("[g]\n   Read\u3000Only = yes\n   x = 1\n", "g", "read only"), "[g]\n   x = 1\n"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("a NEL is not whitespace, so it stays part of the key", func(t *testing.T) {
+		if v, ok := FileSetting("[g]\n\u0085a = b\n", "g", "a"); ok {
+			t.Errorf("found %q", v)
+		}
+	})
+	t.Run("a heading cannot span a carriage return", func(t *testing.T) {
+		sections := ParseSections("[a\rb]\nx = 1\n[c]\ny = 2")
+		if _, ok := sections["a\rb"]; ok {
+			t.Error("read [a\\rb] as a heading")
+		}
+		if _, ok := sections["c"]; !ok {
+			t.Error("missed [c]")
+		}
+	})
+}
