@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "deployment": {
+    "manifest": {},
+    "resources": [
+      { "urn": "urn:pulumi:s::p::pulumi:pulumi:Stack::p-s", "custom": false, "type": "pulumi:pulumi:Stack" },
+      { "urn": "urn:pulumi:s::p::pulumi:providers:homelab::default", "custom": true, "type": "pulumi:providers:homelab" },
+      { "urn": "urn:pulumi:s::p::pulumi-nodejs:dynamic:Resource::a", "custom": true, "type": "pulumi-nodejs:dynamic:Resource",
+        "inputs": { "__provider": "AAAA", "path": "/a" }, "outputs": { "__provider": "AAAA", "path": "/a" } },
+      { "urn": "urn:pulumi:s::p::pulumi-nodejs:dynamic:Resource::b", "custom": true, "type": "pulumi-nodejs:dynamic:Resource",
+        "inputs": { "__provider": "BBBBBB" }, "outputs": { "__provider": "BBBBBB" } },
+      { "urn": "urn:pulumi:s::p::homelab:index:ManagedFile::c", "custom": true, "type": "homelab:index:ManagedFile",
+        "inputs": { "path": "/c" }, "outputs": { "path": "/c" } }
+    ]
+  }
+}
