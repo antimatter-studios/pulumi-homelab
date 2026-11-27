@@ -104,6 +104,11 @@ func (c *Config) validate() error {
 		if j.User == "" {
 			errs = append(errs, missing(at+".user"))
 		}
+		// Pinned keys are the only way to trust a hop when checking is strict and known_hosts is
+		// off, so a jump without them would pass here and fail at connect time instead.
+		if deref(c.StrictHostKeyChecking) && !deref(c.ReadKnownHosts) && len(j.HostKeys) == 0 {
+			errs = append(errs, fmt.Errorf("missing required configuration %s: strictHostKeyChecking is on and readKnownHosts is off, so every jump needs pinned keys", key(at+".hostKeys")))
+		}
 	}
 	switch {
 	case c.AgentSocket == nil && c.AgentSocketEnv == nil:

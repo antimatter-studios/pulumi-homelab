@@ -136,3 +136,25 @@ func TestGroupCreateFailureAndSudoPassword(t *testing.T) {
 		}
 	}
 }
+
+// A preview of a group with no declared gid does not claim gid 0, which reads as root's group: the
+// number is unknown until the machine assigns it. A declared gid is known in the preview.
+func TestGroupPreviewLeavesAnUndeclaredGidUnknown(t *testing.T) {
+	s := configured(t, remotetest.New())
+	undeclared, err := s.Create(p.CreateRequest{Urn: groupURN, DryRun: true, Properties: property.NewMap(map[string]property.Value{
+		"name": property.New("storage"),
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gid := undeclared.Properties.Get("gid"); !gid.IsComputed() {
+		t.Fatalf("undeclared gid in preview = %v, want unknown", gid)
+	}
+	declared, err := s.Create(p.CreateRequest{Urn: groupURN, DryRun: true, Properties: groupInputs(1002, false)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gid := declared.Properties.Get("gid"); gid.IsComputed() || gid.AsNumber() != 1002 {
+		t.Fatalf("declared gid in preview = %v, want 1002", gid)
+	}
+}

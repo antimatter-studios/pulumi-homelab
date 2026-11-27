@@ -340,6 +340,7 @@ func TestRouteOnlyChangeGivesNoResourceDiff(t *testing.T) {
 	moved := with(with(with(homelabServerConfig(), "address", property.New("192.168.0.47")), "port", property.New(22.0)),
 		"jumps", property.New([]property.Value{property.New(property.NewMap(map[string]property.Value{
 			"address": property.New("s2.example"), "port": property.New(22.0), "user": property.New("admin"),
+			"hostKeys": property.New([]property.Value{property.New("ssh-ed25519 AAAAjump")}),
 		}))}))
 	second := newServer(t, (&capture{runner: remotetest.New()}).factory)
 	if err := second.Configure(p.ConfigureRequest{Args: property.NewMap(moved)}); err != nil {
@@ -351,5 +352,25 @@ func TestRouteOnlyChangeGivesNoResourceDiff(t *testing.T) {
 	}
 	if diff.HasChanges || len(diff.DetailedDiff) != 0 {
 		t.Fatalf("a route-only change diffs the resource: %+v", diff)
+	}
+}
+
+// With strict checking and known_hosts off, a jump without pinned keys is refused by name at
+// configure time rather than at connect time.
+func TestStrictJumpNeedsPinnedKeys(t *testing.T) {
+	jump := property.New(property.NewMap(map[string]property.Value{
+		"address": property.New("s2.antimatter-studios.com"),
+		"port":    property.New(22.0),
+		"user":    property.New("admin"),
+	}))
+	err := configure(t, nil, with(homelabServerConfig(), "jumps", property.New([]property.Value{jump})))
+	if err == nil || !strings.Contains(err.Error(), "homelab:jumps[0].hostKeys") {
+		t.Fatalf("got %v", err)
+	}
+	// not required when strict checking is off
+	loose := with(with(homelabServerConfig(), "jumps", property.New([]property.Value{jump})), "strictHostKeyChecking", property.New(false))
+	c := &capture{runner: remotetest.New()}
+	if err := configure(t, c.factory, loose); err != nil {
+		t.Fatal(err)
 	}
 }
