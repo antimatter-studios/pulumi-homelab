@@ -1,10 +1,12 @@
 # Changelog
 
-Every release is recorded here, newest first, and **this file is the single source of truth for
-release notes**. `.githooks/pre-push.d/git-changelog.sh notes v0.1.0` prints a version's section, so
-a release body cannot drift from the changelog — and a version tag whose section is missing is
-refused at push time rather than discovered afterwards. Headings are `## vX.Y.Z` because that is
-what the extractor reads.
+Every change is recorded here under **Unreleased**, and this file is the single source of truth for
+release notes. Releases are automatic: once CI passes on main, `.github/workflows/release-on-green.yml`
+works out the next version from the commit types since the last tag (`fix:` a patch, `feat:` a
+minor), tags that commit, and publishes a GitHub release whose notes are the entries added under
+Unreleased since the previous tag (`scripts/release.sh notes`). Nothing is committed by the release,
+so entries stay under Unreleased; the sections below headed `## vX.Y.Z` were written by hand before
+releases were automated.
 
 Versions follow [semantic versioning](https://semver.org/). Until 1.0.0 the minor number is where
 breaking changes live.
