@@ -61,6 +61,36 @@ func (b box) run(t *testing.T, command, hook string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
+// install runs InstallCommand with content on stdin: the command itself goes in a file first.
+func (b box) install(t *testing.T, p string, how InstallMode, mode, owner, group, content, hook string) Result {
+	t.Helper()
+	command, err := InstallCommand(p, how, mode, owner, group)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := exec.Command("docker", "exec", "-i", b.id, "sh", "-c", "cat > /root/install.sh")
+	put.Stdin = strings.NewReader(command)
+	if out, err := put.CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	cmd := exec.Command("docker", "exec", "-i", "-e", "HOMELAB_SAFEOPS_TEST_HOOK="+hook, b.id, "sh", "/root/install.sh")
+	var out, errb bytes.Buffer
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(content), &out, &errb
+	code := 0
+	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) {
+			t.Fatal(err)
+		}
+		code = exit.ExitCode()
+	}
+	r, err := Parse(code, out.String(), errb.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
 func (b box) remove(t *testing.T, p string, want Expect, hook string) Result {
 	t.Helper()
 	command, err := Command(p, want)
@@ -317,6 +347,115 @@ func TestRealShell(t *testing.T) {
 		if _, err := Parse(code, out, errOut); code != 127 || err == nil || !strings.Contains(err.Error(), "perl is not installed") {
 			t.Fatalf("exit %d: %v", code, err)
 		}
+	})
+}
+
+func TestInstallRealShell(t *testing.T) {
+	b := start(t)
+	b.sh(t, "mkdir -p /srv/i && useradd -M svc")
+	noStaging := func(t *testing.T) {
+		t.Helper()
+		if got := b.sh(t, "ls -A /srv/i | grep homelab-safeops || true"); got != "" {
+			t.Fatalf("staging left: %q", got)
+		}
+	}
+	t.Run("create installs a new file with its owner and mode, bytes exact", func(t *testing.T) {
+		content := "line one\n\x00\xffbinary\n"
+		if r := b.install(t, "/srv/i/f", Create, "4750", "svc", "root", content, ""); r.Outcome != Installed || r.Path != "" {
+			t.Fatalf("%+v", r)
+		}
+		if got := b.sh(t, "stat -c '%a %U %G' /srv/i/f"); got != "4750 svc root\n" {
+			t.Fatalf("%q", got)
+		}
+		if got := b.sh(t, "od -An -c /srv/i/f | tr -s ' '"); !strings.Contains(got, "\\0 377") {
+			t.Fatalf("content %q", got)
+		}
+		noStaging(t)
+	})
+	t.Run("create moves aside what is there, and keeps it unless it is the same content", func(t *testing.T) {
+		b.sh(t, "echo theirs > /srv/i/g")
+		r := b.install(t, "/srv/i/g", Create, "0644", "root", "root", "ours\n", "")
+		if r.Outcome != Installed || !strings.HasPrefix(r.Path, "/srv/i/.homelab-safeops.") || !strings.HasSuffix(r.Path, ".kept") {
+			t.Fatalf("%+v", r)
+		}
+		if got := b.sh(t, "cat /srv/i/g "+r.Path); got != "ours\ntheirs\n" {
+			t.Fatalf("%q", got)
+		}
+		b.sh(t, "rm "+r.Path+" && echo ours > /srv/i/h")
+		if r := b.install(t, "/srv/i/h", Create, "0644", "root", "root", "ours\n", ""); r.Outcome != Installed || r.Path != "" {
+			t.Fatalf("same content: %+v", r)
+		}
+		noStaging(t)
+	})
+	t.Run("create never replaces something that appears while it writes", func(t *testing.T) {
+		b.sh(t, "echo theirs > /srv/i/k")
+		r := b.install(t, "/srv/i/k", Create, "0644", "root", "root", "ours\n", `[ "$1" = aside ] && echo racer > k`)
+		if r.Outcome != Kept || !strings.HasSuffix(r.Path, ".kept") || !strings.Contains(r.Reason, "File exists") {
+			t.Fatalf("%+v", r)
+		}
+		if got := b.sh(t, "cat /srv/i/k "+r.Path); got != "racer\ntheirs\n" {
+			t.Fatalf("%q", got)
+		}
+		b.sh(t, "rm "+r.Path)
+		noStaging(t)
+	})
+	t.Run("update replaces the declared file, a directory is refused", func(t *testing.T) {
+		if r := b.install(t, "/srv/i/f", Update, "0600", "root", "root", "new\n", ""); r.Outcome != Installed || r.Path != "" {
+			t.Fatalf("%+v", r)
+		}
+		if got := b.sh(t, "cat /srv/i/f; stat -c %a /srv/i/f"); got != "new\n600\n" {
+			t.Fatalf("%q", got)
+		}
+		b.sh(t, "mkdir /srv/i/d")
+		for _, how := range []InstallMode{Create, Update} {
+			if r := b.install(t, "/srv/i/d", how, "0644", "root", "root", "x", ""); r.Outcome != Refused || !strings.Contains(r.Reason, "is a directory") {
+				t.Fatalf("%s: %+v", how, r)
+			}
+		}
+		noStaging(t)
+	})
+	t.Run("a bad mode, owner or group is refused, nothing written", func(t *testing.T) {
+		for _, c := range [][3]string{{"rw", "root", "root"}, {"0644", "nobody-such", "root"}, {"0644", "root", "nobody-such"}} {
+			if r := b.install(t, "/srv/i/n", Create, c[0], c[1], c[2], "x", ""); r.Outcome != Refused {
+				t.Fatalf("%v: %+v", c, r)
+			}
+		}
+		b.sh(t, "test ! -e /srv/i/n")
+		noStaging(t)
+	})
+	t.Run("paths under /lib resolve to /usr/lib, which is what is pinned", func(t *testing.T) {
+		command, _ := ResolveCommand("/lib/homelab-test.conf")
+		resolved, err := ParseResolved(b.run(t, command, ""))
+		if err != nil || resolved != "/usr/lib/homelab-test.conf" {
+			t.Fatalf("%q %v", resolved, err)
+		}
+		if r := b.install(t, "/lib/homelab-test.conf", Create, "0644", "root", "root", "x\n", ""); r.Outcome != Refused || !strings.Contains(r.Reason, "the parent /lib is a symlink") {
+			t.Fatalf("unresolved: %+v", r)
+		}
+		if r := b.install(t, resolved, Create, "0644", "root", "root", "x\n", ""); r.Outcome != Installed {
+			t.Fatalf("resolved: %+v", r)
+		}
+		d := b.digest(t, resolved, File)
+		if r := b.remove(t, resolved, Expect{Kind: File, Value: d}, ""); r.Outcome != Removed {
+			t.Fatalf("remove: %+v", r)
+		}
+		b.sh(t, "test ! -e /usr/lib/homelab-test.conf")
+	})
+	t.Run("without sha256sum a digest, a file removal and a create are refused, nothing touched", func(t *testing.T) {
+		b.sh(t, "echo x > /srv/i/s && mv /usr/bin/sha256sum /usr/bin/sha256sum.away")
+		defer b.sh(t, "mv /usr/bin/sha256sum.away /usr/bin/sha256sum")
+		command, _ := DigestCommand("/srv/i/s", File)
+		if _, err := ParseDigest(b.run(t, command, "")); err == nil || !strings.Contains(err.Error(), "sha256sum (coreutils) is not installed") {
+			t.Fatalf("digest: %v", err)
+		}
+		if r := b.remove(t, "/srv/i/s", Expect{Kind: File, Value: strings.Repeat("0", 64)}, ""); r.Outcome != Refused || !strings.Contains(r.Reason, "sha256sum") {
+			t.Fatalf("remove: %+v", r)
+		}
+		if r := b.install(t, "/srv/i/s", Create, "0644", "root", "root", "y\n", ""); r.Outcome != Refused || !strings.Contains(r.Reason, "sha256sum") {
+			t.Fatalf("install: %+v", r)
+		}
+		b.sh(t, `test "$(cat /srv/i/s)" = x`)
+		noStaging(t)
 	})
 }
 

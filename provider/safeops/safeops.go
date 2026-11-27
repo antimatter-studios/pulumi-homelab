@@ -99,6 +99,9 @@ const (
 	Partial Outcome = "partial"
 	// Refused: nothing was touched, for the reason given.
 	Refused Outcome = "refused"
+	// Installed: Install put the file in place. Result.Path is set when something that was there
+	// was moved aside and kept, or the staged copy could not be removed.
+	Installed Outcome = "installed"
 )
 
 // Result is one removal's outcome.
@@ -117,7 +120,10 @@ type Result struct {
 	Remaining int
 }
 
-// Split checks p is an absolute, clean path to an entry and returns its parent and name.
+// Split checks p is an absolute, clean path to an entry and returns its parent and name. An
+// unclean path (/a/./b, /a/../b, //a, a trailing slash) is refused rather than cleaned: cleaning
+// /a/../b without the filesystem can name a different entry than the kernel would, so a resource
+// refuses such a path at Check and records Resolve's answer at Create.
 func Split(p string) (parent, name string, err error) {
 	if !strings.HasPrefix(p, "/") || path.Clean(p) != p || p == "/" {
 		return "", "", fmt.Errorf("%q is not an absolute, clean path to an entry", p)
@@ -163,6 +169,61 @@ func DigestCommand(p string, kind Kind) (string, error) {
 	return command("digest", parent, name, string(kind)), nil
 }
 
+// InstallMode says what Install may do to what is at the path.
+type InstallMode string
+
+const (
+	// Create installs with link(2) after moving anything at the path aside with
+	// renameat2(RENAME_NOREPLACE); nothing of anyone else's is replaced, and what was moved aside
+	// is kept and reported unless it holds exactly the new content.
+	Create InstallMode = "create"
+	// Update replaces the declared file with rename(2): correcting drift in the resource's own file
+	// is the intended act.
+	Update InstallMode = "update"
+)
+
+// InstallCommand is the shell command that installs the content it reads on stdin at p, with mode
+// (octal), owner and group (names or numbers). The parent must exist and be p's physical parent (see
+// ResolveCommand); a directory at p is refused. The caller escalates it, sends the content alone on
+// stdin, and passes what it prints to Parse: Installed, Kept (moved aside, then something appeared
+// at p, so nothing was installed) or Refused.
+func InstallCommand(p string, how InstallMode, mode, owner, group string) (string, error) {
+	parent, name, err := Split(p)
+	if err != nil {
+		return "", err
+	}
+	if how != Create && how != Update {
+		return "", fmt.Errorf("unknown install mode %q", how)
+	}
+	return command("install", parent, name, string(how), mode, owner, group), nil
+}
+
+// ResolveCommand is the shell command that prints p with every symlink in its parent resolved: the
+// physical path a resource records at Create and pins at every later step. Debian 13 links /lib,
+// /bin and /sbin to /usr, so /lib/x is recorded as /usr/lib/x. The entry itself is not resolved.
+func ResolveCommand(p string) (string, error) {
+	parent, name, err := Split(p)
+	if err != nil {
+		return "", err
+	}
+	return command("resolve", parent, name), nil
+}
+
+// ParseResolved reads what ResolveCommand printed: the physical path, or why there is none.
+func ParseResolved(code int, stdout, stderr string) (string, error) {
+	f, err := frame(code, stdout, stderr)
+	if err != nil {
+		return "", err
+	}
+	if f[0] != "resolved" {
+		return "", fmt.Errorf("the path cannot be resolved: %s", f[2])
+	}
+	if _, _, err := Split(f[1]); err != nil {
+		return "", fmt.Errorf("the path resolved to %q, which is not an absolute, clean path", f[1])
+	}
+	return f[1], nil
+}
+
 const frameFields = 7
 
 // frame reads exactly seven NUL-terminated fields, refusing truncated output and trailing data.
@@ -195,7 +256,7 @@ func Parse(code int, stdout, stderr string) (Result, error) {
 	}
 	r := Result{Outcome: Outcome(f[0]), Path: f[1], Reason: f[2], Parent: f[3], Staging: f[4], ParentDevIno: f[5], Remaining: remaining}
 	switch r.Outcome {
-	case Absent, Removed, Restored, Kept, Partial, Refused:
+	case Absent, Removed, Restored, Kept, Partial, Refused, Installed:
 		return r, nil
 	}
 	return Result{}, fmt.Errorf("the safeops script reported %q", f[0])
@@ -242,10 +303,31 @@ func (r Result) Warning(what string) string {
 		return fmt.Sprintf("%s was kept on the machine rather than deleted: %s", what, r.Reason)
 	case Kept:
 		return fmt.Sprintf("%s was kept on the machine rather than deleted, and is now in %s: %s", what, where(), r.Reason)
+	case Installed:
+		if r.Path == "" {
+			return ""
+		}
+		return fmt.Sprintf("%s was installed; %s is left on the machine: %s", what, where(), r.Reason)
 	case Partial:
 		return fmt.Sprintf("%s was only partly removed: %d entries are left in %s, first error: %s", what, r.Remaining, where(), r.Reason)
 	}
 	return fmt.Sprintf("%s was kept on the machine rather than deleted: %s", what, r.Reason)
+}
+
+// InstallWarning is the sentence a caller logs for an Install result that left something on the
+// machine, or "".
+func (r Result) InstallWarning(what string) string {
+	where := r.Path
+	if where == "" {
+		where = fmt.Sprintf("staging directory %s under the directory with dev:ino %s (once %s)", r.Staging, r.ParentDevIno, r.Parent)
+	}
+	switch {
+	case r.Outcome == Installed && (r.Path != "" || r.Staging != ""):
+		return fmt.Sprintf("%s was installed, and %s is left on the machine: %s", what, where, r.Reason)
+	case r.Outcome == Kept:
+		return fmt.Sprintf("%s was not installed, and what was there before is kept as %s: %s", what, where, r.Reason)
+	}
+	return ""
 }
 
 func quote(text string) string {

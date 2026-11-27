@@ -1,12 +1,15 @@
 use strict; use warnings;
 use POSIX ();
 use Cwd ();
-use Fcntl qw(O_RDONLY O_NOFOLLOW O_NONBLOCK);
+use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_EXCL O_NOFOLLOW O_NONBLOCK);
 
-# provider/safeops: remove one entry only while it is exactly what a resource made, or print the
-# digest such an entry would be checked against. Run as
-#   perl -e <this> -- remove <parent> <name> <kind> <expected>
-#   perl -e <this> -- digest <parent> <name> <kind>
+# provider/safeops: remove one entry only while it is exactly what a resource made, install a file
+# without replacing anybody else's, print the digest an entry would be checked against, or resolve
+# a path's physical parent. Run as
+#   perl -e <this> -- remove  <parent> <name> <kind> <expected>
+#   perl -e <this> -- digest  <parent> <name> <kind>
+#   perl -e <this> -- install <parent> <name> create|update <mode> <owner> <group>   (content on stdin)
+#   perl -e <this> -- resolve <parent> <name>
 # kind is symlink (expected: the exact target), file (expected: sha256 of a regular file), tree
 # (expected: sha256 of the tree manifest below) or emptydir. Every decision prints one frame,
 # seven NUL-terminated fields, and exits 0:
@@ -14,9 +17,9 @@ use Fcntl qw(O_RDONLY O_NOFOLLOW O_NONBLOCK);
 # A fault dies (exit 255). HOMELAB_SAFEOPS_TEST_HOOK, when set, is run with sh at named points so
 # tests can change the filesystem mid-run; nothing sets it outside tests.
 
-my ($mode, $parent, $name, $kind, $expected) = @ARGV;
+my ($mode, $parent, $name, $kind, $expected, $owner, $group) = @ARGV;
 $expected //= '';
-my ($pdev, $pino, $priv) = ('', '', '');
+my ($pdev, $pino, $priv, $cleanup) = ('', '', '', '');
 my $prefix = $parent eq '/' ? '' : $parent;
 
 sub hook {
@@ -32,6 +35,9 @@ sub frame { print join("\0", @_), "\0"; exit 0; }
 # otherwise the staging name and the parent's dev:ino say where it is.
 sub done {
   my ($outcome, $rel, $reason, $remaining) = @_;
+  if ($cleanup ne '' && lstat($cleanup)) {
+    unlink($cleanup) or $reason .= " (the staged copy $cleanup could not be removed: $!)";
+  }
   my $path = '';
   if ($rel ne '') {
     my $cwd = Cwd::getcwd();
@@ -43,6 +49,21 @@ sub done {
     }
   }
   frame($outcome, $path, $reason, $parent, $priv, $pdev eq '' ? '' : "$pdev:$pino", $remaining // 0);
+}
+
+# need_sha256sum refuses, with nothing touched, a machine without coreutils' sha256sum: every digest
+# is sha256sum reading a descriptor this script opened (perl-base has no Digest::SHA). No fallback.
+sub need_sha256sum {
+  for my $d (split /:/, ($ENV{PATH} // '/usr/bin:/bin')) { return if $d ne '' && -x "$d/sha256sum"; }
+  done('refused', '', 'sha256sum (coreutils) is not installed, so no digest can be computed: nothing was touched');
+}
+
+sub random_name {
+  open(my $ur, '<', '/dev/urandom') or done('refused', '', "no randomness for a private name: $!");
+  my $rb = '';
+  (read($ur, $rb, 16) // 0) == 16 or done('refused', '', 'no randomness for a private name');
+  close $ur;
+  return '.homelab-safeops.' . unpack('H*', $rb);
 }
 
 sub renameat2_nr {
@@ -205,6 +226,17 @@ sub remove_tree {
   return (0, '');
 }
 
+# resolve: the physical path the entry would have, every symlink in its parent resolved, for a
+# resource to record at Create and pin at every later step (Debian links /lib, /bin and /sbin to
+# /usr, so a path under them would otherwise be refused for its parent).
+if ($mode eq 'resolve') {
+  my $abs = Cwd::abs_path($parent);
+  done('refused', '', "the parent $parent cannot be resolved: $!") unless defined $abs;
+  my @st = lstat($abs);
+  done('refused', '', "the parent $parent resolves to $abs, which is not a directory") if !@st || -l _ || !-d _;
+  frame('resolved', ($abs eq '/' ? '' : $abs) . "/$name", '', $parent, '', "$st[0]:$st[1]", 0);
+}
+
 # Pin the parent once: a real directory, entered, the same dev:ino, at the recorded physical path.
 my @pl = lstat($parent);
 if (!@pl) {
@@ -221,6 +253,7 @@ my $cwd = Cwd::getcwd();
 done('refused', '', "the parent $parent resolves to " . ($cwd // 'nothing')) if !defined($cwd) || $cwd ne $parent;
 
 if ($mode eq 'digest') {
+  need_sha256sum();
   my @nl = lstat($name);
   done('refused', '', "it cannot be examined: $!") unless @nl;
   my $m = mounts_under("$prefix/$name");
@@ -229,10 +262,84 @@ if ($mode eq 'digest') {
   done('refused', '', $e) unless defined $d;
   frame('digest', '', $d, $parent, '', "$pdev:$pino", 0);
 }
-done('refused', '', "unknown mode $mode") unless $mode eq 'remove';
+done('refused', '', "unknown mode $mode") unless $mode eq 'remove' || $mode eq 'install';
 
 if (($here[2] & 022) && !($here[2] & 01000)) {
   done('refused', '', "the parent $parent is writable by group or others without the sticky bit, so no name in it can be trusted");
+}
+
+# install: stage the content from stdin beside the name (O_CREAT|O_EXCL|O_NOFOLLOW, 0600, owner
+# then mode, since chown after chmod would clear set-ID bits), then
+#   update: rename(2) over the name: replacing the declared file is the intended act;
+#   create: move anything at the name aside with renameat2(RENAME_NOREPLACE) to a fresh name, then
+#           link(2) the staged file in, which fails rather than replace something that appeared
+#           meanwhile. What was moved aside is removed only when it is a regular file holding
+#           exactly the new content; otherwise it is kept and reported by path.
+# A directory at the name is refused. The staged copy is removed whatever happens.
+if ($mode eq 'install') {
+  my ($how, $fmode) = ($kind, $expected);
+  done('refused', '', "install takes create or update, not $how") unless $how eq 'create' || $how eq 'update';
+  done('refused', '', "$fmode is not an octal mode") unless $fmode =~ /\A[0-7]{3,4}\z/;
+  my $uid = ($owner // '') =~ /\A\d+\z/ ? $owner : getpwnam($owner // '');
+  my $gid = ($group // '') =~ /\A\d+\z/ ? $group : getgrnam($group // '');
+  done('refused', '', "there is no user " . ($owner // '')) unless defined $uid;
+  done('refused', '', "there is no group " . ($group // '')) unless defined $gid;
+  need_sha256sum() if $how eq 'create';
+  my @nl = lstat($name);
+  done('refused', '', "it cannot be examined: $!") if !@nl && !$!{ENOENT};
+  done('refused', '', "$prefix/$name is a directory; refusing to replace it with a file") if @nl && -d _ && !-l _;
+  my $mounted = mounts_under("$prefix/$name");
+  done('refused', '', "$mounted, so nothing was written") if $mounted ne '';
+
+  my $staged = random_name();
+  sysopen(my $out, $staged, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600) or done('refused', '', "the content cannot be staged beside it: $!");
+  $cleanup = $staged;
+  binmode STDIN;
+  binmode $out;
+  while (1) {
+    my $n = sysread(STDIN, my $buf, 65536);
+    done('refused', '', "the content could not be read: $!") unless defined $n;
+    last if $n == 0;
+    my $off = 0;
+    while ($off < $n) {
+      my $w = syswrite($out, $buf, $n - $off, $off);
+      done('refused', '', "the content could not be staged: $!") unless defined $w;
+      $off += $w;
+    }
+  }
+  chown($uid, $gid, $out) or done('refused', '', "the staged copy cannot be given its owner: $!");
+  chmod(oct($fmode), $out) or done('refused', '', "the staged copy cannot be given its mode: $!");
+  close($out) or done('refused', '', "the content could not be staged: $!");
+
+  if ($how eq 'update') {
+    rename($staged, $name) or done('refused', '', "it could not be installed: $!");
+    $cleanup = '';
+    done('installed', '', '');
+  }
+  my ($new) = file_sha($staged);
+  done('refused', '', 'the staged content could not be digested') unless defined $new;
+  my $aside = '';
+  if (@nl) {
+    $aside = random_name() . '.kept';
+    my $e = rename_noreplace($name, $aside);
+    done('refused', '', "what is there could not be moved aside, so nothing was written: $e") if $e ne '';
+  }
+  hook('aside');
+  if (!link($staged, $name)) {
+    my $e = "$!";
+    done($aside ne '' ? 'kept' : 'refused', $aside, "something appeared at it while it was written, and was not replaced: $e");
+  }
+  unlink($staged) or done('installed', $staged, "it is installed, but the staged copy could not be removed: $!");
+  $cleanup = '';
+  if ($aside ne '') {
+    my @al = lstat($aside);
+    if (@al && -f _ && !-l _) {
+      my ($d) = file_sha($aside, $al[0], $al[1]);
+      done('installed', '', '') if defined $d && $d eq $new && unlink($aside);
+    }
+    done('installed', $aside, 'what was there is not what this resource writes, so it was moved aside and kept');
+  }
+  done('installed', '', '');
 }
 my $valid = $kind eq 'symlink' ? $expected ne '' : $kind eq 'emptydir' ? 1 : $kind eq 'file' || $kind eq 'tree' ? $expected =~ /\A[0-9a-f]{64}\z/ : 0;
 done('refused', '', "the expected " . ($kind eq 'symlink' ? 'target' : 'digest') . " is empty or malformed, so nothing can be proven this resource's") unless $valid;
@@ -244,14 +351,11 @@ if (!@nl) {
 }
 my $mounted = mounts_under("$prefix/$name");
 done('refused', '', "$mounted, so nothing was touched") if $mounted ne '';
+need_sha256sum() if $kind eq 'file' || $kind eq 'tree';
 hook('pinned');
 
 # A private directory beside it, with an unpredictable name, checked right after mkdir.
-open(my $ur, '<', '/dev/urandom') or done('refused', '', "no randomness for a private name: $!");
-my $rb = '';
-(read($ur, $rb, 16) // 0) == 16 or done('refused', '', 'no randomness for a private name');
-close $ur;
-my $try = '.homelab-safeops.' . unpack('H*', $rb);
+my $try = random_name();
 mkdir($try, 0700) or done('refused', '', "a private directory cannot be made beside it: $!");
 $priv = $try;
 my @sl = lstat($priv);

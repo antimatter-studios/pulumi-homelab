@@ -103,3 +103,35 @@ func TestWarning(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallAndResolveCommands(t *testing.T) {
+	got, err := InstallCommand("/etc/x.conf", Create, "0644", "root", "root")
+	if err != nil || !strings.HasSuffix(got, ` -- 'install' '/etc' 'x.conf' 'create' '0644' 'root' 'root'`) {
+		t.Fatalf("%v", err)
+	}
+	if _, err := InstallCommand("/etc/x.conf", "replace", "0644", "root", "root"); err == nil {
+		t.Fatal("an unknown install mode accepted")
+	}
+	for _, unclean := range []string{"/etc/./x", "/etc/../x", "/etc/x/", "//x"} {
+		if _, err := InstallCommand(unclean, Update, "0644", "root", "root"); err == nil {
+			t.Errorf("%q accepted", unclean)
+		}
+		if _, err := ResolveCommand(unclean); err == nil {
+			t.Errorf("%q resolved", unclean)
+		}
+	}
+	r, err := ParseResolved(0, "resolved\x00/usr/lib/x\x00\x00/lib\x00\x001:2\x000\x00", "")
+	if err != nil || r != "/usr/lib/x" {
+		t.Fatalf("%q %v", r, err)
+	}
+	if _, err := ParseResolved(0, "refused\x00\x00the parent /nope cannot be resolved\x00/nope\x00\x00\x000\x00", ""); err == nil {
+		t.Fatal("a refusal resolved")
+	}
+	ins, err := Parse(0, "installed\x00/etc/.homelab-safeops.ab.kept\x00what was there is not what this resource writes, so it was moved aside and kept\x00/etc\x00\x001:2\x000\x00", "")
+	if err != nil || ins.Outcome != Installed || ins.InstallWarning("ManagedFile /etc/x") != "ManagedFile /etc/x was installed, and /etc/.homelab-safeops.ab.kept is left on the machine: what was there is not what this resource writes, so it was moved aside and kept" {
+		t.Fatalf("%+v %v %q", ins, err, ins.InstallWarning("ManagedFile /etc/x"))
+	}
+	if (Result{Outcome: Installed}).InstallWarning("x") != "" {
+		t.Fatal("a clean install warns")
+	}
+}
