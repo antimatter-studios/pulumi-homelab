@@ -9,10 +9,12 @@ import (
 	"unicode/utf8"
 )
 
+// jsSpace is JavaScript's whitespace (trim, \s): Go's unicode.IsSpace plus U+FEFF, minus U+0085,
+// which Go counts as space and JavaScript does not.
+func jsSpace(r rune) bool { return (unicode.IsSpace(r) || r == 0xFEFF) && r != 0x85 }
+
 // jsTrim is JavaScript's String.prototype.trim.
-func jsTrim(s string) string {
-	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || r == 0xFEFF })
-}
+func jsTrim(s string) string { return strings.TrimFunc(s, jsSpace) }
 
 // ParseShow reads `systemctl show -p …` output by key, whatever order systemd returns the
 // properties in. Lines that are not key=value are ignored; an = inside a value is kept.
