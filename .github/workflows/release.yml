@@ -46,6 +46,17 @@ jobs:
           ref: main
           path: .release-tools
 
+      - name: The commit is on main and its CI passed
+        # Releases happen only from green main, whoever pushed the tag.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor "$SHA" origin/main || { echo "$SHA is not on main" >&2; exit 1; }
+          ci="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs?check_name=CI" --jq '[.check_runs[] | select(.conclusion == "success")] | length')"
+          [ "$ci" -gt 0 ] || { echo "CI has not passed on $SHA" >&2; exit 1; }
+
       - name: Next version and notes
         id: next
         env:

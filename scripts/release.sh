@@ -95,10 +95,14 @@ fresh = [(h, e) for h, e in blocks(body) if e not in seen]
 
 # changelog.d/<name>.<kind>.md: the kind names the subheading
 for name in sorted(f for f in fragment_list.split("\n") if f):
-    kind = os.path.basename(name).rsplit(".", 2)[-2].lower() if name.count(".") >= 2 else ""
+    base = os.path.basename(name)
+    kind = base.rsplit(".", 2)[-2].lower() if base.count(".") >= 2 else ""
     if kind not in KINDS:
         sys.exit(f"{name}: name it <anything>.<kind>.md, kind one of {', '.join(KINDS)}")
-    fresh += blocks(open(name).read(), "### " + kind.capitalize())
+    entries = blocks(open(name).read(), "### " + kind.capitalize())
+    if not entries:
+        sys.exit(f"{name}: holds no '- ' bullet, so it would add nothing to the release notes")
+    fresh += entries
 
 order, grouped = [], {}
 for h, e in fresh:
