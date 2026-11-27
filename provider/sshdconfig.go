@@ -15,7 +15,10 @@ import (
 	"github.com/antimatter-studios/pulumi-homelab/provider/sshd"
 )
 
-// SshdConfig is an sshd drop-in, validated with sshd -t before it is installed. Ported from
+// SshdConfig is an sshd drop-in, installed and removed so that sshd always keeps taking
+// connections (sshdChangeCommand): the whole configuration checked with the change before it goes
+// live, an atomic rename, a reload never a restart, a health check after, and a rollback on any
+// failure. Ported from
 // src/resources/sshd.ts. It refuses to write into a directory sshd_config does not include, and
 // renders its settings in the order the TypeScript wrote them on machines (provider/sshd
 // RenderSshdInput and MatchFromInput), so the switch rewrites no drop-in.
@@ -204,14 +207,6 @@ func readSshdConfig(ctx context.Context, m *machine, file, directory, config str
 	return parseSshdRead(asked.out, directory), nil
 }
 
-func sshdInstallCommand(file, content, directory string) string {
-	return "mkdir -p " + shellQuote(directory) + " && staging=$(mktemp) && " +
-		heredocInto(`"$staging"`, content) + "\n" +
-		`sshd -t -f "$staging" || { rm -f "$staging"; echo "the resulting sshd configuration does not parse" >&2; exit 1; }; ` +
-		`install -m 0644 -o root -g root "$staging" ` + shellQuote(sshdPath(file, directory)) + ` && rm -f "$staging" && ` +
-		"systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true"
-}
-
 func sshdOverridden(settings, effective map[string]string) []string {
 	return resolved.Disagreeing(settings, effective, jscompat.ToLower)
 }
@@ -230,7 +225,7 @@ func settleSshd(ctx context.Context, m *machine, file string, a SshdConfigArgs) 
 			"that is never read looks exactly like a setting that was applied and did not take effect.", config, m.describe(), directory, directory, config)
 	}
 	if before.content == nil || *before.content != content {
-		if _, err := m.must(ctx, m.escalate(sshdInstallCommand(file, content, directory))); err != nil {
+		if err := changeSshd(ctx, m, sshdPath(file, directory), directory, config, &content); err != nil {
 			return SshdConfigState{}, err
 		}
 	}
@@ -460,13 +455,19 @@ func (SshdConfig) Diff(_ context.Context, req infer.DiffRequest[SshdConfigArgs, 
 	return diffOf(changed, true, replaces...), nil
 }
 
-// Delete removes the drop-in from the directory in state and reloads sshd.
+// Delete removes the drop-in from the directory in state the way a change installs one: checked
+// first, reloaded, verified and rolled back on failure (sshdChangeCommand).
 func (SshdConfig) Delete(ctx context.Context, req infer.DeleteRequest[SshdConfigState]) (infer.DeleteResponse, error) {
 	m, err := machineFrom(ctx)
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate("rm -f "+shellQuote(sshdPath(req.ID, req.State.Directory))+" && "+
-		"systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true"))
-	return infer.DeleteResponse{}, err
+	directory, config := req.State.Directory, req.State.Config
+	if directory == "" {
+		directory = sshdDirectory
+	}
+	if config == "" {
+		config = sshdConfig
+	}
+	return infer.DeleteResponse{}, changeSshd(ctx, m, sshdPath(req.ID, directory), directory, config, nil)
 }
