@@ -13,6 +13,14 @@ for (let c = 0; c <= 0x10ffff; c++) {
   if (c >= 0xd800 && c <= 0xdfff) continue;
   if (/^\s$/u.test(String.fromCodePoint(c))) spaces.push(c);
 }
+// Code points this node's Unicode does not assign, as [first, last] runs: a newer Go assigns (and
+// case-maps) some of them, which is a difference of Unicode versions, not of this package.
+const unassigned = [];
+for (let c = 0, start = -1; c <= 0x110000; c++) {
+  const free = c < 0x110000 && (c < 0xd800 || c > 0xdfff) && !/\p{Assigned}/u.test(String.fromCodePoint(c));
+  if (free && start < 0) start = c;
+  if (!free && start >= 0) { unassigned.push([start, c - 1]); start = -1; }
+}
 const cases = [];
 for (let c = 0; c <= 0x10ffff; c++) {
   if (c >= 0xd800 && c <= 0xdfff) continue;
@@ -23,6 +31,7 @@ for (let c = 0; c <= 0x10ffff; c++) {
 
 const res = {
   unicode: process.versions.unicode,
+  unassigned,
   spaces,
   cases,
   trim: req.strings.map((s) => [s.trim(), s.trimStart(), s.trimEnd(), s.split(/\s+/)]),

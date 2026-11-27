@@ -21,4 +21,10 @@ find "$root/sdk/nodejs" -name '*.bak' -delete
 node -e '
 const f = process.argv[1], p = JSON.parse(require("fs").readFileSync(f, "utf8"));
 p.main = "index.ts";
+// The generator leaves the version as the literal "${VERSION}", which the SDK then registers its
+// provider with and Pulumi cannot resolve. The committed SDK is the development build, matched by
+// the plugin consumers build from this checkout and install as 0.0.0-dev; a consumer that wants a
+// release pins it with the version option of the provider resource.
+p.version = "0.0.0-dev";
+if (p.pulumi) p.pulumi.version = "0.0.0-dev";
 require("fs").writeFileSync(f, JSON.stringify(p, null, 4) + "\n");' "$root/sdk/nodejs/package.json"
