@@ -29,6 +29,11 @@ func TestNormaliseMode(t *testing.T) {
 	t.Run("ignores the newline stat prints after it", func(t *testing.T) {
 		check(t, "644\n", "0644")
 	})
+	t.Run("trims what String.prototype.trim trims, and only that", func(t *testing.T) {
+		check(t, "\ufeff644", "0644")
+		check(t, "644\u3000", "0644")
+		check(t, "\u0085644", "\u0085644") // NEL is not JavaScript whitespace: four code points stay four
+	})
 }
 
 func TestSpecialBits(t *testing.T) {
@@ -138,6 +143,14 @@ func TestModeRefusal(t *testing.T) {
 	t.Run("refuses a symbolic mode, which chmod takes and stat never reports", func(t *testing.T) {
 		if ModeRefusal("u+rwx") == "" {
 			t.Error("not refused")
+		}
+	})
+	t.Run("trims a byte order mark but not a NEL, as JavaScript does", func(t *testing.T) {
+		if r := ModeRefusal("\ufeff0755"); r != "" {
+			t.Errorf("BOM-led mode refused: %q", r)
+		}
+		if ModeRefusal("\u00850755") == "" {
+			t.Error("NEL-led mode accepted")
 		}
 	})
 	t.Run("refuses the wrong number of digits", func(t *testing.T) {
