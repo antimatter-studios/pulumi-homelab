@@ -33,3 +33,17 @@ func TestParseDpkgStatus(t *testing.T) {
 		installed(t, "  installed   1.0-1  \n", "1.0-1")
 	})
 }
+
+// Words split on JavaScript's whitespace: U+0085 is not a separator, so a NEL-joined status is not
+// "installed", and a NEL after the version stays part of it.
+func TestParseDpkgStatusSplitsAsJavaScriptDoes(t *testing.T) {
+	if v, ok := ParseDpkgStatus("installed\u00851.0"); ok {
+		t.Fatalf("NEL-joined: got %q, true; want not installed", v)
+	}
+	if v, ok := ParseDpkgStatus("installed 1.0\u0085"); !ok || v != "1.0\u0085" {
+		t.Fatalf("trailing NEL: got %q, %v", v, ok)
+	}
+	if v, ok := ParseDpkgStatus("\ufeffinstalled 1.0"); !ok || v != "1.0" {
+		t.Fatalf("leading BOM: got %q, %v", v, ok)
+	}
+}
