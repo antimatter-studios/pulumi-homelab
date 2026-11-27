@@ -36,6 +36,13 @@ func startDebianSSHD(t *testing.T, authorized ssh.PublicKey) (Hop, string) {
 	id := docker(t, "run", "-d", "--rm", "-p", "127.0.0.1::22",
 		"-e", "AUTHORIZED_KEY="+strings.TrimSpace(string(ssh.MarshalAuthorizedKey(authorized))), debianImage)
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", id).Run() })
+	return waitForSSHD(t, id)
+}
+
+// waitForSSHD waits for the container's sshd on its published port and returns the hop and the
+// known_hosts line pinning its host key.
+func waitForSSHD(t *testing.T, id string) (Hop, string) {
+	t.Helper()
 	_, portStr, err := net.SplitHostPort(docker(t, "port", id, "22/tcp"))
 	if err != nil {
 		t.Fatal(err)
