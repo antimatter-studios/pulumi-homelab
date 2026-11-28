@@ -1,0 +1,1 @@
+- GitCheckout checks detached HEAD and refreshes remote-tracking refs before deletion. It warns and keeps the checkout if it finds local work or cannot refresh the refs.
