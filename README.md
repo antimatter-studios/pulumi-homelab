@@ -742,10 +742,23 @@ both the mode and the owner: sshd refuses a key file that is group-writable *or*
 else, and tells the client `Permission denied (publickey)` either way, which is indistinguishable
 from a wrong key.
 
-`SshdConfig` writes a drop-in, validates it with `sshd -t` before installing, and **fails if
-`sshd_config` has no `Include`** for the drop-in directory — the same silent shape as a `config.txt`
-setting under a filter that never matches. It reloads rather than restarts, since one of the
-connections a restart drops is the one applying the change.
+`SshdConfig` writes a drop-in and **fails if `sshd_config` has no `Include`** for the drop-in
+directory — the same silent shape as a `config.txt` setting under a filter that never matches. A
+change must never lock the machine out, so create, update and delete all take the same path:
+
+1. The whole configuration is checked with the change in place before anything live is touched:
+   `/etc/ssh` and the drop-in directory are copied into a private temporary tree, every `Include` is
+   rewritten to point into the copy, the candidate goes in (or comes out), and
+   `sshd -t -f <copy>/sshd_config` must pass. sshd must also be healthy before the change, or there
+   is no telling afterwards whether the change broke it.
+2. The new file is written to a temporary file in the drop-in directory and renamed over the target
+   (removal unlinks it), then `sshd -t` runs on the live tree.
+3. sshd is **reloaded, never restarted** (`systemctl reload ssh`, falling back to `sshd`), since one
+   of the connections a restart drops is the one applying the change.
+4. sshd must then be healthy: active in systemd, listening on every port `sshd -T` reports, and
+   answering `SSH-2.0-` on a local banner probe, retried for up to 15 seconds.
+5. Any failure in 2–4 restores the previous file (or removes the new one), runs `sshd -t`, reloads
+   (or starts sshd, if the change killed it), and fails with what went wrong and how the rollback went.
 
 Its `read` is `sshd -T`, and that needed a normalisation layer of its own:
 `PermitRootLogin prohibit-password` comes back as **`without-password`**, the deprecated spelling of
