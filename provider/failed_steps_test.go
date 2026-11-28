@@ -213,3 +213,81 @@ func TestTunnelInstallRequiresSystemdAnalyze(t *testing.T) {
 		})
 	}
 }
+
+func TestProtectedFileReadStopsOnDigestFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "protected")
+	if err := os.WriteFile(path, []byte("material"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	statCalled := filepath.Join(t.TempDir(), "stat-called")
+	fake := shellStepRunner(t, map[string]string{
+		"sha256sum": "echo 'digest denied' >&2; exit 9", "cut": "",
+		"stat": "printf called > " + shellQuote(statCalled) + "; echo '600 root root'",
+	})
+	_, err := configured(t, fake).Read(p.ReadRequest{ID: path, Urn: urnOf("ProtectedFile", "protected")})
+	requireStepError(t, err, "digest denied")
+	if _, err := os.Stat(statCalled); !os.IsNotExist(err) {
+		t.Fatalf("stat ran after the failed digest: %v", err)
+	}
+}
+
+func TestArchiveDeleteReportsPrefixRemovalFailure(t *testing.T) {
+	dir := t.TempDir()
+	prefix, link := filepath.Join(dir, "archive"), filepath.Join(dir, "current")
+	if err := os.Mkdir(prefix, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(prefix, link); err != nil {
+		t.Fatal(err)
+	}
+	fake := shellStepRunner(t, map[string]string{
+		"bash": "", "find": "", "sort": "", "sha256sum": "", "dirname": "", "mktemp": "",
+		"mv": "", "rmdir": "", "readlink": "",
+		"rm": "echo 'prefix removal denied' >&2; exit 10",
+	})
+	m := &machine{runner: fake, cfg: remote.Config{Escalation: "sudo"}}
+	tree, err := m.must(t.Context(), m.escalate(archiveTreeFunctions+"\ntree_identity "+shellQuote(prefix)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = guardedDelete(t.Context(), m, prefix, archiveDeleteCommand(prefix, link, strings.TrimSpace(tree)))
+	requireStepError(t, err, "prefix removal denied")
+	if _, err := os.Stat(prefix); err != nil {
+		t.Fatalf("staged prefix was not restored: %v", err)
+	}
+	if target, err := os.Readlink(link); err != nil || target != prefix {
+		t.Fatalf("link after failed prefix removal: %q, %v", target, err)
+	}
+}
+
+func TestAuthorizedKeyWriteFailureSkipsPermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "authorized_keys")
+	called := filepath.Join(t.TempDir(), "attributes-called")
+	attribute := "printf called > " + shellQuote(called)
+	fake := shellStepRunner(t, map[string]string{
+		"mkdir": "", "cat": "echo 'key write denied' >&2; exit 17",
+		"chmod": attribute, "chown": attribute,
+	})
+	m := &machine{runner: fake, cfg: remote.Config{Escalation: "sudo"}}
+	_, err := m.must(t.Context(), m.escalate(authorizedWriteCommand(path, "chris", "ssh-ed25519 AAAA test")))
+	requireStepError(t, err, "(exit 17): key write denied")
+	if _, err := os.Stat(called); !os.IsNotExist(err) {
+		t.Fatalf("file attributes changed after failed write: %v", err)
+	}
+}
+
+func TestSystemdUnitWriteFailureSkipsSystemctl(t *testing.T) {
+	dir := t.TempDir()
+	called := filepath.Join(dir, "unit-step-called")
+	step := "printf called > " + shellQuote(called)
+	fake := shellStepRunner(t, map[string]string{
+		"cat": "echo 'unit write denied' >&2; exit 17", "chmod": step, "systemctl": step,
+	})
+	m := &machine{runner: fake, cfg: remote.Config{Escalation: "sudo"}}
+	wanted := unitWanted(SystemdUnitArgs{Name: "example", Directory: &dir, Unit: "[Service]\nExecStart=/bin/true"})
+	_, err := settleUnit(t.Context(), m, wanted)
+	requireStepError(t, err, "(exit 17): unit write denied")
+	if _, err := os.Stat(called); !os.IsNotExist(err) {
+		t.Fatalf("a later unit step ran after failed write: %v", err)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/aptmark"
+	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
 // The key order rule is "match the TypeScript expression". rclone.ts sorts with
@@ -45,17 +46,9 @@ process.stdout.write(JSON.stringify({ keys: Object.keys(o).sort(), names: [...k]
 	if err := json.Unmarshal(out, &want); err != nil {
 		t.Fatal(err)
 	}
-	settings := map[string]string{}
-	for _, k := range keys {
-		settings[k] = "v"
-	}
-	pairs := configPairs(settings)
-	got := []string{}
-	for i := 0; i < len(pairs); i += 2 {
-		got = append(got, pairs[i])
-	}
+	got := slices.SortedFunc(slices.Values(keys), jscompat.CompareUTF16)
 	if !reflect.DeepEqual(got, want.Keys) {
-		t.Errorf("configPairs order %q, Node's Object.keys(x).sort() %q", got, want.Keys)
+		t.Errorf("UTF-16 sort order %q, Node's Object.keys(x).sort() %q", got, want.Keys)
 	}
 	command, _ := aptmark.MarkManualCommand(keys)
 	quoted := []string{}

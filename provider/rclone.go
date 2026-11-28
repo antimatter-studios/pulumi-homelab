@@ -2,6 +2,7 @@ package homelab
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"regexp"
@@ -20,7 +21,7 @@ import (
 //
 // rclone stores passwords obscured, and `rclone obscure` is not deterministic, so comparing a
 // stored value against a freshly obscured one would report drift for ever. The comparison happens
-// in plaintext instead: `rclone reveal` turns what is stored back into what it was. The plaintext
+// in plaintext instead: the provider decodes the stored values using rclone’s format. The plaintext
 // is therefore in the state, marked secret.
 type RcloneRemote struct{}
 
@@ -57,32 +58,40 @@ func (r *RcloneRemote) Annotate(an infer.Annotator) {
 
 const rcloneDefaultConfig = "/root/.config/rclone/rclone.conf"
 
-// configPairs are the key value pairs for `rclone config create`, sorted so a rearranged settings
-// map is not a different command.
-func configPairs(settings map[string]string) []string {
-	pairs := []string{}
-	for _, key := range slices.SortedFunc(maps.Keys(settings), jscompat.CompareUTF16) {
-		pairs = append(pairs, key, settings[key])
-	}
-	return pairs
-}
-
 type storedRemote struct {
 	Type              string
 	Settings, Secrets map[string]string
 	SettingKeys       []string
 }
 
+func runRcloneConfig(ctx context.Context, m *machine, config, args string) (string, error) {
+	command := m.escalate("rclone --config " + shellQuote(config) + " config " + args)
+	result, err := m.ask(ctx, command)
+	if err != nil {
+		// The runner may report partial config output on a connection failure.
+		return "", fmt.Errorf("rclone config %s for %q on %s failed: the connection failed", args, config, m.describe())
+	}
+	if result.code != 0 {
+		// Both a partial dump and a config parser error can contain credentials.
+		return "", fmt.Errorf("rclone config %s for %q on %s failed (exit %d)", args, config, m.describe(), result.code)
+	}
+	return result.out, nil
+}
+
+func dumpRemote(ctx context.Context, m *machine, remote, config string) (map[string]string, []string, error) {
+	dump, err := runRcloneConfig(ctx, m, config, "dump")
+	if err != nil {
+		return nil, nil, err
+	}
+	return rclone.ParseDumpChecked(dump, remote)
+}
+
 // readRemote is what is actually stored, with the credentials turned back into what they were, or
 // nil when there is no such remote.
 func readRemote(ctx context.Context, m *machine, remote string, secretKeys []string, config string) (*storedRemote, error) {
-	dumped, err := m.ask(ctx, m.escalate("rclone --config "+shellQuote(config)+" config dump 2>/dev/null"))
-	if err != nil || dumped.code != 0 {
+	stored, keys, err := dumpRemote(ctx, m, remote, config)
+	if err != nil || stored == nil {
 		return nil, err
-	}
-	stored, keys := rclone.ParseDumpOrdered(dumped.out, remote)
-	if stored == nil {
-		return nil, nil
 	}
 	read := &storedRemote{Type: stored["type"], Settings: map[string]string{}, Secrets: map[string]string{}}
 	for _, key := range secretKeys {
@@ -90,13 +99,8 @@ func readRemote(ctx context.Context, m *machine, remote string, secretKeys []str
 		if !ok {
 			continue
 		}
-		// reveal rather than obscure-and-compare: obscuring is not deterministic
-		revealed, err := m.ask(ctx, m.escalate("rclone reveal "+shellQuote(obscured)+" 2>/dev/null"))
-		if err != nil {
-			return nil, err
-		}
-		if revealed.code == 0 {
-			read.Secrets[key] = strings.TrimSuffix(revealed.out, "\n")
+		if revealed, ok := rclone.Reveal(obscured); ok {
+			read.Secrets[key] = revealed
 		}
 	}
 	for _, key := range keys {
@@ -118,20 +122,109 @@ func nonNil(m map[string]string) map[string]string {
 
 var lastPathPart = regexp.MustCompile(`/[^/]*$`)
 
-// rcloneCreateCommand writes the remote. --obscure asks rclone to obscure the values its own
-// backend schema says are passwords, rather than this code guessing which they are.
-func rcloneCreateCommand(config, remote, typ string, settings, secrets map[string]string) string {
-	quoted := []string{}
-	for _, v := range append(configPairs(settings), configPairs(secrets)...) {
-		quoted = append(quoted, shellQuote(v))
-	}
+// The config/create API uses the same backend config and obscuring logic as the CLI.
+type rcloneCreateRequest struct {
+	Name       string            `json:"name"`
+	Type       string            `json:"type"`
+	Parameters map[string]string `json:"parameters"`
+	Opt        struct {
+		Obscure        bool `json:"obscure"`
+		NonInteractive bool `json:"nonInteractive"`
+	} `json:"opt"`
+}
+
+func rcloneCreatePayload(remote, typ string, settings, secrets map[string]string) ([]byte, error) {
+	var req rcloneCreateRequest
+	req.Name, req.Type = remote, typ
+	req.Parameters = make(map[string]string, len(settings)+len(secrets))
+	maps.Copy(req.Parameters, settings)
+	maps.Copy(req.Parameters, secrets)
+	req.Opt.Obscure, req.Opt.NonInteractive = true, true
+	return json.Marshal(req)
+}
+
+// A private, per-call CA authenticates both ends of the loopback connection. The
+// command reads the request from stdin and cleans up the daemon and its credentials.
+const rcloneCreateViaRC = `command -v openssl >/dev/null 2>&1 || exit 90
+command -v curl >/dev/null 2>&1 || exit 91
+command -v rclone >/dev/null 2>&1 || exit 92
+umask 077
+work=$(mktemp -d) || exit 1
+pid=
+cleanup() {
+	if [ -n "$pid" ]; then
+		kill "$pid" 2>/dev/null
+		wait "$pid" 2>/dev/null
+	fi
+	rm -rf -- "$work"
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 \
+	-subj /CN=127.0.0.1 -addext subjectAltName=IP:127.0.0.1 \
+	-keyout "$work/key" -out "$work/cert" >/dev/null 2>&1 || exit 1
+unset RCLONE_RC_ADDR
+rclone --config CONFIG_FILE rcd --rc-addr 127.0.0.1:0 \
+	--rc-cert "$work/cert" --rc-key "$work/key" --rc-client-ca "$work/cert" \
+	--rc-no-auth --rc-enable-metrics=false --rc-web-gui=false --rc-files "" --rc-baseurl / \
+	--log-level NOTICE --log-file "$work/log" </dev/null >/dev/null 2>&1 &
+pid=$!
+attempt=0
+while kill -0 "$pid" 2>/dev/null; do
+	url=$(sed -n 's@.*Serving remote control on \(https://127\.0\.0\.1:[0-9][0-9]*\)/.*@\1@p' "$work/log" 2>/dev/null)
+	if [ -n "$url" ]; then
+		# Keep any request diagnostics off the filesystem while the daemon is active.
+		rm -f -- "$work/log" || exit 1
+		curl -qfsS --connect-timeout 5 --max-time 60 --noproxy '*' --cacert "$work/cert" --cert "$work/cert" --key "$work/key" \
+			-H 'Content-Type: application/json' --data-binary @- "$url/config/create" >/dev/null || exit 1
+		exit 0
+	fi
+	attempt=$((attempt + 1))
+	[ "$attempt" -lt 100 ] || exit 1
+	sleep 0.1
+done
+exit 1`
+
+func rcloneCreateCommand(config, remote, typ string, hasParameters bool) string {
 	dir := lastPathPart.ReplaceAllString(config, "")
 	if dir == "" {
 		dir = "/"
 	}
-	return "mkdir -p " + shellQuote(dir) + " && " +
-		"rclone --config " + shellQuote(config) + " config create " + shellQuote(remote) + " " + shellQuote(typ) + " " + strings.Join(quoted, " ") + " " +
-		"--obscure --non-interactive >/dev/null"
+	prefix := "mkdir -p " + shellQuote(dir) + " && "
+	if !hasParameters {
+		return "command -v rclone >/dev/null 2>&1 || exit 92\n" + prefix + "rclone --config " + shellQuote(config) + " config create " +
+			shellQuote(remote) + " " + shellQuote(typ) + "  --obscure --non-interactive >/dev/null"
+	}
+	return prefix + "{\n" + strings.Replace(rcloneCreateViaRC, "CONFIG_FILE", shellQuote(config), 1) + "\n}"
+}
+
+func createRemote(ctx context.Context, m *machine, config string, args RcloneRemoteArgs) error {
+	var payload []byte
+	hasParameters := len(args.Settings) != 0 || len(args.Secrets) != 0
+	if hasParameters {
+		var err error
+		payload, err = rcloneCreatePayload(args.Remote, args.Type, args.Settings, args.Secrets)
+		if err != nil {
+			return fmt.Errorf("could not encode rclone config create request")
+		}
+	}
+	command := rcloneCreateCommand(config, args.Remote, args.Type, hasParameters)
+	code, err := m.runWithSecretInput(ctx, command, payload)
+	if err != nil {
+		return fmt.Errorf("rclone config create failed on %s: %w", m.describe(), err)
+	}
+	switch code {
+	case 0:
+		return nil
+	case 90:
+		return fmt.Errorf("openssl is not installed on %s", m.describe())
+	case 91:
+		return fmt.Errorf("curl is not installed on %s", m.describe())
+	case 92:
+		return fmt.Errorf("rclone is not installed on %s", m.describe())
+	default:
+		return fmt.Errorf("rclone config create failed on %s (exit %d)", m.describe(), code)
+	}
 }
 
 func settleRemote(ctx context.Context, m *machine, args RcloneRemoteArgs) (RcloneRemoteState, error) {
@@ -154,7 +247,7 @@ func settleRemote(ctx context.Context, m *machine, args RcloneRemoteArgs) (Rclon
 	// an update that changes nothing does nothing: rewriting a config file to the same values is
 	// churn on a file holding passwords
 	if !unchanged {
-		if _, err := m.must(ctx, m.escalate(rcloneCreateCommand(config, args.Remote, args.Type, settings, secrets))); err != nil {
+		if err := createRemote(ctx, m, config, args); err != nil {
 			return RcloneRemoteState{}, err
 		}
 	}
@@ -285,10 +378,15 @@ func (RcloneRemote) Delete(ctx context.Context, req infer.DeleteRequest[RcloneRe
 	}
 	config := req.State.Config
 	if config == "" {
-		if raw, ok := infer.GetRawRequest[p.DeleteRequest](ctx); !ok || !raw.Properties.Get("config").IsString() {
-			config = rcloneDefaultConfig
+		config = rcloneDefaultConfig
+		if raw, ok := infer.GetRawRequest[p.DeleteRequest](ctx); ok && raw.Properties.Get("config").IsString() {
+			config = raw.Properties.Get("config").AsString()
 		}
 	}
-	_, err = m.must(ctx, m.escalate("rclone --config "+shellQuote(config)+" config delete "+shellQuote(req.ID)+" 2>/dev/null || true"))
+	stored, _, err := dumpRemote(ctx, m, req.ID, config)
+	if err != nil || stored == nil {
+		return infer.DeleteResponse{}, err
+	}
+	_, err = runRcloneConfig(ctx, m, config, "delete "+shellQuote(req.ID))
 	return infer.DeleteResponse{}, err
 }

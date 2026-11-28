@@ -196,3 +196,94 @@ func TestHostnameWritesAndRefreshes(t *testing.T) {
 		t.Fatalf("diff after refresh: %+v, %v", diff, err)
 	}
 }
+
+func TestHostnameHostsReadFailurePreventsWrite(t *testing.T) {
+	const missing = "cat: /etc/hosts: No such file or directory"
+	const eio = "cat: /etc/hosts: Input/output error"
+	cases := []struct {
+		name     string
+		cat      string
+		detail   string
+		dangling bool
+	}{
+		{"permission denied", "echo 'cat: /etc/hosts: Permission denied' >&2; exit 1", "(exit 1): cat: /etc/hosts: Permission denied", false},
+		{"EIO", "echo " + shellQuote(eio) + " >&2; exit 1", "(exit 1): " + eio, false},
+		{"partial output then EIO", "echo '127.0.0.1 localhost'; echo " + shellQuote(eio) + " >&2; exit 1", "(exit 1): " + eio, false},
+		{"sudo warning", "echo 'sudo: unable to resolve host old' >&2; echo " + shellQuote(missing) + " >&2; exit 1", "(exit 1): sudo: unable to resolve host old", false},
+		{"missing diagnostic with exit 2", "echo " + shellQuote(missing) + " >&2; exit 2", "(exit 2): " + missing, false},
+		{"dangling symlink", "", "(exit 1): hosts path is a dangling symlink:", true},
+	}
+	for _, tc := range cases {
+		for _, operation := range []string{"Create", "Update"} {
+			t.Run(operation+"/"+tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				path, target := dir+"/hosts", dir+"/absent"
+				if tc.dangling {
+					if err := os.Symlink(target, path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				runner := shellStepRunner(t, map[string]string{
+					"hostnamectl": "echo old",
+					"hostname":    "echo old",
+					"cat":         tc.cat,
+				})
+				s := configured(t, runner)
+				urn := urnOf("Hostname", "test")
+				inputs := property.NewMap(map[string]property.Value{
+					"name": property.New("new"), "hosts": property.New(path),
+				})
+				var err error
+				if operation == "Create" {
+					_, err = s.Create(p.CreateRequest{Urn: urn, Properties: inputs})
+				} else {
+					state := inputs.Set("name", property.New("old")).
+						Set("domain", property.New("")).
+						Set("restartAvahi", property.New(true)).
+						Set("effective", property.New(property.NewMap(map[string]property.Value{
+							"static": property.New("old"), "transient": property.New("old"),
+							"hostsLine": property.New("127.0.1.1 old"), "namesHost": property.New(true),
+						})))
+					_, err = s.Update(p.UpdateRequest{Urn: urn, ID: path, State: state, Inputs: inputs})
+				}
+				requireStepError(t, err, "LC_ALL=C cat --")
+				requireStepError(t, err, tc.detail)
+				if commands := runner.Commands(); len(commands) != 1 || !strings.Contains(commands[0], "hostnamectl --static") ||
+					strings.Contains(commands[0], "cat >") || strings.Contains(commands[0], "install ") {
+					t.Fatalf("expected only the read command, got %v", commands)
+				}
+				if tc.dangling {
+					if got, err := os.Readlink(path); err != nil || got != target {
+						t.Fatalf("symlink: got %q, %v", got, err)
+					}
+					if _, err := os.Stat(target); !os.IsNotExist(err) {
+						t.Fatalf("expected absent symlink target, got %v", err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestHostnameMissingHostsFile(t *testing.T) {
+	path := t.TempDir() + "/missing hosts"
+	runner := shellStepRunner(t, map[string]string{
+		"hostnamectl": "echo new",
+		"hostname":    "echo new",
+		"cat":         "",
+	})
+	s := configured(t, runner)
+	_, err := s.Create(p.CreateRequest{
+		Urn: urnOf("Hostname", "test"),
+		Properties: property.NewMap(map[string]property.Value{
+			"name": property.New("new"), "hosts": property.New(path),
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "\n127.0.1.1\tnew\n" {
+		t.Fatalf("hosts file: got %q, %v", got, err)
+	}
+}

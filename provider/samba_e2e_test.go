@@ -4,11 +4,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	p "github.com/pulumi/pulumi-go-provider"
 	presource "github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 
+	"github.com/antimatter-studios/pulumi-homelab/provider/remote"
 	"github.com/antimatter-studios/pulumi-homelab/provider/remote/remotetest"
 )
 
@@ -334,4 +336,53 @@ func TestSambaUserCreateAndReadReportPassdbLookupFailure(t *testing.T) {
 	}
 	_, err = s.Read(p.ReadRequest{ID: "chris", Urn: sambaURN})
 	requireStepError(t, err, "cannot read passdb")
+}
+
+func TestSambaShareAndSettingSerializeConfigEdits(t *testing.T) {
+	f := &fakeSamba{conf: baseConf, parses: true}
+	shareRunner := f.runner()
+	installing, releaseInstall := make(chan struct{}), make(chan struct{})
+	blocked := remotetest.New().When(func(string) bool { return true }, func(c string) remotetest.Reply {
+		if strings.HasPrefix(unescalate(c), "staging=$(mktemp)") {
+			close(installing)
+			<-releaseInstall
+		}
+		out, stderr, code, err := shareRunner.Run(t.Context(), c, nil)
+		return remotetest.Reply{Stdout: string(out), Stderr: string(stderr), Code: code, Err: err}
+	}, 0)
+	shareMachine := &machine{runner: blocked, cfg: remote.Config{Escalation: "sudo"}}
+	settingMachine := &machine{runner: f.runner(), cfg: remote.Config{Escalation: "sudo"}}
+
+	shareDone := make(chan error, 1)
+	go func() {
+		_, err := settleShare(t.Context(), shareMachine, SambaShareArgs{Share: "photos", Path: "/mnt/photos"}, nil)
+		shareDone <- err
+	}()
+	select {
+	case <-installing:
+	case err := <-shareDone:
+		t.Fatalf("share did not reach install: %v", err)
+	}
+	settingDone := make(chan error, 1)
+	go func() {
+		_, err := settleSetting(t.Context(), settingMachine, SambaSettingArgs{Share: "global", Key: "workgroup", Value: "LAB"})
+		settingDone <- err
+	}()
+	select {
+	case err := <-settingDone:
+		close(releaseInstall)
+		<-shareDone
+		t.Fatalf("setting finished while share installation was blocked: %v", err)
+	case <-time.After(100 * time.Millisecond):
+		close(releaseInstall)
+	}
+	if err := <-shareDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-settingDone; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.conf, "[photos]") || !strings.Contains(f.conf, "workgroup = LAB") {
+		t.Fatalf("concurrent edit lost: %q", f.conf)
+	}
 }

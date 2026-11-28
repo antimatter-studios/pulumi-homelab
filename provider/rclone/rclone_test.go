@@ -41,3 +41,21 @@ func TestParseDumpOrdered(t *testing.T) {
 		t.Fatalf("settings %v, keys %v", settings, keys)
 	}
 }
+
+func TestReveal(t *testing.T) {
+	for _, tc := range []struct {
+		name, stored, want string
+		ok                 bool
+	}{
+		{"password", "is35suLTYDUARoSoPWgX_TeYnQiUhjI_Yw", "plainpass", true},
+		{"empty", "KcROPgIdgd-makHMld2lUw", "", true},
+		{"invalid base64", "not obscured!", "", false},
+		{"short", "c2hvcnQ", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, ok := Reveal(tc.stored); ok != tc.ok || got != tc.want {
+				t.Fatal("unexpected reveal result")
+			}
+		})
+	}
+}

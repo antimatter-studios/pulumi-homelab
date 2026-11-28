@@ -1,0 +1,1 @@
+- Creating or updating an RcloneRemote with settings or secrets requires curl and OpenSSL on the target host.

@@ -2,6 +2,9 @@ package homelab
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -43,6 +46,26 @@ func (m *machine) must(ctx context.Context, command string) (string, error) {
 		return "", err
 	}
 	return m.check(command, r)
+}
+
+// runWithSecretInput passes data on stdin and discards remote diagnostics that might
+// echo it. A marker lets the shell skip the sudo password if sudo did not read it.
+func (m *machine) runWithSecretInput(ctx context.Context, command string, stdin []byte) (int, error) {
+	if m.cfg.Escalation == "sudo-password" {
+		var nonce [16]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			return 0, err
+		}
+		marker := "pulumi-homelab-" + hex.EncodeToString(nonce[:])
+		command = "while IFS= read -r line; do [ \"$line\" = " + shellQuote(marker) +
+			" ] && break; done; " + command
+		stdin = append([]byte(m.cfg.SudoPassword+"\n"+marker+"\n"), stdin...)
+	}
+	_, _, code, err := m.runner.Run(ctx, m.escalate(command), stdin)
+	if err != nil {
+		return code, errors.New("the connection failed")
+	}
+	return code, nil
 }
 
 // feed runs a command as root with data on its stdin, and fails on a non-zero exit. The command
