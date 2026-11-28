@@ -148,7 +148,8 @@ func readDirectory(ctx context.Context, m *machine, path string) (*DirectoryStat
 // applyDirectory makes it and makes it match. mkdir -p is also what makes this safe to run again.
 func applyDirectory(ctx context.Context, m *machine, d DirectoryState) error {
 	path := shellQuote(d.Path)
-	_, err := m.must(ctx, m.escalate("mkdir -p "+path+" && chmod "+d.Mode+" "+path+" && chown "+d.Owner+":"+d.Group+" "+path))
+	ownership := shellQuote(d.Owner + ":" + d.Group)
+	_, err := m.must(ctx, m.escalate("mkdir -p "+path+" && chmod "+d.Mode+" "+path+" && chown "+ownership+" "+path))
 	return err
 }
 

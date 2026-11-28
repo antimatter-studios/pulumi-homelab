@@ -695,6 +695,11 @@ It models one rule and cannot express `Cmnd_Alias` or `Defaults` lines. Inlining
 usually identical in meaning; a sudoers file that leans on aliases wants a `ManagedFile` instead,
 and loses the `visudo` validation in exchange.
 
+### Security
+
+Hosts must keep sudo's `log_input` setting disabled for the deploy user. The provider can pass
+secrets such as Samba passwords to commands on stdin, and `log_input` records that input.
+
 ## SSH
 
 Three resources, and the reason they are three rather than fields on `User`: a real

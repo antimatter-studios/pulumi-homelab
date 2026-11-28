@@ -1,0 +1,1 @@
+- Stage large ManagedFile writes in unique temporary files next to the destination and clean up after failures.

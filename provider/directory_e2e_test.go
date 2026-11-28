@@ -15,8 +15,8 @@ var directoryURN = presource.URN("urn:pulumi:s::p::homelab:index:Directory::shar
 
 const (
 	sharedRead   = `sudo -n sh -c '{ test -e '\''/srv/shared'\'' || test -L '\''/srv/shared'\''; } || exit 9; stat -c '\''%F|%a|%U|%G'\'' '\''/srv/shared'\'''`
-	sharedApply  = `sudo -n sh -c 'mkdir -p '\''/srv/shared'\'' && chmod 2775 '\''/srv/shared'\'' && chown root:staff '\''/srv/shared'\'''`
-	sharedSticky = `sudo -n sh -c 'mkdir -p '\''/srv/shared'\'' && chmod 3775 '\''/srv/shared'\'' && chown root:staff '\''/srv/shared'\'''`
+	sharedApply  = `sudo -n sh -c 'mkdir -p '\''/srv/shared'\'' && chmod 2775 '\''/srv/shared'\'' && chown '\''root:staff'\'' '\''/srv/shared'\'''`
+	sharedSticky = `sudo -n sh -c 'mkdir -p '\''/srv/shared'\'' && chmod 3775 '\''/srv/shared'\'' && chown '\''root:staff'\'' '\''/srv/shared'\'''`
 	sharedRmdir  = `sudo -n sh -c 'rmdir '\''/srv/shared'\'''`
 )
 
@@ -173,5 +173,21 @@ func TestDirectoryPreviewRunsNothing(t *testing.T) {
 	}
 	if len(fake.Commands()) != 0 {
 		t.Fatalf("preview ran %v", fake.Commands())
+	}
+}
+
+func TestDirectoryQuotesOwnership(t *testing.T) {
+	const command = `sudo -n sh -c 'mkdir -p '\''/srv/shared'\'' && chmod 2775 '\''/srv/shared'\'' && chown '\''owner;name:group$name'\'' '\''/srv/shared'\'''`
+	fake := remotetest.New().On(command, remotetest.Reply{})
+	s := newServer(t, (&capture{runner: fake}).factory)
+	if err := s.Configure(p.ConfigureRequest{Args: property.NewMap(homelabServerConfig())}); err != nil {
+		t.Fatal(err)
+	}
+	inputs := directoryInputs(map[string]property.Value{
+		"owner": property.New("owner;name"),
+		"group": property.New("group$name"),
+	})
+	if _, err := s.Create(p.CreateRequest{Urn: directoryURN, Properties: inputs}); err != nil {
+		t.Fatal(err)
 	}
 }
