@@ -226,7 +226,7 @@ func TestSambaUserLifecycle(t *testing.T) {
 		On(asRoot("smbpasswd -x 'chris'"), remotetest.Reply{})
 	fake.When(func(c string) bool { return c == setPw }, func(string) remotetest.Reply { known = true; return remotetest.Reply{} }, 0)
 	fake.When(func(c string) bool {
-		return c == asRoot("pdbedit -L 2>/dev/null") || c == asRoot("pdbedit -L")
+		return c == asRoot(listSambaUsers)
 	}, func(string) remotetest.Reply {
 		if !known {
 			return remotetest.Reply{}
@@ -265,7 +265,7 @@ func TestSambaUserLifecycle(t *testing.T) {
 		t.Fatalf("delete %v", err)
 	}
 	// a failure does not put the password into the error
-	failing := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).On(setPw, remotetest.Reply{Code: 1, Stderr: "Failed to add entry for user chris.\n"})
+	failing := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).On(asRoot(listSambaUsers), remotetest.Reply{}).On(setPw, remotetest.Reply{Code: 1, Stderr: "Failed to add entry for user chris.\n"})
 	_, err = configured(t, failing).Create(p.CreateRequest{Urn: sambaURN, Properties: in("chris", "s3cret")})
 	if err == nil || strings.Contains(err.Error(), "s3cret") || !strings.Contains(err.Error(), "smbpasswd failed for user chris") ||
 		!strings.Contains(err.Error(), "(exit 1)") || strings.Contains(err.Error(), "Failed to add entry") {
@@ -279,14 +279,16 @@ func TestSambaUserErrorNeverCarriesThePassword(t *testing.T) {
 	for _, password := range []string{"  padded  ", "tab\there", "crlf\r\npart", "line one\nline two"} {
 		echo := "smbpasswd: " + password + "\n" + strings.TrimSpace(password) + "\r\n" +
 			strings.ReplaceAll(password, "\t", "\\t") + "\n" + strings.Split(password, "\n")[0] + "\n"
-		fake := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).
+		fake := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).On(asRoot(listSambaUsers), remotetest.Reply{}).
 			When(func(c string) bool { return strings.Contains(c, "smbpasswd -s -a") }, func(string) remotetest.Reply { return remotetest.Reply{Code: 1, Stdout: echo, Stderr: echo} }, 0)
 		in := property.NewMap(map[string]property.Value{"name": property.New("chris"), "password": property.New(password).WithSecret(true)})
 		_, err := configured(t, fake).Create(p.CreateRequest{Urn: sambaURN, Properties: in})
-		if len(fake.Calls) != 2 {
-			t.Fatalf("expected account lookup and password command, got %d calls", len(fake.Calls))
+		// the system account lookup, the Samba account lookup (which records whether the account
+		// existed before this resource), then the password command
+		if len(fake.Calls) != 3 {
+			t.Fatalf("expected two account lookups and the password command, got %d calls", len(fake.Calls))
 		}
-		call := fake.Calls[1]
+		call := fake.Calls[2]
 		if call.Command != asRoot("smbpasswd -s -a 'chris' >/dev/null") || call.Stdin != password+"\n"+password+"\n" {
 			t.Fatal("expected the password on stdin only, exactly twice")
 		}
@@ -315,4 +317,21 @@ func TestSambaUserImportIgnoresThePassword(t *testing.T) {
 	if d, err := s.Diff(p.DiffRequest{ID: "chris", Urn: sambaURN, State: imported.Properties, Inputs: declared}); err != nil || d.HasChanges {
 		t.Fatalf("import diff %+v %v", d, err)
 	}
+}
+
+func TestSambaUserCreateAndReadReportPassdbLookupFailure(t *testing.T) {
+	fake := remotetest.New().
+		On("getent passwd 'chris'", remotetest.Reply{}).
+		On(asRoot(listSambaUsers), remotetest.Reply{Code: 2, Stderr: "cannot read passdb"})
+	s := configured(t, fake)
+	inputs := property.NewMap(map[string]property.Value{
+		"name": property.New("chris"), "password": property.New("test password").WithSecret(true),
+	})
+	_, err := s.Create(p.CreateRequest{Urn: sambaURN, Properties: inputs})
+	requireStepError(t, err, "cannot read passdb")
+	if len(fake.Commands()) != 2 {
+		t.Fatalf("create continued after the lookup failed: %v", fake.Commands())
+	}
+	_, err = s.Read(p.ReadRequest{ID: "chris", Urn: sambaURN})
+	requireStepError(t, err, "cannot read passdb")
 }

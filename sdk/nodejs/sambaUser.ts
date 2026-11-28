@@ -34,6 +34,10 @@ export class SambaUser extends pulumi.CustomResource {
         return obj['__pulumiType'] === SambaUser.__pulumiType;
     }
 
+    /**
+     * Whether the provider added this Samba account, used to guard deletion.
+     */
+    public /*out*/ readonly created!: pulumi.Output<boolean | undefined>;
     public /*out*/ readonly exists!: pulumi.Output<boolean>;
     public readonly name!: pulumi.Output<string>;
     public readonly password!: pulumi.Output<string | undefined>;
@@ -57,8 +61,10 @@ export class SambaUser extends pulumi.CustomResource {
             }
             resourceInputs["name"] = args ? args.name : undefined;
             resourceInputs["password"] = args?.password ? pulumi.secret(args.password) : undefined;
+            resourceInputs["created"] = undefined /*out*/;
             resourceInputs["exists"] = undefined /*out*/;
         } else {
+            resourceInputs["created"] = undefined /*out*/;
             resourceInputs["exists"] = undefined /*out*/;
             resourceInputs["name"] = undefined /*out*/;
             resourceInputs["password"] = undefined /*out*/;

@@ -66,11 +66,13 @@ class Archive extends pulumi.CustomResource {
             resourceInputs["url"] = args ? args.url : undefined;
             resourceInputs["versionCommand"] = args ? args.versionCommand : undefined;
             resourceInputs["versionPattern"] = args ? args.versionPattern : undefined;
+            resourceInputs["createdTree"] = undefined /*out*/;
             resourceInputs["installed"] = undefined /*out*/;
             resourceInputs["version"] = undefined /*out*/;
         }
         else {
             resourceInputs["binary"] = undefined /*out*/;
+            resourceInputs["createdTree"] = undefined /*out*/;
             resourceInputs["format"] = undefined /*out*/;
             resourceInputs["group"] = undefined /*out*/;
             resourceInputs["healthCommand"] = undefined /*out*/;

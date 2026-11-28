@@ -60,6 +60,10 @@ export class SshTunnel extends pulumi.CustomResource {
     public /*out*/ readonly running!: pulumi.Output<outputs.provider.TunnelForward[]>;
     public readonly to!: pulumi.Output<string>;
     public readonly unit!: pulumi.Output<string>;
+    /**
+     * SHA-256 of the unit last written by the provider, used to guard deletion.
+     */
+    public /*out*/ readonly writtenDigest!: pulumi.Output<string | undefined>;
 
     /**
      * Create a SshTunnel resource with the given unique name, arguments, and options.
@@ -96,6 +100,7 @@ export class SshTunnel extends pulumi.CustomResource {
             resourceInputs["file"] = undefined /*out*/;
             resourceInputs["restarts"] = undefined /*out*/;
             resourceInputs["running"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         } else {
             resourceInputs["active"] = undefined /*out*/;
             resourceInputs["directory"] = undefined /*out*/;
@@ -109,6 +114,7 @@ export class SshTunnel extends pulumi.CustomResource {
             resourceInputs["running"] = undefined /*out*/;
             resourceInputs["to"] = undefined /*out*/;
             resourceInputs["unit"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         opts = pulumi.mergeOptions(utilities.resourceOptsDefaults(), opts);
         super(SshTunnel.__pulumiType, name, resourceInputs, opts);

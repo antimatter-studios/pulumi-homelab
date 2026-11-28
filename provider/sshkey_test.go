@@ -3,6 +3,9 @@ package homelab
 import (
 	"strings"
 	"testing"
+
+	p "github.com/pulumi/pulumi-go-provider"
+	"github.com/pulumi/pulumi/sdk/v3/go/property"
 )
 
 // Ported from src/resources/sshkey.test.ts: the files the pair lives in.
@@ -83,5 +86,27 @@ func TestParseKeyOnDisk(t *testing.T) {
 	got := parseKeyOnDisk(out)
 	if got.PublicKey != "ssh-ed25519 AAAAC3x svc@host" || got.Fingerprint != "SHA256:abc" || got.PrivateMode != "0600" || got.Owner != "svc" {
 		t.Errorf("%+v", got)
+	}
+}
+
+func TestSshKeyTypeChangeDeletesBeforeCreateAtSamePath(t *testing.T) {
+	urn := urnOf("SshKey", "deploy")
+	inputs := props(map[string]property.Value{
+		"path": property.New("/home/chris/.ssh/deploy"), "type": property.New("ed25519"), "allowDelete": property.New(true),
+	})
+	s := newServer(t, nil)
+	created, err := s.Create(p.CreateRequest{Urn: urn, Properties: inputs, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rsa := inputs.Set("type", property.New("rsa"))
+	samePath, err := s.Diff(p.DiffRequest{ID: created.ID, Urn: urn, State: created.Properties, Inputs: rsa})
+	if err != nil || !samePath.DeleteBeforeReplace || samePath.DetailedDiff["type"].Kind != p.UpdateReplace {
+		t.Fatalf("same-path type change: %+v, %v", samePath, err)
+	}
+	moved, err := s.Diff(p.DiffRequest{ID: created.ID, Urn: urn, State: created.Properties,
+		Inputs: rsa.Set("path", property.New("/home/chris/.ssh/other"))})
+	if err != nil || moved.DeleteBeforeReplace || moved.DetailedDiff["path"].Kind != p.UpdateReplace {
+		t.Fatalf("different-path type change: %+v, %v", moved, err)
 	}
 }
