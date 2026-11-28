@@ -81,7 +81,7 @@ func TestRcloneCreateCommand(t *testing.T) {
 		}
 	}
 	got = rcloneCreateCommand("rclone.conf", "a", "s3", false)
-	want := "mkdir -p 'rclone.conf' && rclone --config 'rclone.conf' config create 'a' 's3'  --obscure --non-interactive >/dev/null"
+	want := "command -v rclone >/dev/null 2>&1 || exit 92\nmkdir -p 'rclone.conf' && rclone --config 'rclone.conf' config create 'a' 's3'  --obscure --non-interactive >/dev/null"
 	if got != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
 	}
@@ -89,20 +89,31 @@ func TestRcloneCreateCommand(t *testing.T) {
 
 func TestRcloneCreateReportsMissingTools(t *testing.T) {
 	for _, tc := range []struct {
-		tool string
-		code int
+		tool         string
+		code         int
+		noParameters bool
 	}{
-		{"openssl", 90},
-		{"curl", 91},
-		{"rclone", 92},
+		{"openssl", 90, false},
+		{"curl", 91, false},
+		{"rclone", 92, false},
+		{"rclone", 92, true},
 	} {
-		t.Run(tc.tool, func(t *testing.T) {
+		name := tc.tool
+		if tc.noParameters {
+			name += "/no parameters"
+		}
+		t.Run(name, func(t *testing.T) {
 			fake := remotetest.New()
-			fake.When(func(c string) bool { return strings.Contains(c, "/config/create") }, func(string) remotetest.Reply {
+			fake.When(func(c string) bool {
+				return strings.Contains(c, "config create") || strings.Contains(c, "/config/create")
+			}, func(string) remotetest.Reply {
 				return remotetest.Reply{Code: tc.code}
 			}, 1)
 			m := &machine{runner: fake, cfg: remote.Config{Escalation: "none", User: "user", Address: "host"}}
 			args := RcloneRemoteArgs{Remote: "archive", Type: "sftp", Secrets: map[string]string{"pass": "fixture"}}
+			if tc.noParameters {
+				args.Secrets = nil
+			}
 			err := createRemote(context.Background(), m, rcloneDefaultConfig, args)
 			want := tc.tool + " is not installed on user@host"
 			if err == nil || err.Error() != want {

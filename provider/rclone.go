@@ -192,7 +192,7 @@ func rcloneCreateCommand(config, remote, typ string, hasParameters bool) string 
 	}
 	prefix := "mkdir -p " + shellQuote(dir) + " && "
 	if !hasParameters {
-		return prefix + "rclone --config " + shellQuote(config) + " config create " +
+		return "command -v rclone >/dev/null 2>&1 || exit 92\n" + prefix + "rclone --config " + shellQuote(config) + " config create " +
 			shellQuote(remote) + " " + shellQuote(typ) + "  --obscure --non-interactive >/dev/null"
 	}
 	return prefix + "{\n" + strings.Replace(rcloneCreateViaRC, "CONFIG_FILE", shellQuote(config), 1) + "\n}"
