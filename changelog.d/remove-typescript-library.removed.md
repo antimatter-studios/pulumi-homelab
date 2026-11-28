@@ -1,0 +1,1 @@
+- The TypeScript library (the dynamic providers under `src/`, imported as `pulumi-homelab`) is removed, along with its `audit()` function, its SSH transport and its `bootedWith` and `mountedAt` check builders. This breaks any program that still imports it: use the Go provider through the Node.js SDK (`@antimatter-studios/homelab`) or the Go SDK, and import the existing resources.

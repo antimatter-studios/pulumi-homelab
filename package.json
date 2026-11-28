@@ -1,38 +1,19 @@
 {
   "name": "pulumi-homelab",
-  "description": "Pulumi resources for a Linux machine you own: desired state over SSH, with real drift detection.",
+  "description": "Installs what the Node.js SDK in sdk/nodejs imports, for programs that link it from a checkout, and runs its component tests.",
+  "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run && node --experimental-strip-types scripts/serialise-check.ts && node --experimental-strip-types scripts/revision.ts",
     "test:unit": "vitest run",
-    "check:serialise": "node --experimental-strip-types scripts/serialise-check.ts",
-    "check:revision": "node --experimental-strip-types scripts/revision.ts",
-    "revision:record": "node --experimental-strip-types scripts/revision.ts --record",
     "measure:state": "node --experimental-strip-types scripts/measure-state.ts"
   },
   "dependencies": {
-    "@pulumi/command": "^1.0.1",
-    "@pulumi/pulumi": "^3.140.0",
-    "@pulumi/kubernetes": "^4.34.0"
+    "@pulumi/kubernetes": "^4.34.0",
+    "@pulumi/pulumi": "^3.140.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
   "version": "0.1.0",
-  "license": "MIT",
-  "main": "src/index.ts",
-  "keywords": [
-    "apt",
-    "configuration-management",
-    "flux",
-    "homelab",
-    "kubernetes",
-    "linux",
-    "pulumi",
-    "ssh",
-    "systemd"
-  ]
+  "license": "MIT"
 }

@@ -12,10 +12,7 @@ concurrency:
 
 jobs:
   test:
-    # Ubuntu on purpose rather than for convenience. This package reads machines with GNU coreutils
-    # — `stat -c`, `dpkg-query`, `systemctl` — and six tests that exercise resources against a real
-    # filesystem skip on macOS because BSD `stat` rejects `-c`. Here they run, which is the only
-    # place they do.
+    # The handwritten Node.js SDK helpers in sdk/nodejs/components, and the state measuring script.
     # Temporarily hosted: back to ryzen-linux-x64 once homelab-server #165 is deployed.
     runs-on: ubuntu-latest
     steps:
@@ -27,40 +24,23 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # 22 is the oldest release with `--experimental-strip-types`, which the package checks use
-          # to load this package the way Pulumi does.
           node-version: 22
           cache: pnpm
 
       - name: Install
         # --frozen-lockfile so a drifted lockfile fails here rather than resolving to something
-        # nobody tested.
+        # nobody tested. Programs that link the SDK from a checkout run this same install.
         run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm run typecheck
 
       - name: Unit tests
         run: pnpm run test:unit
-
-      - name: Package checks
-        # Deliberately separate from the unit tests: these run under plain node because vitest's
-        # module transform rewrites imports into captured variables, which is exactly the shape
-        # Pulumi's serialiser rejects — so a vitest version of these checks fails on correct code.
-        run: pnpm run check:serialise
-
-      - name: Provider revision
-        # A change to what a resource reads is inert on every resource that already exists until
-        # TRANSPORT moves, because each one runs the closure stored in its own state. That was got
-        # wrong three times before this check existed, so it is asked here rather than remembered.
-        run: pnpm run check:revision
 
   # test, go and the CI gate run on the homelab's own ARC runners (ryzen-linux-x64). On a public
   # repository that is safe only while fork pull requests need approval before they run: the
   # organisation and repository setting must stay "all_external_contributors".
   go:
-    # The Go provider plugin that replaces the dynamic providers in src/ (#31). It lives in its own
-    # module under provider/, so everything here runs from there.
+    # The Go provider plugin. It lives in its own module under provider/, so everything here runs
+    # from there.
     # Temporarily hosted: back to ryzen-linux-x64 once homelab-server #165 is deployed.
     runs-on: ubuntu-latest
     defaults:

@@ -1,8 +1,7 @@
 // Package homelab is the homelab Pulumi provider: desired state for a Linux machine you own, kept
 // over a remote connection the project configures explicitly.
 //
-// Every resource token is homelab:index:<Type>. The TypeScript dynamic providers under src/ stay
-// in service while the resources move here one type at a time (tracked on #31).
+// Every resource token is homelab:index:<Type>.
 package homelab
 
 import (
