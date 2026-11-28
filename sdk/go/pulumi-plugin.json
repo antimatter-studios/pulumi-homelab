@@ -1,6 +1,6 @@
 {
   "resource": true,
   "name": "homelab",
-  "version": "0.0.0-dev",
+  "version": "0.13.0",
   "server": "github://api.github.com/antimatter-studios"
 }
