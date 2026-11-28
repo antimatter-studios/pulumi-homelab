@@ -3,6 +3,11 @@ package homelab
 import (
 	"reflect"
 	"testing"
+
+	p "github.com/pulumi/pulumi-go-provider"
+	"github.com/pulumi/pulumi/sdk/v3/go/property"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/remote/remotetest"
 )
 
 // Ported from src/resources/rclone.test.ts: building the command.
@@ -42,5 +47,64 @@ func TestRcloneCreateCommand(t *testing.T) {
 	want = "mkdir -p 'rclone.conf' && rclone --config 'rclone.conf' config create 'a' 's3'  --obscure --non-interactive >/dev/null"
 	if got != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestRcloneRemoteReadDistinguishesDumpFailureFromAbsence(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		dump remotetest.Reply
+		want string
+	}{
+		{"command failure", remotetest.Reply{Code: 1, Stderr: "config read denied"}, "config read denied"},
+		{"malformed dump", remotetest.Reply{Stdout: "unexpected output"}, "invalid rclone config dump"},
+		{"malformed remote", remotetest.Reply{Stdout: `{"backup": null}`}, "invalid remote in rclone config dump"},
+		{"confirmed absence", remotetest.Reply{Stdout: `{"other": {"type":"sftp"}}`}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := remotetest.New().On(asRoot("rclone --config '"+rcloneDefaultConfig+"' config dump"), tc.dump)
+			read, err := configuredServer(t, fake).Read(p.ReadRequest{ID: "backup", Urn: urnOf("RcloneRemote", "backup")})
+			if tc.want != "" {
+				requireStepError(t, err, tc.want)
+			} else if err != nil || read.ID != "" {
+				t.Fatalf("missing remote returned %+v, %v", read, err)
+			}
+		})
+	}
+}
+
+func TestRcloneRemoteDeleteReportsFailureAndSkipsAbsentRemote(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		script string
+		want   string
+		delete bool
+	}{
+		{"delete failed", "printf '%s' '{\"backup\":{\"type\":\"sftp\"}}'", "config write denied", true},
+		{"dump failed", "echo 'config read denied' >&2; exit 1", "config read denied", false},
+		{"already absent", "printf '{}'", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := shellStepRunner(t, map[string]string{"rclone": `
+test "$1" = --config && test "$2" = /srv/rclone.conf || exit 99
+case "$3 $4" in
+  'config dump') ` + tc.script + ` ;;
+  'config delete') echo 'config write denied' >&2; exit 1 ;;
+  *) exit 99 ;;
+esac`})
+			state := property.NewMap(map[string]property.Value{
+				"config": property.New("/srv/rclone.conf"), "remote": property.New("backup"), "type": property.New("sftp"),
+				"settings": property.New(property.NewMap(nil)), "secrets": property.New(property.NewMap(nil)),
+			})
+			err := configuredServer(t, fake).Delete(p.DeleteRequest{ID: "backup", Urn: urnOf("RcloneRemote", "backup"), Properties: state})
+			if tc.want != "" {
+				requireStepError(t, err, tc.want)
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if fake.Ran("config delete") != tc.delete {
+				t.Fatalf("unexpected delete attempt: %v", fake.Commands())
+			}
+		})
 	}
 }

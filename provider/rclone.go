@@ -73,16 +73,26 @@ type storedRemote struct {
 	SettingKeys       []string
 }
 
+func dumpRemote(ctx context.Context, m *machine, remote, config string) (map[string]string, []string, error) {
+	command := m.escalate("rclone --config " + shellQuote(config) + " config dump")
+	dumped, err := m.ask(ctx, command)
+	if err != nil {
+		return nil, nil, err
+	}
+	if dumped.code != 0 {
+		dumped.out = "" // The dump can contain credentials.
+		_, err := m.check(command, dumped)
+		return nil, nil, err
+	}
+	return rclone.ParseDumpChecked(dumped.out, remote)
+}
+
 // readRemote is what is actually stored, with the credentials turned back into what they were, or
 // nil when there is no such remote.
 func readRemote(ctx context.Context, m *machine, remote string, secretKeys []string, config string) (*storedRemote, error) {
-	dumped, err := m.ask(ctx, m.escalate("rclone --config "+shellQuote(config)+" config dump 2>/dev/null"))
-	if err != nil || dumped.code != 0 {
+	stored, keys, err := dumpRemote(ctx, m, remote, config)
+	if err != nil || stored == nil {
 		return nil, err
-	}
-	stored, keys := rclone.ParseDumpOrdered(dumped.out, remote)
-	if stored == nil {
-		return nil, nil
 	}
 	read := &storedRemote{Type: stored["type"], Settings: map[string]string{}, Secrets: map[string]string{}}
 	for _, key := range secretKeys {
@@ -285,10 +295,15 @@ func (RcloneRemote) Delete(ctx context.Context, req infer.DeleteRequest[RcloneRe
 	}
 	config := req.State.Config
 	if config == "" {
-		if raw, ok := infer.GetRawRequest[p.DeleteRequest](ctx); !ok || !raw.Properties.Get("config").IsString() {
-			config = rcloneDefaultConfig
+		config = rcloneDefaultConfig
+		if raw, ok := infer.GetRawRequest[p.DeleteRequest](ctx); ok && raw.Properties.Get("config").IsString() {
+			config = raw.Properties.Get("config").AsString()
 		}
 	}
-	_, err = m.must(ctx, m.escalate("rclone --config "+shellQuote(config)+" config delete "+shellQuote(req.ID)+" 2>/dev/null || true"))
+	stored, _, err := dumpRemote(ctx, m, req.ID, config)
+	if err != nil || stored == nil {
+		return infer.DeleteResponse{}, err
+	}
+	_, err = m.must(ctx, m.escalate("rclone --config "+shellQuote(config)+" config delete "+shellQuote(req.ID)))
 	return infer.DeleteResponse{}, err
 }
