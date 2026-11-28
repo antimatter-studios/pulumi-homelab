@@ -2,8 +2,6 @@ package homelab
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"slices"
 	"strings"
@@ -63,18 +61,7 @@ func readSambaUser(ctx context.Context, m *machine, name string) (bool, error) {
 // password first, a marker lets the shell skip that line if sudo did not prompt.
 func setSambaPassword(ctx context.Context, m *machine, name, password string) error {
 	command := "smbpasswd -s -a " + shellQuote(name) + " >/dev/null"
-	stdin := password + "\n" + password + "\n"
-	if m.cfg.Escalation == "sudo-password" {
-		var nonce [16]byte
-		if _, err := rand.Read(nonce[:]); err != nil {
-			return err
-		}
-		marker := "pulumi-homelab-" + hex.EncodeToString(nonce[:])
-		command = "while IFS= read -r line; do [ \"$line\" = " + shellQuote(marker) +
-			" ] && break; done; " + command
-		stdin = m.cfg.SudoPassword + "\n" + marker + "\n" + stdin
-	}
-	_, _, code, err := m.runner.Run(ctx, m.escalate(command), []byte(stdin))
+	code, err := m.runWithSecretInput(ctx, command, []byte(password+"\n"+password+"\n"))
 	if err != nil {
 		return fmt.Errorf("smbpasswd failed for user %s on %s: the connection failed", name, m.describe())
 	}

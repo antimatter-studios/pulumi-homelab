@@ -1,0 +1,1 @@
+- Keep RcloneRemote credentials out of remote command arguments and errors. Creating or updating a remote with settings or secrets uses curl and OpenSSL on the target host.
