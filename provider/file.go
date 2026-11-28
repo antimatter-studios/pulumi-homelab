@@ -168,7 +168,7 @@ func readManagedFile(ctx context.Context, m *machine, path string) (*actualFile,
 
 func (w wantedFile) state() ManagedFileState {
 	return ManagedFileState{Path: w.path, Mode: w.mode, Owner: w.owner, Group: w.group,
-		ReloadSystemd: &w.reloadSystemd, Digest: digestOf([]byte(w.content))}
+		ReloadSystemd: &w.reloadSystemd, Digest: digestOf([]byte(fileBody(w.content)))}
 }
 
 // Create writes the file.
@@ -233,7 +233,7 @@ func (ManagedFile) Update(ctx context.Context, req infer.UpdateRequest[ManagedFi
 	if err != nil {
 		return infer.UpdateResponse[ManagedFileState]{}, err
 	}
-	same := current != nil && current.Content == w.content &&
+	same := current != nil && current.Content == fileBody(w.content) &&
 		current.Mode == w.mode && current.Owner == w.owner && current.Group == w.group
 	if !same {
 		if err := writeManagedFile(ctx, m, w); err != nil {
@@ -249,7 +249,7 @@ func (ManagedFile) Diff(_ context.Context, req infer.DiffRequest[ManagedFileArgs
 	w := wantedOf(req.Inputs)
 	old := req.State
 	diff := map[string]p.PropertyDiff{}
-	if old.Digest != digestOf([]byte(w.content)) {
+	if old.Digest != digestOf([]byte(fileBody(w.content))) {
 		diff["content"] = p.PropertyDiff{Kind: p.Update}
 	}
 	if old.Mode != w.mode {

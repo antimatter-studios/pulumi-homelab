@@ -201,7 +201,6 @@ func TestManagedAndProtectedFileRealShell(t *testing.T) {
 }
 
 func TestManagedFileRefreshWithNormalizedNewline(t *testing.T) {
-	t.Skip("blocked by #134: refresh hashes the newline written to disk, but Diff hashes the input without it")
 	d := startDebian(t)
 	s := realServer(t, d)
 	const path = "/etc/demo/normalized.conf"

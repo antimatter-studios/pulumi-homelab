@@ -166,7 +166,7 @@ func TestManagedFileLifecycle(t *testing.T) {
 		t.Fatalf("created %s %v", created.ID, created.Properties)
 	}
 
-	if got := created.Properties.Get("digest").AsString(); got != digestOf([]byte("one")) {
+	if got := created.Properties.Get("digest").AsString(); got != digestOf([]byte("one\n")) {
 		t.Fatalf("create digest %s", got)
 	}
 
@@ -177,10 +177,9 @@ func TestManagedFileLifecycle(t *testing.T) {
 		t.Fatalf("read %+v %v", read, err)
 	}
 
-	// TypeScript compares the exact content. Refresh observes the newline added by writing.
 	same, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: read.Properties, Inputs: fileInputs(path, "one")})
-	if err != nil || !same.HasChanges || same.DetailedDiff["content"].Kind != p.Update {
-		t.Fatalf("diff after refresh adds the on-disk newline %+v %v", same, err)
+	if err != nil || same.HasChanges {
+		t.Fatalf("unchanged content diffs after refresh %+v %v", same, err)
 	}
 	edited, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: read.Properties, Inputs: fileInputs(path, "two\n")})
 	if err != nil || !edited.HasChanges || edited.DetailedDiff["content"].Kind != p.Update || edited.DeleteBeforeReplace {
@@ -195,14 +194,14 @@ func TestManagedFileLifecycle(t *testing.T) {
 		t.Fatalf("reloadSystemd diff %+v %v", r, err)
 	}
 
-	// drift on the machine shows after a refresh
-	disk.content = "hand edited\n"
+	// Removing just the final newline is also drift.
+	disk.content = "one"
 	drifted, err := s.Read(p.ReadRequest{ID: path, Urn: fileURN, Properties: read.Properties, Inputs: fileInputs(path, "one")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d, _ := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: fileInputs(path, "one")}); !d.HasChanges {
-		t.Fatal("a hand edit was not drift")
+	if d, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: fileInputs(path, "one")}); err != nil || !d.HasChanges || d.DetailedDiff["content"].Kind != p.Update {
+		t.Fatalf("missing newline did not report content drift: %+v %v", d, err)
 	}
 
 	// update: writes when different, and does nothing when the machine already matches
@@ -237,6 +236,42 @@ func TestManagedFileLifecycle(t *testing.T) {
 	gone, err := s.Read(p.ReadRequest{ID: path, Urn: fileURN, Properties: drifted.Properties})
 	if err != nil || gone.ID != "" {
 		t.Fatalf("read of a deleted file %+v %v", gone, err)
+	}
+}
+
+func TestManagedFileLegacyDigestUpdateSkipsWrite(t *testing.T) {
+	const path = "/srv/www/page.html"
+	const content = "one"
+	disk := &fakeDisk{path: path, content: content + "\n", stat: "640 www-data www-data", exists: true}
+	fake := disk.runner()
+	w := pageFile(content)
+	w.reloadSystemd = true
+	disk.write(fake, w)
+	s := configured(t, fake)
+
+	inputs := fileInputs(path, content).Set("reloadSystemd", property.New(true))
+	legacyState := property.NewMap(map[string]property.Value{
+		"path": property.New(path), "mode": property.New(w.mode),
+		"owner": property.New(w.owner), "group": property.New(w.group),
+		"reloadSystemd": property.New(true), "digest": property.New(digestOf([]byte(content))),
+	})
+
+	diff, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: legacyState, OldInputs: inputs, Inputs: inputs})
+	if err != nil || !diff.HasChanges || len(diff.DetailedDiff) != 1 || diff.DetailedDiff["content"].Kind != p.Update {
+		t.Fatalf("legacy digest diff: %+v %v", diff, err)
+	}
+	updated, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: legacyState, Inputs: inputs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disk.writes != 0 || len(fake.Calls) != 1 || fake.Calls[0].Command != asRoot(readFileCommand(path)) {
+		t.Fatalf("updating the digest should only read the file, got %v", fake.Commands())
+	}
+	if got, want := updated.Properties.Get("digest").AsString(), digestOf([]byte(content+"\n")); got != want {
+		t.Fatalf("updated digest %s, want %s", got, want)
+	}
+	if diff, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: updated.Properties, OldInputs: inputs, Inputs: inputs}); err != nil || diff.HasChanges {
+		t.Fatalf("diff after updating the digest: %+v %v", diff, err)
 	}
 }
 
