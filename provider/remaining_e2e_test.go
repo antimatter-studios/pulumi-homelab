@@ -197,3 +197,44 @@ func TestHostnameWritesAndRefreshes(t *testing.T) {
 		t.Fatalf("diff after refresh: %+v, %v", diff, err)
 	}
 }
+
+func TestHostnameHostsReadFailurePreventsWrite(t *testing.T) {
+	runner := shellStepRunner(t, map[string]string{
+		"hostnamectl": "echo old",
+		"hostname":    "echo old",
+		"cat":         "echo 'cat: /etc/hosts: Permission denied' >&2; exit 1",
+	})
+	s := configured(t, runner)
+	_, err := s.Create(p.CreateRequest{
+		Urn:        urnOf("Hostname", "test"),
+		Properties: property.NewMap(map[string]property.Value{"name": property.New("new")}),
+	})
+	requireStepError(t, err, "LC_ALL=C cat --")
+	requireStepError(t, err, "(exit 1): cat: /etc/hosts: Permission denied")
+	if commands := runner.Commands(); len(commands) != 1 {
+		t.Fatalf("expected only the read command, got %v", commands)
+	}
+}
+
+func TestHostnameMissingHostsFile(t *testing.T) {
+	path := t.TempDir() + "/missing hosts"
+	runner := shellStepRunner(t, map[string]string{
+		"hostnamectl": "echo new",
+		"hostname":    "echo new",
+		"cat":         "",
+	})
+	s := configured(t, runner)
+	_, err := s.Create(p.CreateRequest{
+		Urn: urnOf("Hostname", "test"),
+		Properties: property.NewMap(map[string]property.Value{
+			"name": property.New("new"), "hosts": property.New(path),
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "\n127.0.1.1\tnew\n" {
+		t.Fatalf("hosts file: got %q, %v", got, err)
+	}
+}
