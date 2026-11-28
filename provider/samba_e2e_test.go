@@ -281,10 +281,12 @@ func TestSambaUserErrorNeverCarriesThePassword(t *testing.T) {
 			When(func(c string) bool { return strings.Contains(c, "smbpasswd -s -a") }, func(string) remotetest.Reply { return remotetest.Reply{Code: 1, Stdout: echo, Stderr: echo} }, 0)
 		in := property.NewMap(map[string]property.Value{"name": property.New("chris"), "password": property.New(password).WithSecret(true)})
 		_, err := configured(t, fake).Create(p.CreateRequest{Urn: sambaURN, Properties: in})
-		if len(fake.Calls) != 2 {
-			t.Fatalf("expected account lookup and password command, got %d calls", len(fake.Calls))
+		// the system account lookup, the Samba account lookup (which records whether the account
+		// existed before this resource), then the password command
+		if len(fake.Calls) != 3 {
+			t.Fatalf("expected two account lookups and the password command, got %d calls", len(fake.Calls))
 		}
-		call := fake.Calls[1]
+		call := fake.Calls[2]
 		if call.Command != asRoot("smbpasswd -s -a 'chris' >/dev/null") || call.Stdin != password+"\n"+password+"\n" {
 			t.Fatal("expected the password on stdin only, exactly twice")
 		}
