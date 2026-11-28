@@ -105,7 +105,7 @@ func TestSshdConfigImportAndIncludeRefusal(t *testing.T) {
 	}
 	inputs := property.NewMap(map[string]property.Value{"file": property.New("90-new"), "directory": property.New(sshdDirectory), "config": property.New(sshdConfig),
 		"settings": property.New(map[string]property.Value{"passwordAuthentication": property.New(false)})})
-	if _, err := s.Create(p.CreateRequest{Urn: urnOf("SshdConfig", "new"), Properties: inputs}); err == nil || !strings.Contains(err.Error(), "does not include") || fake.Ran("install -m") {
+	if _, err := s.Create(p.CreateRequest{Urn: urnOf("SshdConfig", "new"), Properties: inputs}); err == nil || !strings.Contains(err.Error(), "does not include") || fake.Ran("mode=install") {
 		t.Fatalf("%v", err)
 	}
 }

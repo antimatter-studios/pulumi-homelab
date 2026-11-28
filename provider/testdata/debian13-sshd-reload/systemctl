@@ -1,0 +1,13 @@
+#!/bin/sh
+# Stands in for systemd managing ssh.service: sshd runs as a daemon, its pid in /run/sshd.pid.
+echo "$*" >> /tmp/systemctl.log
+for unit; do :; done
+running() { [ -f /run/sshd.pid ] && kill -0 "$(cat /run/sshd.pid)" 2>/dev/null; }
+case $1 in
+  is-active) [ "$unit" = ssh.service ] && running && exit 0; exit 3;;
+  reload) [ "$unit" = ssh.service ] && running || exit 1
+    /usr/sbin/sshd -t && kill -HUP "$(cat /run/sshd.pid)";;
+  start) [ "$unit" = ssh.service ] || exit 1
+    running || /usr/sbin/sshd;;
+  *) exit 1;;
+esac
