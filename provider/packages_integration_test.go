@@ -100,7 +100,8 @@ func TestDebian13GitCheckout(t *testing.T) {
 		}
 	})
 
-	sh(t, m, "useradd -m checkout-owner")
+	// The checkout owner must be able to fetch from the root-owned fixture.
+	sh(t, m, "useradd -m checkout-owner && git config --system --add safe.directory /srv/origin.git")
 	server := newServer(t, (&capture{runner: m.runner}).factory)
 	if err := server.Configure(p.ConfigureRequest{Args: property.NewMap(with(homelabServerConfig(), "escalation", property.New("none")))}); err != nil {
 		t.Fatal(err)
@@ -116,6 +117,11 @@ func TestDebian13GitCheckout(t *testing.T) {
 		{"detached commit", "echo changed > a && git commit -qam detached-work", "detached-work"},
 		{"stash", "echo changed > a && git stash -q", "stash@{0}"},
 		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "Unpushed commits:"},
+		{"stale remote ref", `echo changed > a && git commit -qam pruned-work &&
+			git push -q origin HEAD:refs/heads/pruned &&
+			test "$(git rev-parse refs/remotes/origin/pruned)" = "$(git rev-parse HEAD)" &&
+			git --git-dir=/srv/origin.git update-ref -d refs/heads/pruned`, "pruned-work"},
+		{"fetch failure", "git remote set-url origin file:///srv/missing.git", "Git fetch --prune failed"},
 	} {
 		t.Run("retains "+tc.name, func(t *testing.T) {
 			warnings := captureDeleteWarnings(t)
@@ -143,6 +149,34 @@ func TestDebian13GitCheckout(t *testing.T) {
 		}
 		if exists(t, m, path) {
 			t.Fatal("checkout is still present")
+		}
+	})
+
+	t.Run("retains checkout when non-interactive SSH fails", func(t *testing.T) {
+		warnings := captureDeleteWarnings(t)
+		const path = "/srv/ssh-fetch"
+		checkout(t, path)
+		sh(t, m, `cat > /usr/local/bin/ssh <<'EOF'
+#!/bin/sh
+if [ "$GIT_TERMINAL_PROMPT" = 0 ] && [ "$1" = -o ] && [ "$2" = BatchMode=yes ]; then
+    touch /tmp/git-checkout-batch-ssh
+fi
+exit 1
+EOF
+chmod +x /usr/local/bin/ssh &&
+git -C /srv/ssh-fetch remote set-url origin ssh://git@example.invalid/origin.git &&
+chown -R checkout-owner:checkout-owner /srv/ssh-fetch`)
+		if err := deleteResource(path); err != nil {
+			t.Fatal(err)
+		}
+		if !exists(t, m, "/tmp/git-checkout-batch-ssh") {
+			t.Fatal("fetch did not invoke SSH in batch mode with terminal prompts disabled")
+		}
+		if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, path) || !strings.Contains(log, "Git fetch --prune failed") {
+			t.Fatalf("expected a fetch failure warning naming %s, got %q", path, log)
+		}
+		if !exists(t, m, path) {
+			t.Fatal("checkout was removed")
 		}
 	})
 }
