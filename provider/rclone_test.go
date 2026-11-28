@@ -2,6 +2,7 @@ package homelab
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
@@ -56,7 +57,7 @@ func TestRcloneRemoteReadDistinguishesDumpFailureFromAbsence(t *testing.T) {
 		dump remotetest.Reply
 		want string
 	}{
-		{"command failure", remotetest.Reply{Code: 1, Stderr: "config read denied"}, "config read denied"},
+		{"command failure", remotetest.Reply{Code: 1, Stdout: "test-credential", Stderr: "could not parse line: test-credential"}, "failed (exit 1)"},
 		{"malformed dump", remotetest.Reply{Stdout: "unexpected output"}, "invalid rclone config dump"},
 		{"malformed remote", remotetest.Reply{Stdout: `{"backup": null}`}, "invalid remote in rclone config dump"},
 		{"confirmed absence", remotetest.Reply{Stdout: `{"other": {"type":"sftp"}}`}, ""},
@@ -66,6 +67,9 @@ func TestRcloneRemoteReadDistinguishesDumpFailureFromAbsence(t *testing.T) {
 			read, err := configuredServer(t, fake).Read(p.ReadRequest{ID: "backup", Urn: urnOf("RcloneRemote", "backup")})
 			if tc.want != "" {
 				requireStepError(t, err, tc.want)
+				if strings.Contains(err.Error(), "test-credential") {
+					t.Fatal("config dump error exposed a credential")
+				}
 			} else if err != nil || read.ID != "" {
 				t.Fatalf("missing remote returned %+v, %v", read, err)
 			}
@@ -80,8 +84,8 @@ func TestRcloneRemoteDeleteReportsFailureAndSkipsAbsentRemote(t *testing.T) {
 		want   string
 		delete bool
 	}{
-		{"delete failed", "printf '%s' '{\"backup\":{\"type\":\"sftp\"}}'", "config write denied", true},
-		{"dump failed", "echo 'config read denied' >&2; exit 1", "config read denied", false},
+		{"delete failed", "printf '%s' '{\"backup\":{\"type\":\"sftp\"}}'", "failed (exit 17)", true},
+		{"dump failed", "echo 'config read denied' >&2; exit 1", "failed (exit 1)", false},
 		{"already absent", "printf '{}'", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -89,7 +93,7 @@ func TestRcloneRemoteDeleteReportsFailureAndSkipsAbsentRemote(t *testing.T) {
 test "$1" = --config && test "$2" = /srv/rclone.conf || exit 99
 case "$3 $4" in
   'config dump') ` + tc.script + ` ;;
-  'config delete') echo 'config write denied' >&2; exit 1 ;;
+  'config delete') echo 'config write denied' >&2; exit 17 ;;
   *) exit 99 ;;
 esac`})
 			state := property.NewMap(map[string]property.Value{
