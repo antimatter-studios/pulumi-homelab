@@ -100,6 +100,19 @@ type authorizedRead struct {
 
 const homelabMarker = "#pulumi-homelab#"
 
+// authorizedContents distinguishes absence from a failed read before a read-modify-write.
+func authorizedContents(ctx context.Context, m *machine, path string) (string, bool, error) {
+	q := shellQuote(path)
+	read, err := m.ask(ctx, m.escalate("if [ ! -e "+q+" ] && [ ! -L "+q+" ]; then exit 9; fi; cat -- "+q+" || exit 1"))
+	if err != nil || read.code == 9 {
+		return "", false, err
+	}
+	if read.code != 0 {
+		return "", false, fmt.Errorf("could not read %s: %s", path, jscompat.Trim(read.err))
+	}
+	return read.out, true, nil
+}
+
 func authorizedReadCommand(path string) string {
 	directory := parentOf(path)
 	return "test -d " + shellQuote(directory) + " || exit 9; " +
@@ -221,7 +234,7 @@ func settleAuthorizedKey(ctx context.Context, m *machine, a AuthorizedKeyArgs) (
 	settled := before != nil && before.line != nil && *before.line == line &&
 		before.mode == authorizedFileMode && before.directoryMode == authorizedDirectoryMode && before.owner == a.User
 	if !settled {
-		current, err := m.must(ctx, m.escalate("cat "+shellQuote(path)+" 2>/dev/null || true"))
+		current, _, err := authorizedContents(ctx, m, path)
 		if err != nil {
 			return AuthorizedKeyState{}, err
 		}
@@ -354,11 +367,16 @@ func (AuthorizedKey) Delete(ctx context.Context, req infer.DeleteRequest[Authori
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	path, _ := splitOnce(req.ID, "#")
-	current, err := m.must(ctx, m.escalate("cat "+shellQuote(path)+" 2>/dev/null || true"))
-	if err != nil {
+	path := req.State.Path
+	if path == "" {
+		path, _ = splitOnce(req.ID, "#")
+	}
+	current, exists, err := authorizedContents(ctx, m, path)
+	if err != nil || !exists {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate(heredoc(path, authkeys.RemoveAuthorized(current, req.State.Key))))
+	if updated := authkeys.RemoveAuthorized(current, req.State.Key); updated != current {
+		_, err = m.feed(ctx, "cat > "+shellQuote(path), []byte(updated))
+	}
 	return infer.DeleteResponse{}, err
 }

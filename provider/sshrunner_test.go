@@ -130,3 +130,37 @@ func TestUnpinnedJumpIsLeftToTheTransport(t *testing.T) {
 
 // The real factory satisfies the Runner interface the resources use.
 var _ remote.Runner = (*transport.Transport)(nil)
+
+func TestAgentSocketCanUseExplicitlyNamedSSHAuthSock(t *testing.T) {
+	cfg := homelabServerRunnerConfig()
+	cfg.AgentSocketEnv = "SSH_AUTH_SOCK"
+	got, err := transportConfig(cfg, env(map[string]string{"CHORE_AGENT_SOCK": "/other.sock", "SSH_AUTH_SOCK": "/selected.sock"}), noFile)
+	if err != nil || got.AgentSocket != "/selected.sock" {
+		t.Fatalf("agent socket: %q, %v", got.AgentSocket, err)
+	}
+}
+
+func TestTransportConfigKeepsStructuredJumpFields(t *testing.T) {
+	cfg := homelabServerRunnerConfig()
+	cfg.Jumps = []remote.Jump{
+		{Address: "2001:db8::22", Port: 2222, User: "ipv6", HostKeys: []string{"  ssh-ed25519 AAAAipv6  "}},
+		{Address: "relay.example:label", Port: 22, User: "admin", HostKeys: []string{"ssh-ed25519 AAAArelay"}},
+	}
+	got, err := transportConfig(cfg, env(map[string]string{"CHORE_AGENT_SOCK": "/agent.sock"}), noFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantHops := []transport.Hop{
+		{Address: "2001:db8::22", Port: 2222, User: "ipv6"},
+		{Address: "relay.example:label", Port: 22, User: "admin"},
+		{Address: "127.0.0.1", Port: 20022, User: "chris"},
+	}
+	wantPins := []string{
+		"[2001:db8::22]:2222 ssh-ed25519 AAAAipv6",
+		"relay.example:label ssh-ed25519 AAAArelay",
+		"[127.0.0.1]:20022 ssh-ed25519 AAAAhost",
+	}
+	if !reflect.DeepEqual(got.Hops, wantHops) || !reflect.DeepEqual(got.HostKeys, wantPins) {
+		t.Fatalf("route or pins changed: %+v", got)
+	}
+}

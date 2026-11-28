@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -315,5 +317,176 @@ func TestBoobyTrapKnownHostsNotUsed(t *testing.T) {
 	tr := newT(t, Config{Hops: []Hop{d.hop("chris")}, AgentSocket: startAgent(t, goodPEM), StrictHostKeyChecking: true})
 	if _, _, _, err := tr.Run(context.Background(), "true", nil); err == nil || !strings.Contains(err.Error(), "no pinned host key") {
 		t.Fatalf("~/.ssh/known_hosts must not satisfy strict checking, got %v", err)
+	}
+}
+
+func TestDialFailureReturnsAnError(t *testing.T) {
+	_, identity := newKey(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hop := Hop{Address: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "chris"}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	tr := newT(t, Config{Hops: []Hop{hop}, Identity: identity, ConnectTimeout: time.Second})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, _, code, err := tr.Run(ctx, "cat", []byte("file contents"))
+	if err == nil || code != -1 || !strings.Contains(err.Error(), "connecting to "+hop.String()) || ctx.Err() != nil {
+		t.Fatalf("want a prompt connection error for %s, got exit %d, %v", hop, code, err)
+	}
+}
+
+func TestHandshakeTimeout(t *testing.T) {
+	user, identity := newKey(t)
+	for _, useJump := range []bool{false, true} {
+		name := "direct"
+		if useJump {
+			name = "through a jump"
+		}
+		t.Run(name, func(t *testing.T) {
+			if useJump {
+				t.Skip("blocked by #136: the SSH channel does not enforce the handshake deadline")
+			}
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { listener.Close() })
+			target := Hop{Address: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "chris"}
+			done := make(chan struct{})
+			defer func() {
+				listener.Close()
+				<-done
+			}()
+			// A server that accepts TCP but never sends an SSH banner.
+			go func() {
+				defer close(done)
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+				_, _ = io.Copy(io.Discard, conn)
+			}()
+
+			cfg := Config{Hops: []Hop{target}, Identity: identity, ConnectTimeout: 200 * time.Millisecond}
+			if useJump {
+				jump := startSSHD(t, user.PublicKey())
+				cfg.Hops = append([]Hop{jump.hop("admin")}, cfg.Hops...)
+				cfg.HostKeys = []string{jump.pin()}
+			}
+			tr := newT(t, cfg)
+			_, _, _, err = tr.Run(t.Context(), "true", nil)
+			var timeout net.Error
+			if !errors.As(err, &timeout) || !timeout.Timeout() || !strings.Contains(err.Error(), target.String()) {
+				t.Fatalf("want handshake timeout naming %s, got %v", target, err)
+			}
+		})
+	}
+}
+
+func TestExplicitIdentityAcrossJumpChain(t *testing.T) {
+	fakeHome(t)
+	user, identity := newKey(t)
+	jump1 := startSSHD(t, user.PublicKey())
+	jump2 := startSSHD(t, user.PublicKey())
+	target := startSSHD(t, user.PublicKey())
+	cfg := Config{
+		Hops:     []Hop{jump1.hop("admin"), jump2.hop("relay"), target.hop("chris")},
+		Identity: identity, HostKeys: []string{jump1.pin(), jump2.pin(), target.pin()}, StrictHostKeyChecking: true,
+	}
+	if out, _, code := run(t, newT(t, cfg), "printf '%s' \"$((6 * 7))\"", nil); out != "42" || code != 0 {
+		t.Fatalf("exec through both jumps: %q, exit %d", out, code)
+	}
+	for _, server := range []*testSSHD{jump1, jump2, target} {
+		keys := server.offeredKeys()
+		if len(keys) != 1 || keys[0] != ssh.FingerprintSHA256(user.PublicKey()) {
+			t.Fatalf("keys offered to port %d: %v", server.port(), keys)
+		}
+	}
+	_, other := newKey(t)
+	cfg.Identity = other
+	_, _, _, err := newT(t, cfg).Run(t.Context(), "true", nil)
+	if err == nil || !strings.Contains(err.Error(), cfg.Hops[0].String()) ||
+		!strings.Contains(err.Error(), "attempted methods [none publickey]") {
+		t.Fatalf("want public-key authentication failure naming the first jump, got %v", err)
+	}
+}
+
+func TestTransportConnectionsAreIsolatedByRouteAndCredentials(t *testing.T) {
+	fakeHome(t)
+	user, identity := newKey(t)
+	_, other := newKey(t)
+	target := startSSHD(t, user.PublicKey())
+	jump1 := startSSHD(t, user.PublicKey())
+	jump2 := startSSHD(t, user.PublicKey())
+	cfg := Config{Hops: []Hop{target.hop("chris")}, Identity: identity, HostKeys: []string{target.pin()}, StrictHostKeyChecking: true}
+	for _, jump := range []*testSSHD{nil, jump1, jump2} {
+		routed := cfg
+		if jump != nil {
+			routed.Hops = append([]Hop{jump.hop("admin")}, routed.Hops...)
+			routed.HostKeys = append([]string{jump.pin()}, routed.HostKeys...)
+		}
+		tr := newT(t, routed)
+		for range 2 {
+			if _, _, code := run(t, tr, "true", nil); code != 0 {
+				t.Fatalf("exit %d", code)
+			}
+		}
+	}
+	if jump1.forwards.Load() != 1 || jump2.forwards.Load() != 1 || target.conns.Load() != 3 {
+		t.Fatalf("forwards %d/%d and target connections %d, want 1/1 and 3",
+			jump1.forwards.Load(), jump2.forwards.Load(), target.conns.Load())
+	}
+	wrongKey := cfg
+	wrongKey.Identity = other
+	if _, _, _, err := newT(t, wrongKey).Run(t.Context(), "true", nil); err == nil || !strings.Contains(err.Error(), "unable to authenticate") {
+		t.Fatalf("want authentication failure for a different explicit identity, got %v", err)
+	}
+	agentCfg := cfg
+	agentCfg.Identity = nil
+	agentCfg.AgentSocket = startAgent(t, identity)
+	if _, _, code := run(t, newT(t, agentCfg), "true", nil); code != 0 {
+		t.Fatalf("authorized agent: exit %d", code)
+	}
+	agentCfg.AgentSocket = startAgent(t, other)
+	if _, _, _, err := newT(t, agentCfg).Run(t.Context(), "true", nil); err == nil || !strings.Contains(err.Error(), "unable to authenticate") {
+		t.Fatalf("want authentication failure for a different agent, got %v", err)
+	}
+}
+
+func TestHopAddressKeepsHostAndPortSeparate(t *testing.T) {
+	for _, tc := range []struct {
+		hop  Hop
+		want string
+	}{
+		{Hop{Address: "jump.example", User: "admin", Port: 2222}, "admin@jump.example:2222"},
+		{Hop{Address: "jump.example", User: "admin"}, "admin@jump.example:22"},
+		{Hop{Address: "host:name", User: "admin", Port: 2200}, "admin@[host:name]:2200"},
+		{Hop{Address: "2001:db8::22", User: "admin", Port: 2200}, "admin@[2001:db8::22]:2200"},
+	} {
+		if got := tc.hop.String(); got != tc.want {
+			t.Errorf("%+v: got %q, want %q", tc.hop, got, tc.want)
+		}
+	}
+}
+
+func TestAgentAndExplicitIdentityAreConfiguredSources(t *testing.T) {
+	fakeHome(t)
+	agentKey, agentPEM := newKey(t)
+	explicitKey, explicitPEM := newKey(t)
+	jump := startSSHD(t, agentKey.PublicKey())
+	target := startSSHD(t, explicitKey.PublicKey())
+	cfg := Config{
+		Hops:        []Hop{jump.hop("admin"), target.hop("chris")},
+		AgentSocket: startAgent(t, agentPEM), Identity: explicitPEM,
+		HostKeys: []string{jump.pin(), target.pin()}, StrictHostKeyChecking: true,
+	}
+	if _, _, code := run(t, newT(t, cfg), "true", nil); code != 0 {
+		t.Fatalf("exec through jump: exit %d", code)
 	}
 }

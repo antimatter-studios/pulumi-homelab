@@ -16,7 +16,9 @@ import (
 type Archive struct {
 	pulumi.CustomResourceState
 
-	Binary        pulumi.StringPtrOutput `pulumi:"binary"`
+	Binary pulumi.StringPtrOutput `pulumi:"binary"`
+	// Identity of the tree unpacked by the provider, used to guard deletion and reinstall.
+	CreatedTree   pulumi.StringPtrOutput `pulumi:"createdTree"`
 	Format        pulumi.StringPtrOutput `pulumi:"format"`
 	Group         pulumi.StringOutput    `pulumi:"group"`
 	HealthCommand pulumi.StringPtrOutput `pulumi:"healthCommand"`
@@ -185,6 +187,11 @@ func (o ArchiveOutput) ToArchiveOutputWithContext(ctx context.Context) ArchiveOu
 
 func (o ArchiveOutput) Binary() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *Archive) pulumi.StringPtrOutput { return v.Binary }).(pulumi.StringPtrOutput)
+}
+
+// Identity of the tree unpacked by the provider, used to guard deletion and reinstall.
+func (o ArchiveOutput) CreatedTree() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *Archive) pulumi.StringPtrOutput { return v.CreatedTree }).(pulumi.StringPtrOutput)
 }
 
 func (o ArchiveOutput) Format() pulumi.StringPtrOutput {

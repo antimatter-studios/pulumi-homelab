@@ -2,6 +2,7 @@ package homelab
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"reflect"
@@ -432,5 +433,126 @@ func TestVersionChangeUpdatesTheProviderInPlace(t *testing.T) {
 		if d.Kind == p.UpdateReplace || d.Kind == p.AddReplace || d.Kind == p.DeleteReplace {
 			t.Fatalf("%s would replace the provider: %+v", k, d)
 		}
+	}
+}
+
+// A provider change must leave resource diffs alone, including for resources
+// that already have a diff because their preview state lacks observed values.
+func TestRouteChangeLeavesEveryResourceDiffUnchanged(t *testing.T) {
+	declaration := func(values map[string]any) property.Map {
+		return presource.FromResourcePropertyMap(presource.NewPropertyMapFromMap(values))
+	}
+	inputs := map[string]property.Map{
+		"AptPackage":      declaration(map[string]any{"name": "hello"}),
+		"AptPackages":     declaration(map[string]any{"present": []string{"hello"}}),
+		"Archive":         declaration(map[string]any{"name": "tool", "prefix": "/opt/tool", "url": "https://example.test/tool.tar.gz", "sha256": strings.Repeat("a", 64)}),
+		"AuthorizedKey":   declaration(map[string]any{"user": "example", "key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabcdefghijklmnopqrstuv example"}),
+		"BootConfig":      declaration(map[string]any{"section": "pi5"}),
+		"DebPackage":      declaration(map[string]any{"name": "tool", "url": "https://example.test/tool.deb", "sha256": strings.Repeat("a", 64)}),
+		"Directory":       declaration(map[string]any{"path": "/srv/tool"}),
+		"FstabEntry":      declaration(map[string]any{"source": "UUID=abcd", "target": "/srv/tool", "type": "ext4"}),
+		"GitCheckout":     declaration(map[string]any{"path": "/srv/tool", "url": "https://example.test/tool.git", "commit": gitSHA}),
+		"Group":           groupInputs(1002, false),
+		"Hostname":        declaration(map[string]any{"name": "tool"}),
+		"Journald":        declaration(map[string]any{"settings": map[string]string{"Storage": "volatile"}}),
+		"KernelCmdline":   declaration(map[string]any{"flags": []string{"quiet"}}),
+		"ManagedFile":     fileInputs("/srv/tool.conf", "config\n"),
+		"ManagedLine":     declaration(map[string]any{"path": "/srv/tool.conf", "line": "config", "marker": "tool"}),
+		"OfficialInstall": declaration(map[string]any{"account": "example", "home": "/home/example", "installer": "true", "bin": "/home/example/.local/bin/tool"}),
+		"PosixAcl":        declaration(map[string]any{"path": "/srv/tool"}),
+		"Precondition":    declaration(map[string]any{"check": "true", "message": "ready"}),
+		"ProtectedFile":   protectedInputs(fileSource("/fixture/source"), "once"),
+		"RcloneRemote":    declaration(map[string]any{"remote": "tool", "type": "local"}),
+		"SambaSetting":    declaration(map[string]any{"share": "global", "key": "workgroup", "value": "WORKGROUP"}),
+		"SambaShare":      declaration(map[string]any{"share": "tool", "path": "/srv/tool"}),
+		"SambaUser":       declaration(map[string]any{"name": "example", "password": "fixture"}),
+		"SshKey":          declaration(map[string]any{"path": "/home/example/.ssh/id_example"}),
+		"SshTunnel":       tunnelInputs(TunnelForward{Remote: 2222, Local: 22}).Set("unit", property.New("route-test")),
+		"SshdConfig":      declaration(map[string]any{"file": "90-tool"}),
+		"SudoRule":        declaration(map[string]any{"user": "example", "passwordless": true}),
+		"Swap":            declaration(map[string]any{"enabled": false}),
+		"SwapPartition":   declaration(map[string]any{"disk": "/dev/sdx", "name": "swap-x", "sizeGib": 1.0, "priority": 10.0}),
+		"Symlink":         declaration(map[string]any{"path": "/srv/link", "target": "/srv/tool"}),
+		"SystemdInstance": declaration(map[string]any{"template": "example@.service", "instance": "test"}),
+		"SystemdUnit":     declaration(map[string]any{"name": "tool.service", "unit": "[Service]\nExecStart=/bin/true\n"}),
+		"User":            declaration(map[string]any{"name": "example", "shell": "/bin/sh"}),
+	}
+
+	oldConfig := homelabServerConfig()
+	newConfig := maps.Clone(oldConfig)
+	newConfig["address"] = property.New("198.51.100.2")
+	newConfig["port"] = property.New(2222.0)
+	newConfig["user"] = property.New("other")
+	newConfig["jumps"] = property.New([]property.Value{property.New(declaration(map[string]any{
+		"address": "relay.example.test", "port": 22.0, "user": "jump",
+		"hostKeys": []string{"ssh-ed25519 AAAAjump"},
+	}))})
+	newConfig["identity"] = property.New("alternate fixture identity").WithSecret(true)
+	runner := remotetest.New()
+	oldRoute, newRoute := &capture{runner: runner}, &capture{runner: runner}
+	first := newServer(t, oldRoute.factory)
+	second := newServer(t, newRoute.factory)
+	for server, cfg := range map[integration.Server]map[string]property.Value{first: oldConfig, second: newConfig} {
+		if err := server.Configure(p.ConfigureRequest{Args: property.NewMap(cfg)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if oldRoute.got == nil || newRoute.got == nil || oldRoute.got.Address == newRoute.got.Address ||
+		oldRoute.got.User == newRoute.got.User || oldRoute.got.Port == newRoute.got.Port ||
+		reflect.DeepEqual(oldRoute.got.Jumps, newRoute.got.Jumps) || oldRoute.got.Identity == newRoute.got.Identity {
+		t.Fatal("Configure did not pass through the route change")
+	}
+	schema, err := first.GetSchema(p.GetSchemaRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Resources map[string]json.RawMessage
+	}
+	if err := json.Unmarshal([]byte(schema.Schema), &spec); err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Resources) != len(inputs) {
+		t.Fatalf("schema has %d resources and the test has %d fixtures", len(spec.Resources), len(inputs))
+	}
+	for name, input := range inputs {
+		t.Run(name, func(t *testing.T) {
+			urn := urnOf(name, "route-change")
+			if _, exists := spec.Resources[string(urn.Type())]; !exists {
+				t.Fatalf("resource %s is missing from the schema", urn.Type())
+			}
+			checked, err := first.Check(p.CheckRequest{Urn: urn, Inputs: input})
+			if err != nil || len(checked.Failures) != 0 {
+				t.Fatalf("check: %+v, %v", checked, err)
+			}
+			preview, err := first.Create(p.CreateRequest{Urn: urn, Properties: checked.Inputs, DryRun: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := preview.Properties
+			// These two Diff methods need observations that previews cannot
+			// produce. Supply stable fixture values for both requests.
+			switch name {
+			case "AptPackages":
+				state = state.Set("installed", property.New(declaration(map[string]any{"hello": "1"}))).
+					Set("missing", property.New([]property.Value{})).
+					Set("lingering", property.New([]property.Value{})).
+					Set("auto", property.New([]property.Value{}))
+			case "SshTunnel":
+				state = state.Set("unit", input.Get("unit"))
+			}
+			request := p.DiffRequest{Urn: urn, ID: preview.ID, State: state, OldInputs: checked.Inputs, Inputs: checked.Inputs}
+			before, err := first.Diff(request)
+			if err != nil {
+				t.Fatalf("diff before route change: %v", err)
+			}
+			after, err := second.Diff(request)
+			if err != nil || !reflect.DeepEqual(before, after) {
+				t.Fatalf("changing the route changed the diff from %+v to %+v, %v", before, after, err)
+			}
+		})
+	}
+	if len(runner.Commands()) != 0 {
+		t.Fatalf("preview or diff contacted the remote: %v", runner.Commands())
 	}
 }

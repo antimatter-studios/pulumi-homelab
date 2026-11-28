@@ -1,6 +1,7 @@
 package homelab
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -225,5 +226,75 @@ func TestPackageImportsFromIDOnly(t *testing.T) {
 				t.Fatalf("changed declaration: %+v, %v", diff, err)
 			}
 		})
+	}
+}
+
+func TestArchiveDeleteKeepsRepointedLink(t *testing.T) {
+	dir := t.TempDir()
+	old, current, link := dir+"/old", dir+"/current", dir+"/link"
+	for _, path := range []string{old, current} {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(current, link); err != nil {
+		t.Fatal(err)
+	}
+	runner := shellStepRunner(t, map[string]string{
+		"bash": "", "dirname": "", "find": "", "mktemp": "", "mv": "", "readlink": "",
+		"rm": "", "rmdir": "", "sha256sum": "", "sort": "",
+	})
+	s := configuredServer(t, runner)
+	urn := urnOf("Archive", "test")
+	warnings := captureDeleteWarnings(t)
+	inputs := props(map[string]property.Value{
+		"name": property.New("test"), "link": property.New(link), "prefix": property.New(""),
+		"owner": property.New("root"), "group": property.New("root"), "versionCommand": property.New(""),
+		"installed": property.New(true), "version": property.New(""),
+	})
+	invalid := inputs.Set("createdTree", property.New("recorded"))
+	if err := s.Delete(p.DeleteRequest{ID: "test", Urn: urn, Properties: invalid}); err != nil || len(runner.Commands()) != 0 ||
+		!strings.Contains(warnings.String(), "state has no valid archive prefix") {
+		t.Fatalf("delete without prefix: %v, commands %v, warning %q", err, runner.Commands(), warnings.String())
+	}
+	output, stderr, code, err := runner.Run(t.Context(), asRoot(archiveTreeFunctions+"tree_identity "+shellQuote(old)), nil)
+	if err != nil || code != 0 || len(output) == 0 {
+		t.Fatalf("record fixture tree: exit %d, %v, stderr %s", code, err, stderr)
+	}
+	owned := inputs.Set("prefix", property.New(old)).Set("createdTree", property.New(strings.TrimSpace(string(output))))
+	if err := s.Delete(p.DeleteRequest{ID: "test", Urn: urn, Properties: owned}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("old prefix still exists: %v", err)
+	}
+	if got, err := os.Readlink(link); err != nil || got != current {
+		t.Fatalf("link: %q, %v", got, err)
+	}
+	if _, err := os.Stat(link); err != nil {
+		t.Fatalf("current prefix is gone: %v", err)
+	}
+}
+
+func TestAptPackageDeletePassesUnattendedPurgeOptions(t *testing.T) {
+	runner := shellStepRunner(t, map[string]string{
+		"apt-get": `test "$DEBIAN_FRONTEND" = noninteractive || exit 1
+test "$#" = 10 || exit 2
+test "$1" = -o && test "$2" = DPkg::Lock::Timeout=600 &&
+test "$3" = -o && test "$4" = Dpkg::Options::=--force-confdef &&
+test "$5" = -o && test "$6" = Dpkg::Options::=--force-confold &&
+test "$7" = purge && test "$8" = -y && test "$9" = -qq &&
+test "${10}" = demo`,
+	})
+	s := configuredServer(t, runner)
+	state := props(map[string]property.Value{
+		"name": property.New("demo"), "update": property.New(false),
+		"version": property.New("1"), "manual": property.New(true),
+	})
+	if err := s.Delete(p.DeleteRequest{ID: "demo", Urn: urnOf("AptPackage", "demo"), Properties: state}); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(runner.Commands()); n != 1 {
+		t.Fatalf("delete ran %d commands, want one purge", n)
 	}
 }

@@ -14,12 +14,13 @@ import (
 var symlinkURN = presource.URN("urn:pulumi:s::p::homelab:index:Symlink::journal")
 
 const (
-	journalRead = `sudo -n sh -c 'if pointsAt=$(readlink '\''/var/log/journal'\'' 2>/dev/null); then printf '\''%s'\'' "$pointsAt"; exit 0; fi; if [ -e '\''/var/log/journal'\'' ] || [ -L '\''/var/log/journal'\'' ]; then stat -c '\''%F'\'' '\''/var/log/journal'\''; exit 8; fi; exit 9'`
+	journalRead   = `sudo -n sh -c 'if pointsAt=$(readlink '\''/var/log/journal'\'' 2>/dev/null); then printf '\''%s'\'' "$pointsAt"; exit 0; fi; if [ -e '\''/var/log/journal'\'' ] || [ -L '\''/var/log/journal'\'' ]; then stat -c '\''%F'\'' '\''/var/log/journal'\''; exit 8; fi; exit 9'`
 	journalLink   = `sudo -n sh -c 'mkdir -p '\''/var/log'\'' && ln -sfn '\''/mnt/data/journal'\'' '\''/var/log/journal'\'''`
 	journalRelink = `sudo -n sh -c 'mkdir -p '\''/var/log'\'' && ln -sfn '\''/mnt/other/journal'\'' '\''/var/log/journal'\'''`
-	journalDelete = `sudo -n sh -c 'test -L '\''/var/log/journal'\'' && rm -f '\''/var/log/journal'\'' || true'`
 	journalHead   = `sudo -n sh -c 'head -c 4097 '\''/var/log/journal'\'''`
 )
+
+var journalDelete = asRoot(symlinkDeleteCommand("/var/log/journal", nil))
 
 func symlinkInputs(target string, accept bool) property.Map {
 	return property.NewMap(map[string]property.Value{
@@ -113,7 +114,7 @@ func TestSymlinkLifecycle(t *testing.T) {
 	if err := s.Delete(p.DeleteRequest{ID: created.ID, Urn: symlinkURN, Properties: updated.Properties}); err != nil {
 		t.Fatal(err)
 	}
-	if !fake.Ran("test -L '\\''/var/log/journal'\\'' && rm -f") {
+	if !fake.Ran("mv -T --") {
 		t.Fatalf("delete ran %v", fake.Commands())
 	}
 }

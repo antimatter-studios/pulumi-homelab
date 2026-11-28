@@ -1,0 +1,21 @@
+#!/bin/sh
+# Stands in for swapon: the swap areas in use are lines of /run/swaps, NAME TYPE SIZE USED PRIO.
+echo "swapon $*" >> /tmp/calls.log
+table=/run/swaps
+touch "$table"
+case $1 in
+  --show=NAME) cut -d' ' -f1 "$table"; exit 0 ;;
+  --show=*) cat "$table"; exit 0 ;;
+esac
+prio=-2
+while [ $# -gt 0 ]; do
+  case $1 in
+    -p) prio=$2; shift 2 ;;
+    --discard*) shift ;;
+    *) dev=$1; shift ;;
+  esac
+done
+dev=$(readlink -f "$dev")
+[ "$(blkid -p -o value -s TYPE "$dev")" = swap ] || { echo "swapon: $dev: read swap header failed" >&2; exit 255; }
+grep -q "^$dev " "$table" && { echo "swapon: $dev: swapon failed: Device or resource busy" >&2; exit 255; }
+echo "$dev partition $(stat -c %s "$dev") 0 $prio" >> "$table"

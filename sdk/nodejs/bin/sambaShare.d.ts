@@ -25,6 +25,10 @@ export declare class SambaShare extends pulumi.CustomResource {
     }>;
     readonly config: pulumi.Output<string>;
     /**
+     * Whether the provider added this section, used to guard deletion.
+     */
+    readonly created: pulumi.Output<boolean | undefined>;
+    /**
      * Whether testparm can parse the whole file.
      */
     readonly parses: pulumi.Output<boolean>;

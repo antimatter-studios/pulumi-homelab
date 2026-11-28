@@ -483,6 +483,7 @@ exist — and every command exits zero.
 | | Arguments | Reads from |
 |---|---|---|
 | **`Swap`** | `enabled` `sizeMb?` `path?` | `/proc/swaps`, `/etc/fstab`, the `dphys-swapfile` unit |
+| **`SwapPartition`** | `disk` `name` `sizeGib` `priority` `start?` `discard?` `persistent?` `deletePartition?` | `sfdisk --json` of every disk, `blkid -p`, `swapon --show`, its own swap unit |
 | **`Journald`** | `settings` `file?` | `systemd-analyze cat-config` |
 | **`KernelCmdline`** | `flags` `path?` | the boot partition's `cmdline.txt` |
 | **`SambaShare`** | `share` `path` `settings?` `config?` | the section in `smb.conf`, plus `testparm` for validity |
@@ -495,7 +496,7 @@ exist — and every command exits zero.
 
 | | Arguments | Reads from |
 |---|---|---|
-| **`PosixAcl`** | `path` `entries?` `defaultEntries?` `normalise?` | `getfacl -pc`, compared on **effective** permissions |
+| **`PosixAcl`** | `path` `entries?` `defaultEntries?` `normalise?` `owner?` `group?` `exact?` | `getfacl -p`, compared on **effective** permissions, owner and group from its header |
 
 For the grant that ownership and group membership cannot express. A service account that needs
 write access to one directory inside a shared pool has no good answer in the two levers a mode
@@ -515,6 +516,33 @@ than a mystery — and if a `Directory` sets the mode on the same path, it must 
 
 It owns the entries it names and leaves every other entry alone; `setfacl -b` and `--set` appear
 nowhere, because a pool root already carries the entries that make the whole scheme work.
+
+**`exact: true` is the other answer, for a path that must have nobody else on it.** The named
+entries, access and default, are then exactly the declared ones: any other is removed, and one that
+appears later — the share's inherited `group:rogroup`, somebody "fixing" access by hand — is drift on
+the next refresh. A named entry with `---` is an ordinary entry, so a deny such as `user:jonmc:---`
+stays.
+
+**`owner` and `group` are chowned, and read back from the same `getfacl` call**, whose header names
+them. Names, not ids: getfacl reports names, so a numeric id is refused rather than differing on
+every refresh. Left out, ownership is left alone. Nothing here reads or writes the path's content,
+which is what makes it the resource for a file somebody else writes — a vault's password file, a
+generated key — where `ManagedFile` would put the secret through the program and the state:
+
+```ts
+new homelab.PosixAcl('vault-env', {
+  path: '/srv/docs/.env.vault',
+  owner: 'root', group: 'rwgroup', exact: true,
+  entries: [
+    { type: 'user', perms: 'rw-' }, { type: 'group', perms: 'rw-' }, { type: 'other', perms: '---' },
+    { type: 'user', name: 'svc', perms: 'r--' },
+  ],
+}, { provider: machine });
+```
+
+It refuses a path with nothing at it rather than creating one. Delete removes the named entries it
+declared and leaves the owner, the group and the owning entries as they are: loosening a secret
+because a declaration went away is the opposite of safe.
 
 **A grant's reach is not what its immediate children suggest.** `defaultEntries` is inherited by
 every descendant created from then on, at any depth, and directory trees are routinely deeper than a
@@ -550,9 +578,11 @@ a `0700` directory stays private without being named. `ignore` is for whole tree
 permissions, and those are not entered at all. Files are never touched, and nothing is undone on
 delete.
 
-The base entries (`user::`, `group::`, `other::`) are refused as *access* entries and allowed as
-*defaults*: as access entries they are the mode bits under another name and would fight `Directory`
-over the same three numbers, and as defaults no mode sets them at all. A `mask` is refused in both,
+The base entries (`user::`, `group::`, `other::`) are allowed in both scopes. As *access* entries
+they are the mode bits under another name — on a file, that is how this declares its mode — so do
+not also give a `Directory` a mode on the same path, or the two fight over the same three numbers.
+On a path with named entries `group::` is the owning group's entry, not the mask that `stat` shows as
+the group digit; setfacl recomputes the mask from the entries. A `mask` is refused in both scopes,
 because setfacl computes it.
 
 ### Gates and composition
@@ -648,6 +678,30 @@ new homelab.Swap('none', { enabled: false }, { provider: machine });
 Which is why turning swap off means `swapoff -a`, *and* masking `dphys-swapfile` rather than merely
 disabling it (an `apt upgrade` re-enables a disabled unit), *and* commenting the `fstab` lines
 rather than deleting them, so the machine keeps the record of what it used to do.
+
+`SwapPartition` is swap on a partition of its own, found by its GPT name (which is also the swap
+label and the id), so the drives being enumerated in another order after a boot changes nothing.
+It makes the partition only when no disk has that name, in free space only — after the last
+partition, or at a `start` sector — and refuses anything that would overlap, any disk that is not
+already GPT, and a partition with that name but another size, place or type. It formats only a
+partition with no signature at all, so a partition that holds anything is refused, never wiped. It
+partitions under the disk's lock and checks that the table is still the one it planned against,
+so two of them on one disk never take the same space. Boot is a systemd swap unit per partition
+(`What=/dev/disk/by-partlabel/<name>`), not an fstab line, so several never edit one shared file.
+Delete turns the swap off — but not when its pages would not fit in the memory available — and
+removes the unit; the partition stays unless `deletePartition` is set. A change of size, disk or
+start would need the partition rebuilt, so the diff refuses it unless `deletePartition` is already
+in the state. An import reads the declaration back with no change; `persistent: false` adopts a
+partition that something else still enables at boot, and flipping it on later writes the unit
+without touching the running swap:
+
+```ts
+new homelab.SwapPartition('swap-nvme0', {
+  disk: '/dev/nvme0n1', name: 'swap-nvme0', sizeGib: 32, priority: 10, discard: 'once',
+}, { provider: machine, import: 'swap-nvme0' });
+```
+
+Next to it, declare `Swap` with `otherSwap: 'allow'`, which leaves swap it does not own alone.
 
 `Journald` has the same shape from the other end. It writes a drop-in under
 `journald.conf.d/`, but a drop-in sorting later wins — so it reports `effective`, parsed from

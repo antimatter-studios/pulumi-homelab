@@ -17,7 +17,7 @@ import (
 var aclURN = presource.URN("urn:pulumi:s::p::homelab:index:PosixAcl::pool")
 
 const (
-	poolRead    = `sudo -n sh -c 'test -e '\''/mnt/pool'\'' || exit 9; getfacl -pc '\''/mnt/pool'\'''`
+	poolRead    = `sudo -n sh -c 'test -e '\''/mnt/pool'\'' || exit 9; getfacl -p '\''/mnt/pool'\'''`
 	poolSet     = `sudo -n sh -c 'setfacl -m '\''user:svc:rwx,default:user:svc:rwx'\'' '\''/mnt/pool'\'''`
 	poolSwap    = `sudo -n sh -c 'setfacl -x '\''user:svc'\'' '\''/mnt/pool'\'' && setfacl -m '\''group:ro:r-x'\'' '\''/mnt/pool'\'''`
 	poolRemove  = `sudo -n sh -c 'setfacl -x '\''group:ro,default:user:svc'\'' '\''/mnt/pool'\'''`

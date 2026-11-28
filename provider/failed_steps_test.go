@@ -78,7 +78,9 @@ func TestSambaUserDeleteFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := remotetest.New().On(asRoot("pdbedit -L"), tc.list).
 				On(asRoot("smbpasswd -x 'chris'"), remotetest.Reply{Code: 1, Stderr: "passdb is locked"})
-			state := props(map[string]property.Value{"name": property.New("chris"), "exists": property.New(true)})
+			state := props(map[string]property.Value{
+				"name": property.New("chris"), "exists": property.New(true), "created": property.New(true),
+			})
 			err := configured(t, fake).Delete(p.DeleteRequest{ID: "chris", Urn: sambaURN, Properties: state})
 			if tc.detail != "" {
 				requireStepError(t, err, tc.detail)
