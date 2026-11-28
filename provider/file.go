@@ -218,7 +218,8 @@ func removeWrittenFile(ctx context.Context, m *machine, path string, digest *str
 	case 14:
 		reason = "the path no longer holds a regular file"
 	default:
-		reason = fmt.Sprintf("the operation failed (exit %d)", result.code)
+		return false, fmt.Errorf("could not delete %s on %s (exit %d): %s%s",
+			path, m.describe(), result.code, strings.TrimSpace(result.err), result.out)
 	}
 	warnRetained(ctx, path, reason+"."+result.out)
 	return false, nil

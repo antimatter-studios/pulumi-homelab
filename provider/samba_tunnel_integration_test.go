@@ -32,7 +32,8 @@ exit 0
 X
 printf '#!/bin/sh\necho "$@" >> /tmp/systemctl.log\n' > /usr/local/bin/systemctl
 printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/smbcontrol
-chmod 755 /usr/local/bin/testparm /usr/local/bin/systemctl /usr/local/bin/smbcontrol`)
+printf '#!/bin/sh\n[ "$1" = verify ] && test -s "$2"\n' > /usr/local/bin/systemd-analyze
+chmod 755 /usr/local/bin/testparm /usr/local/bin/systemctl /usr/local/bin/smbcontrol /usr/local/bin/systemd-analyze`)
 }
 
 func TestSambaRealShell(t *testing.T) {

@@ -86,7 +86,7 @@ func (f *fakeTunnelMachine) runner(unit string, wanted resolvedTunnel) *remotete
 		}
 		return remotetest.Reply{}
 	}, 0)
-	r.When(func(c string) bool { return strings.HasPrefix(unescalate(c), "systemctl disable --now "+svc+" ||") }, func(string) remotetest.Reply {
+	r.When(func(c string) bool { return c == asRoot(tunnelDisableCommand(unit, path)) }, func(string) remotetest.Reply {
 		f.active = false
 		return remotetest.Reply{}
 	}, 0)
@@ -229,5 +229,28 @@ func TestSshTunnelRefusals(t *testing.T) {
 	want := "started autossh-bastion-example-com-10022 on chris@127.0.0.1:20022 but the running process carries 20022:localhost:22 rather than 20022:localhost:22 20080:localhost:80 20443:localhost:443. It has restarted 3 times"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSshTunnelDeleteReportsDisableFailureWithoutUnitFile(t *testing.T) {
+	dir := t.TempDir()
+	unit := testTunnel.Unit
+	fake := shellStepRunner(t, map[string]string{"systemctl": `
+case "$1" in
+  show) printf 'LoadState=loaded\nActiveState=active\n' ;;
+  disable) echo 'loaded unit could not be stopped' >&2; exit 22 ;;
+  *) exit 99 ;;
+esac`})
+	state := tunnelInputs(testTunnel.Forwards...).
+		Set("directory", property.New(dir)).
+		Set("unit", property.New(unit)).
+		Set("file", property.New("unit")).
+		Set("active", property.New(true)).
+		Set("running", forwardsValue()).
+		Set("restarts", property.New(0.0))
+	err := configured(t, fake).Delete(p.DeleteRequest{ID: unit, Urn: tunnelURN, Properties: state})
+	requireStepError(t, err, "(exit 22): loaded unit could not be stopped")
+	if len(fake.Commands()) != 1 {
+		t.Fatalf("delete continued after disable failed: %v", fake.Commands())
 	}
 }

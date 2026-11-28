@@ -62,9 +62,7 @@ func TestOldStateDeletionGuardsDiffClean(t *testing.T) {
 				fake.On(asRoot(writtenFileDeleteCommand(tc.guardedPath, nil)), remotetest.Reply{Code: 10})
 			}
 			if tc.resource == "SshTunnel" {
-				fake.When(func(c string) bool {
-					return strings.HasPrefix(unescalate(c), "systemctl disable --now "+shellQuote(tc.id+".service")+" ||")
-				}, func(string) remotetest.Reply { return remotetest.Reply{} }, 0)
+				fake.On(asRoot(tunnelDisableCommand(tc.id, tc.guardedPath)), remotetest.Reply{})
 			}
 			s := configured(t, fake)
 			urn := urnOf(tc.resource, tc.id)

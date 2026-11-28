@@ -1,0 +1,1 @@
+- SshdConfig checks the deploying account’s public-key login settings before applying a drop-in change and refuses changes that would block access. A host whose deploy login relies on AuthorizedKeysCommand or certificates (TrustedUserCAKeys) instead of an authorized_keys file is refused too, with "could not find an existing AuthorizedKeysFile".

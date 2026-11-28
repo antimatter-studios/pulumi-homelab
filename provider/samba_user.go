@@ -47,17 +47,16 @@ func (s *SambaUser) Annotate(a infer.Annotator) {
 	a.SetToken("index", "SambaUser")
 }
 
-const listSambaUsers = "pdbedit -L 2>/dev/null"
+const listSambaUsers = "pdbedit -L"
 
 func readSambaUser(ctx context.Context, m *machine, name string) (bool, error) {
-	asked, err := m.ask(ctx, m.escalate(listSambaUsers))
+	users, err := m.must(ctx, m.escalate(listSambaUsers))
 	if err != nil {
 		return false, err
 	}
-	if asked.code != 0 {
-		return false, nil
-	}
-	return slices.Contains(samba.ParseSambaUsers(asked.out), name), nil
+	return slices.ContainsFunc(samba.ParseSambaUsers(users), func(user string) bool {
+		return strings.EqualFold(user, name)
+	}), nil
 }
 
 // setSambaPassword sends both password lines on stdin. When sudo may read its own
@@ -105,14 +104,12 @@ func (SambaUser) Create(ctx context.Context, req infer.CreateRequest[SambaUserAr
 	if unix.code != 0 {
 		return infer.CreateResponse[SambaUserState]{}, fmt.Errorf("there is no unix account called %s; samba maps onto one, so declare a User first", req.Inputs.Name)
 	}
-	// Provision as before if Samba cannot list its users, but leave creation unproven.
-	listed, listErr := m.ask(ctx, m.escalate(listSambaUsers))
-	if listErr == nil && listed.code == 0 {
-		created := !slices.ContainsFunc(samba.ParseSambaUsers(listed.out), func(name string) bool {
-			return strings.EqualFold(name, req.Inputs.Name)
-		})
-		state.Created = &created
+	exists, err := readSambaUser(ctx, m, req.Inputs.Name)
+	if err != nil {
+		return infer.CreateResponse[SambaUserState]{}, err
 	}
+	created := !exists
+	state.Created = &created
 	if err := setSambaPassword(ctx, m, req.Inputs.Name, req.Inputs.Password); err != nil {
 		return infer.CreateResponse[SambaUserState]{}, err
 	}
@@ -180,6 +177,14 @@ func (SambaUser) Delete(ctx context.Context, req infer.DeleteRequest[SambaUserSt
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate("smbpasswd -x "+shellQuote(req.ID)+" >/dev/null 2>&1 || true"))
+	// A failed passdb lookup cannot tell us the user is already gone.
+	exists, err := readSambaUser(ctx, m, req.ID)
+	if err != nil {
+		return infer.DeleteResponse{}, err
+	}
+	if !exists {
+		return infer.DeleteResponse{}, nil
+	}
+	_, err = m.must(ctx, m.escalate("smbpasswd -x "+shellQuote(req.ID)))
 	return infer.DeleteResponse{}, err
 }

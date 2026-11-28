@@ -50,9 +50,9 @@ func (f *fakeSamba) runner() *remotetest.Runner {
 			return remotetest.Reply{Stdout: f.conf + "\n#pulumi-homelab#parses\n" + verdict}
 		case cmd == testparmCommand(smbConf):
 			return remotetest.Reply{Stdout: f.conf}
-		case strings.HasPrefix(cmd, "staging=$(mktemp) && cat > \"$staging\" <<'PULUMI_EOF'\n"):
-			body := strings.TrimPrefix(cmd, "staging=$(mktemp) && cat > \"$staging\" <<'PULUMI_EOF'\n")
-			body = body[:strings.Index(body, "PULUMI_EOF\n")]
+		case strings.HasPrefix(cmd, "staging=$(mktemp)"):
+			_, body, _ := strings.Cut(cmd, "\n")
+			body, _, _ = strings.Cut(body, "PULUMI_EOF\n")
 			if cmd != sambaApplyCommand(body, smbConf) && cmd != sambaApplyCommand(strings.TrimSuffix(body, "\n"), smbConf) {
 				return remotetest.Reply{Code: 99, Stderr: "unexpected apply command"}
 			}
@@ -223,9 +223,11 @@ func TestSambaUserLifecycle(t *testing.T) {
 	fake := remotetest.New().
 		On("getent passwd 'chris'", remotetest.Reply{Stdout: "chris:x:1000:1000::/home/chris:/bin/bash\n"}).
 		On("getent passwd 'nobody2'", remotetest.Reply{Code: 2}).
-		On(`sudo -n sh -c 'smbpasswd -x '\''chris'\'' >/dev/null 2>&1 || true'`, remotetest.Reply{})
+		On(asRoot("smbpasswd -x 'chris'"), remotetest.Reply{})
 	fake.When(func(c string) bool { return c == setPw }, func(string) remotetest.Reply { known = true; return remotetest.Reply{} }, 0)
-	fake.When(func(c string) bool { return c == `sudo -n sh -c 'pdbedit -L 2>/dev/null'` }, func(string) remotetest.Reply {
+	fake.When(func(c string) bool {
+		return c == asRoot(listSambaUsers)
+	}, func(string) remotetest.Reply {
 		if !known {
 			return remotetest.Reply{}
 		}
@@ -315,4 +317,21 @@ func TestSambaUserImportIgnoresThePassword(t *testing.T) {
 	if d, err := s.Diff(p.DiffRequest{ID: "chris", Urn: sambaURN, State: imported.Properties, Inputs: declared}); err != nil || d.HasChanges {
 		t.Fatalf("import diff %+v %v", d, err)
 	}
+}
+
+func TestSambaUserCreateAndReadReportPassdbLookupFailure(t *testing.T) {
+	fake := remotetest.New().
+		On("getent passwd 'chris'", remotetest.Reply{}).
+		On(asRoot(listSambaUsers), remotetest.Reply{Code: 2, Stderr: "cannot read passdb"})
+	s := configured(t, fake)
+	inputs := property.NewMap(map[string]property.Value{
+		"name": property.New("chris"), "password": property.New("test password").WithSecret(true),
+	})
+	_, err := s.Create(p.CreateRequest{Urn: sambaURN, Properties: inputs})
+	requireStepError(t, err, "cannot read passdb")
+	if len(fake.Commands()) != 2 {
+		t.Fatalf("create continued after the lookup failed: %v", fake.Commands())
+	}
+	_, err = s.Read(p.ReadRequest{ID: "chris", Urn: sambaURN})
+	requireStepError(t, err, "cannot read passdb")
 }

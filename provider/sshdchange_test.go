@@ -55,8 +55,11 @@ printf '%s\n' "$effective" | awk '
   /^[[:space:]]*(#|$)/ { next }
   { k = tolower($1); v = $2; for (i = 3; i <= NF; i++) v = v " " $i
     if (k == "port") { ports = ports " " v; next }
+    if (k ~ /^(allow|deny)(users|groups)$/) { for (i = 2; i <= NF; i++) print k " " $i; next }
     if (!(k in seen)) { seen[k] = 1; print k " " v } }
-  END { if (ports == "") ports = " 22"; n = split(ports, p, " "); for (i = 1; i <= n; i++) print "listenaddress 0.0.0.0:" p[i] }'
+  END { if (!("pubkeyauthentication" in seen)) print "pubkeyauthentication yes"
+    if (!("authorizedkeysfile" in seen)) print "authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2"
+    if (ports == "") ports = " 22"; n = split(ports, p, " "); for (i = 1; i <= n; i++) print "listenaddress 0.0.0.0:" p[i] }'
 `
 
 const systemctlShim = `#!/bin/sh
@@ -104,7 +107,7 @@ func newSshdBox(t *testing.T) *sshdBox {
 		directory: filepath.Join(root, "etc/ssh/sshd_config.d")}
 	b.log = filepath.Join(b.state, "log")
 	bin := filepath.Join(root, "bin")
-	for _, d := range []string{bin, b.state, b.directory} {
+	for _, d := range []string{bin, b.state, b.directory, filepath.Join(root, "home/chris/.ssh")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -118,6 +121,14 @@ func newSshdBox(t *testing.T) *sshdBox {
 		"timeout":   "#!/bin/sh\nshift\nexec \"$@\"\n",
 		"sleep":     "#!/bin/sh\nexit 0\n",
 		"flock":     "#!/bin/sh\nexit 0\n",
+		"getent": `#!/bin/sh
+case "$*" in
+  'passwd -- chris') printf 'chris:x:1001:1001::%s/home/chris:/bin/sh\n' "$SHIM_ROOT";;
+  'group -- 1001 1002') printf 'chris:x:1001:\ndeploy:x:1002:chris\n';;
+  *) exit 2;;
+esac
+`,
+		"id": "#!/bin/sh\nif [ \"$*\" = '-G -- chris' ]; then echo '1001 1002'; else exec /usr/bin/id \"$@\"; fi\n",
 	}
 	for name, body := range shims {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
@@ -128,6 +139,7 @@ func newSshdBox(t *testing.T) *sshdBox {
 	b.write(t, filepath.Join(b.state, "active"), "yes\n")
 	b.write(t, filepath.Join(b.state, "listening"), "22\n")
 	b.write(t, b.log, "")
+	b.write(t, filepath.Join(root, "home/chris/.ssh/authorized_keys"), "ssh-ed25519 "+testKeyBody+" deploy\n")
 	return b
 }
 
@@ -166,7 +178,7 @@ func (b *sshdBox) active(t *testing.T) bool {
 func (b *sshdBox) Run(ctx context.Context, command string, stdin []byte) ([]byte, []byte, int, error) {
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Join(b.root, "bin")+":"+os.Getenv("PATH"),
-		"SHIM_STATE="+b.state, "SHIM_CONFIG="+b.config)
+		"SHIM_STATE="+b.state, "SHIM_CONFIG="+b.config, "SHIM_ROOT="+b.root)
 	var out, errb bytes.Buffer
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = bytes.NewReader(stdin), &out, &errb
 	err := cmd.Run()
@@ -228,10 +240,11 @@ func TestSshdChangeInstallsInOrder(t *testing.T) {
 	}
 	calls := b.calls(t)
 	mirror := indexOf(calls, "sshd -t -f ", "/root"+b.config)
+	login := indexOf(calls, "sshd -T -C user=chris,host=localhost,addr=127.0.0.1 -f ", "/root"+b.config)
 	live := indexOf(calls, "sshd -t -f "+b.config, "")
 	reload := indexOf(calls, "systemctl reload ssh.service", "")
-	if mirror < 0 || live <= mirror || reload <= live {
-		t.Fatalf("want the copy checked, then the live tree, then a reload:\n%s", strings.Join(calls, "\n"))
+	if mirror < 0 || login <= mirror || live <= login || reload <= live {
+		t.Fatalf("want syntax and login checked on the copy, then live syntax, then a reload:\n%s", strings.Join(calls, "\n"))
 	}
 	after := calls[reload+1:]
 	if indexOf(after, "systemctl is-active", "ssh.service") < 0 || indexOf(after, "ss -ltn", "") < 0 || indexOf(after, "probe 127.0.0.1:22", "") < 0 {
@@ -406,12 +419,13 @@ func TestSshdChangeRefusesWhenSshdIsAlreadyUnhealthy(t *testing.T) {
 // The script on its own: what it asks of the machine, in order, without a shell.
 func TestSshdChangeCommand(t *testing.T) {
 	content := "# header\nX11Forwarding no\n"
-	install := sshdChangeCommand("/etc/ssh/sshd_config.d/90-x.conf", "/etc/ssh/sshd_config.d", "/etc/ssh/sshd_config", &content)
+	install := sshdChangeCommand("/etc/ssh/sshd_config.d/90-x.conf", "/etc/ssh/sshd_config.d", "/etc/ssh/sshd_config", "chris", &content)
 	order := []string{
 		"target='/etc/ssh/sshd_config.d/90-x.conf'; dir='/etc/ssh/sshd_config.d'; config='/etc/ssh/sshd_config'; mode=install",
 		"cat > \"$work/candidate\" <<'PULUMI_EOF'\n# header\nX11Forwarding no\nPULUMI_EOF\n",
 		`cp -a "$r/." "$mirror$r/"`,
 		`out=$(sshd -t -f "$mirror$config" 2>&1) || refuse`,
+		"\ncheck_deploy_login\n",
 		`settle || refuse "sshd is not healthy before the change`,
 		`put "$work/candidate" || refuse`,
 		`out=$(sshd -t -f "$config" 2>&1) || rollback`,
@@ -431,7 +445,7 @@ func TestSshdChangeCommand(t *testing.T) {
 			t.Errorf("script contains %q", banned)
 		}
 	}
-	remove := sshdChangeCommand("/etc/ssh/sshd_config.d/90-x.conf", "/etc/ssh/sshd_config.d", "/etc/ssh/sshd_config", nil)
+	remove := sshdChangeCommand("/etc/ssh/sshd_config.d/90-x.conf", "/etc/ssh/sshd_config.d", "/etc/ssh/sshd_config", "chris", nil)
 	if !strings.Contains(remove, "mode=remove") || strings.Contains(remove, "PULUMI_EOF") {
 		t.Errorf("remove script:\n%s", remove)
 	}
