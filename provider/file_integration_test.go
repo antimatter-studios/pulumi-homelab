@@ -79,14 +79,15 @@ func TestReadFileRealShell(t *testing.T) {
 		}
 	})
 
-	t.Run("keeps a dollar sign, which a here-document would otherwise expand away", func(t *testing.T) {
-		path := where + "/unit.conf"
-		if err := writeManagedFile(ctx, m, wantedFile{path: path, content: "ExecStart=/bin/x $MAINPID\n", mode: "0644"}); err != nil {
+	t.Run("writes shell metacharacters literally to a quoted path", func(t *testing.T) {
+		path := where + "/tool's config"
+		const body = "ExecStart=/bin/x $MAINPID `hostname` 'quoted'\n"
+		if err := writeManagedFile(ctx, m, wantedFile{path: path, content: body, mode: "0644"}); err != nil {
 			t.Fatal(err)
 		}
 		found, err := readManagedFile(ctx, m, path)
-		if err != nil || found == nil || !strings.Contains(found.Content, "$MAINPID") {
-			t.Fatalf("%+v %v", found, err)
+		if err != nil || found == nil || found.Content != body {
+			t.Fatalf("read back %+v, %v", found, err)
 		}
 	})
 }
@@ -196,5 +197,27 @@ func TestManagedAndProtectedFileRealShell(t *testing.T) {
 	}
 	if diff, err := s.Diff(p.DiffRequest{ID: secretPath, Urn: protectedURN, State: again.Properties, Inputs: pin}); err != nil || diff.HasChanges {
 		t.Fatalf("diff %+v %v", diff, err)
+	}
+}
+
+func TestManagedFileRefreshWithNormalizedNewline(t *testing.T) {
+	t.Skip("blocked by #134: refresh hashes the newline written to disk, but Diff hashes the input without it")
+	d := startDebian(t)
+	s := realServer(t, d)
+	const path = "/etc/demo/normalized.conf"
+	inputs := property.NewMap(map[string]property.Value{"path": property.New(path), "content": property.New("A=$B")})
+	created, err := s.Create(p.CreateRequest{Urn: fileURN, Properties: inputs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := onMachine(t, d, "cat "+path); got != "A=$B\n" {
+		t.Fatalf("on disk: %q", got)
+	}
+	read, err := s.Read(p.ReadRequest{ID: path, Urn: fileURN, Properties: created.Properties, Inputs: inputs})
+	if err != nil || read.ID != path {
+		t.Fatalf("refresh: %+v, %v", read, err)
+	}
+	if diff, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: read.Properties, OldInputs: inputs, Inputs: inputs}); err != nil || diff.HasChanges {
+		t.Fatalf("diff after refresh: %+v, %v", diff, err)
 	}
 }

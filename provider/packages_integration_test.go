@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/remote"
+	p "github.com/pulumi/pulumi-go-provider"
+	"github.com/pulumi/pulumi/sdk/v3/go/property"
 )
 
 // Integration tests of the package types against a real Debian 13 machine: a container, reached
@@ -99,16 +101,30 @@ func TestDebian13GitCheckout(t *testing.T) {
 	})
 
 	sh(t, m, "useradd -m checkout-owner")
+	server := newServer(t, (&capture{runner: m.runner}).factory)
+	if err := server.Configure(p.ConfigureRequest{Args: property.NewMap(with(homelabServerConfig(), "escalation", property.New("none")))}); err != nil {
+		t.Fatal(err)
+	}
+	deleteResource := func(path string) error {
+		return server.Delete(p.DeleteRequest{ID: path, Urn: urnOf("GitCheckout", "checkout"),
+			Properties: property.NewMap(map[string]property.Value{"path": property.New(path), "url": property.New(url), "commit": property.New(first), "head": property.New(first)})})
+	}
 	for _, tc := range []struct{ name, change, finding string }{
 		{"working tree", "echo changed > a", "Working tree changes:\n M a"},
+		{"staged file", "echo changed > a && git add a", "Working tree changes:\nM  a"},
+		{"untracked file", "echo changed > local.txt", "Working tree changes:\n?? local.txt"},
+		{"detached commit", "echo changed > a && git commit -qam detached-work", "detached"},
 		{"stash", "echo changed > a && git stash -q", "Stashes:\nstash@{0}"},
 		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "Unpushed branch commits:"},
 	} {
 		t.Run("refuses "+tc.name, func(t *testing.T) {
+			if tc.name == "detached commit" {
+				t.Skip("blocked by #135: Delete does not check detached HEAD for local commits")
+			}
 			path := "/srv/w-" + strings.ReplaceAll(tc.name, " ", "-")
 			checkout(t, path)
 			sh(t, m, "cd "+shellQuote(path)+" && "+tc.change+" && chown -R checkout-owner:checkout-owner "+shellQuote(path))
-			err := deleteCheckout(t.Context(), m, path)
+			err := deleteResource(path)
 			if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.finding) {
 				t.Fatalf("got %v, want refusal naming %s and %q", err, path, tc.finding)
 			}
@@ -122,7 +138,7 @@ func TestDebian13GitCheckout(t *testing.T) {
 		path := "/srv/clean"
 		checkout(t, path)
 		sh(t, m, "echo ignored > /srv/clean/ignored.log && chown -R checkout-owner:checkout-owner /srv/clean")
-		if err := deleteCheckout(t.Context(), m, path); err != nil {
+		if err := deleteResource(path); err != nil {
 			t.Fatal(err)
 		}
 		if exists(t, m, path) {
@@ -183,12 +199,14 @@ func TestDebian13Archive(t *testing.T) {
 func TestDebian13Packages(t *testing.T) {
 	m := debian13(t)
 	ctx := t.Context()
-	sh(t, m, `mkdir -p /build/demo/DEBIAN /build/demo/usr/bin && printf '#!/bin/sh\necho demo\n' > /build/demo/usr/bin/demo &&
+	sh(t, m, `mkdir -p /build/demo/DEBIAN /build/demo/usr/bin /build/demo/etc && printf '#!/bin/sh\necho demo\n' > /build/demo/usr/bin/demo &&
 		chmod +x /build/demo/usr/bin/demo && printf 'Package: pulumi-demo\nVersion: 1.2.3\nArchitecture: all\nMaintainer: t <t@example.com>\nDescription: demo\n' > /build/demo/DEBIAN/control &&
+		printf '/etc/pulumi-demo.conf\n' > /build/demo/DEBIAN/conffiles &&
+		printf 'default one\n' > /build/demo/etc/pulumi-demo.conf &&
 		dpkg-deb -b /build/demo /build/demo.deb >/dev/null`)
 	sum := strings.Fields(sh(t, m, "sha256sum /build/demo.deb"))[0]
 
-	t.Run("installs a verified .deb through apt and purges it", func(t *testing.T) {
+	t.Run("keeps local conffile edits on upgrade and removes the conffile on purge", func(t *testing.T) {
 		version, err := installDeb(ctx, m, DebPackageArgs{Name: "pulumi-demo", URL: "file:///build/demo.deb", Sha256: sum})
 		if err != nil || version != "1.2.3" {
 			t.Fatalf("%q %v", version, err)
@@ -197,7 +215,32 @@ func TestDebian13Packages(t *testing.T) {
 			!strings.Contains(err.Error(), "dpkg has no package named pulumi-other") {
 			t.Fatalf("got %v", err)
 		}
-		sh(t, m, purgeCommand("pulumi-demo"))
+		if got := sh(t, m, "cat /etc/pulumi-demo.conf"); got != "default one\n" {
+			t.Fatalf("installed conffile: %q", got)
+		}
+		sh(t, m, `printf 'local edit\n' > /etc/pulumi-demo.conf &&
+			printf 'default two\n' > /build/demo/etc/pulumi-demo.conf &&
+			sed -i 's/Version: 1.2.3/Version: 1.2.4/' /build/demo/DEBIAN/control &&
+			dpkg-deb -b /build/demo /build/demo-v2.deb >/dev/null`)
+		sumV2 := strings.Fields(sh(t, m, "sha256sum /build/demo-v2.deb"))[0]
+		version, err = installDeb(ctx, m, DebPackageArgs{Name: "pulumi-demo", URL: "file:///build/demo-v2.deb", Sha256: sumV2})
+		if err != nil || version != "1.2.4" {
+			t.Fatalf("upgrade: %q, %v", version, err)
+		}
+		if got := sh(t, m, "cat /etc/pulumi-demo.conf"); got != "local edit\n" {
+			t.Fatalf("upgrade overwrote the local conffile: %q", got)
+		}
+		server := newServer(t, (&capture{runner: m.runner}).factory)
+		if err := server.Configure(p.ConfigureRequest{Args: property.NewMap(with(homelabServerConfig(), "escalation", property.New("none")))}); err != nil {
+			t.Fatal(err)
+		}
+		if err := server.Delete(p.DeleteRequest{ID: "pulumi-demo", Urn: urnOf("AptPackage", "demo"),
+			Properties: property.NewMap(map[string]property.Value{"name": property.New("pulumi-demo"), "update": property.New(false), "version": property.New(version), "manual": property.New(true)})}); err != nil {
+			t.Fatal(err)
+		}
+		if exists(t, m, "/etc/pulumi-demo.conf") {
+			t.Fatal("purge left the conffile behind")
+		}
 		if _, ok, _ := readPackage(ctx, m, "pulumi-demo"); ok {
 			t.Fatal("still installed")
 		}
@@ -245,4 +288,45 @@ func TestDebian13Packages(t *testing.T) {
 			t.Fatalf("%v %v", manual, err)
 		}
 	})
+}
+
+func TestDebian13OfficialInstall(t *testing.T) {
+	m := debian13(t)
+	sh(t, m, "useradd -m vendor-test")
+	s := newServer(t, (&capture{runner: m.runner}).factory)
+	if err := s.Configure(p.ConfigureRequest{Args: property.NewMap(with(homelabServerConfig(), "escalation", property.New("none")))}); err != nil {
+		t.Fatal(err)
+	}
+	const home = "/home/vendor-test"
+	const bin = home + "/.local/bin/demo"
+	urn := urnOf("OfficialInstall", "demo")
+	inputs := property.NewMap(map[string]property.Value{
+		"account": property.New("vendor-test"), "home": property.New(home), "bin": property.New(bin),
+		"installer": property.New(`test "$(id -un)" = vendor-test && test "$PWD" = "$HOME" &&
+			mkdir -p .local/bin && printf '#!/bin/sh\nprintf "demo 1.2.3\\n"\n' > .local/bin/demo &&
+			chmod +x .local/bin/demo`),
+	})
+	created, err := s.Create(p.CreateRequest{Urn: urn, Properties: inputs})
+	if err != nil || created.ID != "vendor-test:"+bin || created.Properties.Get("version").AsString() != "demo 1.2.3" {
+		t.Fatalf("install: %+v, %v", created, err)
+	}
+	read, err := s.Read(p.ReadRequest{ID: created.ID, Urn: urn, Properties: created.Properties, Inputs: inputs})
+	if err != nil || read.ID != created.ID || read.Properties.Get("version").AsString() != "demo 1.2.3" {
+		t.Fatalf("read: %+v, %v", read, err)
+	}
+	if diff, err := s.Diff(p.DiffRequest{ID: read.ID, Urn: urn, State: read.Properties, Inputs: inputs}); err != nil || diff.HasChanges {
+		t.Fatalf("diff after refresh: %+v, %v", diff, err)
+	}
+	for field, changed := range map[string]string{"account": "someone-else", "bin": home + "/different-bin"} {
+		t.Run("replaces on "+field, func(t *testing.T) {
+			diff, err := s.Diff(p.DiffRequest{ID: read.ID, Urn: urn, State: read.Properties, Inputs: inputs.Set(field, property.New(changed))})
+			if err != nil || !diff.HasChanges || diff.DeleteBeforeReplace || len(diff.DetailedDiff) != 1 || diff.DetailedDiff[field].Kind != p.UpdateReplace {
+				t.Fatalf("diff: %+v, %v", diff, err)
+			}
+		})
+	}
+	sh(t, m, "rm "+bin)
+	if gone, err := s.Read(p.ReadRequest{ID: read.ID, Urn: urn, Properties: read.Properties, Inputs: inputs}); err != nil || gone.ID != "" {
+		t.Fatalf("read after removal: %+v, %v", gone, err)
+	}
 }
