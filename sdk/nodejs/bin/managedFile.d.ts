@@ -23,6 +23,10 @@ export declare class ManagedFile extends pulumi.CustomResource {
     readonly digest: pulumi.Output<string>;
     readonly group: pulumi.Output<string>;
     readonly mode: pulumi.Output<string>;
+    /**
+     * Whether refresh observed a file without a final newline.
+     */
+    readonly observedWithoutFinalNewline: pulumi.Output<boolean | undefined>;
     readonly owner: pulumi.Output<string>;
     readonly path: pulumi.Output<string>;
     readonly reloadSystemd: pulumi.Output<boolean | undefined>;

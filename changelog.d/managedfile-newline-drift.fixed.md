@@ -1,0 +1,1 @@
+- Fix ManagedFile reporting content drift after refresh when the declaration omits the final newline.

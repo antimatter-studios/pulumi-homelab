@@ -45,6 +45,8 @@ type ManagedFileState struct {
 	ReloadSystemd *bool   `pulumi:"reloadSystemd,optional"`
 	Digest        string  `pulumi:"digest"`
 	WrittenDigest *string `pulumi:"writtenDigest,optional"`
+	// A digest observed without a final newline can look like a legacy digest of declared content.
+	ObservedWithoutFinalNewline *bool `pulumi:"observedWithoutFinalNewline,optional"`
 }
 
 func (f *ManagedFileArgs) Annotate(a infer.Annotator) {
@@ -63,6 +65,7 @@ func (f *ManagedFileArgs) Annotate(a infer.Annotator) {
 func (f *ManagedFileState) Annotate(a infer.Annotator) {
 	a.Describe(&f.Digest, "SHA-256 in hex of the declared content after a write or the observed content after a read.")
 	a.Describe(&f.WrittenDigest, "SHA-256 of the bytes last written by the provider, used to guard deletion.")
+	a.Describe(&f.ObservedWithoutFinalNewline, "Whether refresh observed a file without a final newline.")
 }
 
 func (f *ManagedFile) Annotate(a infer.Annotator) {
@@ -227,7 +230,7 @@ func removeWrittenFile(ctx context.Context, m *machine, path string, digest *str
 
 func (w wantedFile) state() ManagedFileState {
 	return ManagedFileState{Path: w.path, Mode: w.mode, Owner: w.owner, Group: w.group,
-		ReloadSystemd: &w.reloadSystemd, Digest: digestOf([]byte(w.content))}
+		ReloadSystemd: &w.reloadSystemd, Digest: digestOf([]byte(fileBody(w.content)))}
 }
 
 // Create writes the file.
@@ -244,7 +247,7 @@ func (ManagedFile) Create(ctx context.Context, req infer.CreateRequest[ManagedFi
 		return infer.CreateResponse[ManagedFileState]{}, err
 	}
 	state := w.state()
-	digest := digestOf([]byte(fileBody(w.content)))
+	digest := state.Digest
 	state.WrittenDigest = &digest
 	return infer.CreateResponse[ManagedFileState]{ID: w.path, Output: state}, nil
 }
@@ -268,6 +271,15 @@ func (ManagedFile) Read(ctx context.Context, req infer.ReadRequest[ManagedFileAr
 	}
 	state.Path, state.Mode, state.Owner, state.Group = req.ID, actual.Mode, actual.Owner, actual.Group
 	state.Digest = digestOf([]byte(actual.Content))
+	state.ObservedWithoutFinalNewline = nil
+	if !strings.HasSuffix(actual.Content, "\n") {
+		observed := true
+		state.ObservedWithoutFinalNewline = &observed
+	}
+	if req.Inputs.Path == req.ID && actual.Content == fileBody(req.Inputs.Content) &&
+		req.State.Digest == digestOf([]byte(req.Inputs.Content)) && !deref(req.State.ObservedWithoutFinalNewline) {
+		state.Digest = req.State.Digest
+	}
 	inputs := req.Inputs
 	if inputs.Path == "" {
 		// The content is left out: an import cannot know whether the program marks it secret, and
@@ -295,15 +307,26 @@ func (ManagedFile) Update(ctx context.Context, req infer.UpdateRequest[ManagedFi
 	if err != nil {
 		return infer.UpdateResponse[ManagedFileState]{}, err
 	}
-	same := current != nil && current.Content == w.content &&
+	same := current != nil && current.Content == fileBody(w.content) &&
 		current.Mode == w.mode && current.Owner == w.owner && current.Group == w.group
 	state := w.state()
 	state.WrittenDigest = req.State.WrittenDigest
-	if !same {
+	if same {
+		previousContent := w.content
+		if raw, ok := infer.GetRawRequest[p.UpdateRequest](ctx); ok {
+			if old := raw.OldInputs.Get("content"); old.IsString() {
+				previousContent = old.AsString()
+			}
+		}
+		if previousContent != fileBody(previousContent) && req.State.Digest == digestOf([]byte(previousContent)) &&
+			!deref(req.State.ObservedWithoutFinalNewline) {
+			state.Digest = digestOf([]byte(w.content))
+		}
+	} else {
 		if err := writeManagedFile(ctx, m, w); err != nil {
 			return infer.UpdateResponse[ManagedFileState]{}, err
 		}
-		digest := digestOf([]byte(fileBody(w.content)))
+		digest := state.Digest
 		state.WrittenDigest = &digest
 	}
 	return infer.UpdateResponse[ManagedFileState]{Output: state}, nil
@@ -311,11 +334,12 @@ func (ManagedFile) Update(ctx context.Context, req infer.UpdateRequest[ManagedFi
 
 // Diff is spelled out so the reason for a replacement is legible: a file at a new path is a new
 // file (created before the old one is removed), while editing one in place is not.
-func (ManagedFile) Diff(_ context.Context, req infer.DiffRequest[ManagedFileArgs, ManagedFileState]) (p.DiffResponse, error) {
+func (ManagedFile) Diff(ctx context.Context, req infer.DiffRequest[ManagedFileArgs, ManagedFileState]) (p.DiffResponse, error) {
 	w := wantedOf(req.Inputs)
 	old := req.State
 	diff := map[string]p.PropertyDiff{}
-	if old.Digest != digestOf([]byte(w.content)) {
+	normalized := fileBody(w.content)
+	if old.Digest != digestOf([]byte(normalized)) && !matchesLegacyManagedFile(ctx, old, w.content, normalized) {
 		diff["content"] = p.PropertyDiff{Kind: p.Update}
 	}
 	if old.Mode != w.mode {
@@ -336,6 +360,20 @@ func (ManagedFile) Diff(_ context.Context, req infer.DiffRequest[ManagedFileArgs
 	return p.DiffResponse{HasChanges: len(diff) > 0, DetailedDiff: diff, DeleteBeforeReplace: false}, nil
 }
 
+// Prefer the old declaration when available. That lets a legacy digest accept adding an
+// explicit final newline and keeps a real change that removes an extra newline visible.
+func matchesLegacyManagedFile(ctx context.Context, state ManagedFileState, content, normalized string) bool {
+	if deref(state.ObservedWithoutFinalNewline) {
+		return false
+	}
+	if raw, ok := infer.GetRawRequest[p.DiffRequest](ctx); ok {
+		if old := raw.OldInputs.Get("content"); old.IsString() {
+			content = old.AsString()
+		}
+	}
+	return fileBody(content) == normalized && state.Digest == digestOf([]byte(content))
+}
+
 // Delete removes the file: the file is the whole of this resource, and nothing else at or under
 // its path is touched.
 func (ManagedFile) Delete(ctx context.Context, req infer.DeleteRequest[ManagedFileState]) (infer.DeleteResponse, error) {
@@ -343,6 +381,37 @@ func (ManagedFile) Delete(ctx context.Context, req infer.DeleteRequest[ManagedFi
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = removeWrittenFile(ctx, m, req.ID, req.State.WrittenDigest)
+	_, err = removeWrittenFile(ctx, m, req.ID, managedFileDeleteDigest(ctx, req))
 	return infer.DeleteResponse{}, err
+}
+
+func managedFileDeleteDigest(ctx context.Context, req infer.DeleteRequest[ManagedFileState]) *string {
+	state := req.State
+	expected := state.WrittenDigest
+	raw, ok := infer.GetRawRequest[p.DeleteRequest](ctx)
+	if !ok {
+		return expected
+	}
+	oldPath, oldContent := raw.OldInputs.Get("path"), raw.OldInputs.Get("content")
+	if !oldPath.IsString() || oldPath.AsString() != req.ID || !oldContent.IsString() {
+		return expected
+	}
+	declared := oldContent.AsString()
+	body := fileBody(declared)
+	if declared == body {
+		return expected
+	}
+	legacy := state.Digest
+	if expected != nil {
+		legacy = *expected
+	} else if state.ReloadSystemd == nil || deref(state.ObservedWithoutFinalNewline) {
+		// An import or a digest known to have come from disk supplies no evidence of a write.
+		return nil
+	}
+	if legacy != digestOf([]byte(declared)) {
+		return expected
+	}
+	// The legacy digest hashes the declaration. The deletion guard checks the bytes written.
+	digest := digestOf([]byte(body))
+	return &digest
 }

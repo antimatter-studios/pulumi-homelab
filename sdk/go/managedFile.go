@@ -17,12 +17,14 @@ type ManagedFile struct {
 	pulumi.CustomResourceState
 
 	// SHA-256 in hex of the declared content after a write or the observed content after a read.
-	Digest        pulumi.StringOutput  `pulumi:"digest"`
-	Group         pulumi.StringOutput  `pulumi:"group"`
-	Mode          pulumi.StringOutput  `pulumi:"mode"`
-	Owner         pulumi.StringOutput  `pulumi:"owner"`
-	Path          pulumi.StringOutput  `pulumi:"path"`
-	ReloadSystemd pulumi.BoolPtrOutput `pulumi:"reloadSystemd"`
+	Digest pulumi.StringOutput `pulumi:"digest"`
+	Group  pulumi.StringOutput `pulumi:"group"`
+	Mode   pulumi.StringOutput `pulumi:"mode"`
+	// Whether refresh observed a file without a final newline.
+	ObservedWithoutFinalNewline pulumi.BoolPtrOutput `pulumi:"observedWithoutFinalNewline"`
+	Owner                       pulumi.StringOutput  `pulumi:"owner"`
+	Path                        pulumi.StringOutput  `pulumi:"path"`
+	ReloadSystemd               pulumi.BoolPtrOutput `pulumi:"reloadSystemd"`
 	// SHA-256 of the bytes last written by the provider, used to guard deletion.
 	WrittenDigest pulumi.StringPtrOutput `pulumi:"writtenDigest"`
 }
@@ -163,6 +165,11 @@ func (o ManagedFileOutput) Group() pulumi.StringOutput {
 
 func (o ManagedFileOutput) Mode() pulumi.StringOutput {
 	return o.ApplyT(func(v *ManagedFile) pulumi.StringOutput { return v.Mode }).(pulumi.StringOutput)
+}
+
+// Whether refresh observed a file without a final newline.
+func (o ManagedFileOutput) ObservedWithoutFinalNewline() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *ManagedFile) pulumi.BoolPtrOutput { return v.ObservedWithoutFinalNewline }).(pulumi.BoolPtrOutput)
 }
 
 func (o ManagedFileOutput) Owner() pulumi.StringOutput {
