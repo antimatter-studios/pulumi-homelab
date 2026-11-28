@@ -368,6 +368,20 @@ func TestSwapPartitionDelete(t *testing.T) {
 		t.Fatalf("%v", fake.Commands())
 	}
 
+	// a unit at that path that this provider did not write is left, with the swap switched off
+	foreign := "[Swap]\nWhat=/dev/nvme0n1p3\n"
+	machine.unit = &foreign
+	machine.swaps = ryzenMachine(t).swaps
+	before := len(fake.Commands())
+	if err := s.Delete(p.DeleteRequest{ID: "swap-nvme0", Urn: urn, Properties: st}); err != nil {
+		t.Fatal(err)
+	}
+	later := strings.Join(fake.Commands()[before:], "\n")
+	if strings.Contains(later, "systemctl disable") || strings.Contains(later, "rm -f") || machine.unit == nil || !strings.Contains(later, "swapoff") {
+		t.Fatalf("%s", later)
+	}
+	machine.unit = nil
+
 	// deletePartition, but the partition by that name is not the one recorded: left alone
 	other := st.Set("deletePartition", property.New(true)).Set("partUuid", property.New("00000000-0000-0000-0000-000000000000"))
 	if err := s.Delete(p.DeleteRequest{ID: "swap-nvme0", Urn: urn, Properties: other}); err == nil || !strings.Contains(err.Error(), "left alone") {
@@ -421,4 +435,22 @@ func swapReplaces(d p.DiffResponse) []string {
 		}
 	}
 	return out
+}
+
+// A state with no partition seen yet (a preview's) is no change for the same declaration, and a
+// plain replace, never a refusal, for another size: there is no partition to protect.
+func TestSwapPartitionDiffBeforeAnythingWasSeen(t *testing.T) {
+	s := configured(t, remotetest.New())
+	urn := urnOf("SwapPartition", "it")
+	inputs := sm("disk", "/dev/sdx", "name", "swap-x", "sizeGib", 1, "priority", 10)
+	created, err := s.Create(p.CreateRequest{Urn: urn, Properties: inputs, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d, err := s.Diff(p.DiffRequest{ID: "swap-x", Urn: urn, State: created.Properties, Inputs: inputs}); err != nil || len(swapReplaces(d)) > 0 {
+		t.Fatalf("%+v %v", d, err)
+	}
+	if d, err := s.Diff(p.DiffRequest{ID: "swap-x", Urn: urn, State: created.Properties, Inputs: sm("disk", "/dev/sdx", "name", "swap-x", "sizeGib", 2, "priority", 10)}); err != nil || len(swapReplaces(d)) != 1 {
+		t.Fatalf("%+v %v", d, err)
+	}
 }

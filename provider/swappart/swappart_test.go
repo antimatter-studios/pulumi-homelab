@@ -19,7 +19,7 @@ func ryzen(t *testing.T) []Table {
 	return tables
 }
 
-func i64(v int64) *int64 { return &v }
+func i64(v int64) *int64   { return &v }
 func str(v string) *string { return &v }
 
 // The scan the Ryzen gave on 2026-11-28: the declared disk first, then lsblk's disks, of which

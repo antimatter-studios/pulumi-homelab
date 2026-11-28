@@ -8,5 +8,5 @@
   size, signature, whether it swaps and at what priority; an import adopts an existing partition
   with no change, and `persistent: false` adopts one that something else still enables at boot.
   Delete turns it off (refusing when its pages would not fit in available memory) and removes the
-  unit, and keeps the partition unless `deletePartition` is set. Priority, discard and persistence
+  unit (only its own, marked; another at that path is left with a warning), and keeps the partition unless `deletePartition` is set. Priority, discard and persistence
   update in place; another size, disk or start is refused unless `deletePartition` is in the state.

@@ -521,13 +521,19 @@ func (SwapPartition) Diff(_ context.Context, req infer.DiffRequest[SwapPartition
 	if old.Disk != "" && old.Disk != a.Disk {
 		replaces = append(replaces, "disk")
 	}
-	if int64(old.SizeBytes) != int64(a.SizeGib)<<30 {
+	// the partition's size and place are only compared once one has been seen: a state from a
+	// preview (or a create that failed before the partition existed) has none
+	observed := old.Device != ""
+	if observed && int64(old.SizeBytes) != int64(a.SizeGib)<<30 {
 		replaces = append(replaces, "sizeGib")
 	}
-	if a.Start != nil && old.StartSector != *a.Start {
+	if observed && a.Start != nil && old.StartSector != *a.Start {
 		replaces = append(replaces, "start")
 	}
-	if moved := moves(replaces); len(moved) > 0 && !old.DeletePartition {
+	if !observed && (old.SizeGib != a.SizeGib || !sameInt(old.Start, a.Start)) {
+		replaces = append(replaces, "sizeGib")
+	}
+	if moved := moves(replaces); len(moved) > 0 && observed && !old.DeletePartition {
 		return p.DiffResponse{}, fmt.Errorf("%s (%s) would have to be replaced to change %s, and SwapPartition never resizes or moves a partition in place. "+
 			"Keep the old values, or deploy deletePartition: true first so a replacement may remove the old partition (the swap on it is switched off and its contents lost)",
 			old.Name, old.Device, strings.Join(moved, ", "))
@@ -566,9 +572,16 @@ func deleteSwapPartCommand(disk string, num int, node, name, partUUID string) st
 	d, n, nd := shellQuote(disk), strconv.Itoa(num), shellQuote(node)
 	inner := `g=$(sfdisk --part-uuid ` + d + ` ` + n + ` 2>/dev/null | tr a-z A-Z); l=$(sfdisk --part-label ` + d + ` ` + n + ` 2>/dev/null); ` +
 		`if [ "$g" != ` + shellQuote(strings.ToUpper(partUUID)) + ` ] || [ "$l" != ` + shellQuote(name) + ` ]; then ` +
-		`echo "partition `+n+` of "` + d + `" is now $l ($g), not the recorded one; it is left alone" >&2; exit 1; fi; ` +
+		`echo "partition ` + n + ` of "` + d + `" is now $l ($g), not the recorded one; it is left alone" >&2; exit 1; fi; ` +
 		`wipefs -q -a ` + nd + ` && sgdisk -d ` + n + ` ` + d + ` >/dev/null`
 	return "flock " + d + " sh -c " + shellQuote(inner) + " && { partx -d --nr " + n + " " + d + " 2>/dev/null || true; }"
+}
+
+func sameInt(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 func sameString(a, b *string) bool {
@@ -578,7 +591,9 @@ func sameString(a, b *string) bool {
 	return *a == *b
 }
 
-// Delete turns the swap off (if the memory to take its pages back is there) and removes the unit.
+// Delete turns the swap off (if the memory to take its pages back is there) and removes the unit,
+// if it is this provider's (it starts with the marker line); another unit at that path is left with
+// a warning.
 // The partition stays, with its data, unless deletePartition is set, and then only the partition
 // with the GPT id this resource recorded is removed.
 func (SwapPartition) Delete(ctx context.Context, req infer.DeleteRequest[SwapPartitionState]) (infer.DeleteResponse, error) {
@@ -597,7 +612,10 @@ func (SwapPartition) Delete(ctx context.Context, req infer.DeleteRequest[SwapPar
 		return infer.DeleteResponse{}, err
 	}
 	if !ok {
-		_, err := m.must(ctx, m.escalate("if [ -e "+unitPath+" ]; then systemctl disable "+unit+" 2>&1; rm -f "+unitPath+" && systemctl daemon-reload; fi"))
+		marker := shellQuote(swappart.UnitMarker)
+		err := guardedDelete(ctx, m, swapPartUnitPath(name), "if [ -e "+unitPath+" ]; then "+
+			"if head -n 1 "+unitPath+" | grep -qxF "+marker+"; then systemctl disable "+unit+" 2>&1; rm -f "+unitPath+" && systemctl daemon-reload; "+
+			"else echo 'it was not written by SwapPartition (its first line is not the pulumi-homelab marker)' >&2; exit 10; fi; fi")
 		return infer.DeleteResponse{}, err
 	}
 	node := obs.node()
@@ -608,8 +626,12 @@ func (SwapPartition) Delete(ctx context.Context, req infer.DeleteRequest[SwapPar
 	}
 	n := shellQuote(node)
 	steps := []string{}
-	if obs.detail.unitFile != nil {
+	switch u := obs.detail.unitFile; {
+	case u != nil && strings.HasPrefix(*u, swappart.UnitMarker+"\n"):
 		steps = append(steps, "systemctl disable --now "+unit+" 2>&1; rm -f "+unitPath+" && systemctl daemon-reload")
+	case u != nil:
+		// someone else's unit at this path: it stays, and so does whatever it does at boot
+		warnRetained(ctx, swapPartUnitPath(name), "it was not written by SwapPartition (its first line is not the pulumi-homelab marker)")
 	}
 	steps = append(steps, "if swapon --show=NAME --noheadings --raw | grep -qxF "+n+"; then swapoff "+n+"; fi")
 	if s.DeletePartition {
