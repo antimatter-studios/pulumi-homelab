@@ -13,7 +13,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// Named entries on a POSIX ACL, set and removed without touching anybody else's.
+// Entries on a POSIX ACL, and optionally the owner and group, set and read back without touching the content.
 type PosixAcl struct {
 	pulumi.CustomResourceState
 
@@ -22,11 +22,20 @@ type PosixAcl struct {
 	// What getfacl grants for each declared default entry.
 	DefaultActual  provider.AclEntryActualArrayOutput  `pulumi:"defaultActual"`
 	DefaultEntries provider.AclEntrySettledArrayOutput `pulumi:"defaultEntries"`
-	Entries        provider.AclEntrySettledArrayOutput `pulumi:"entries"`
-	Normalise      provider.AclNormaliseArgsPtrOutput  `pulumi:"normalise"`
+	// Named default entries on the path that are not declared, for an exact declaration.
+	DefaultExtra provider.AclEntryActualArrayOutput  `pulumi:"defaultExtra"`
+	Entries      provider.AclEntrySettledArrayOutput `pulumi:"entries"`
+	Exact        pulumi.BoolPtrOutput                `pulumi:"exact"`
+	// Named access entries on the path that are not declared, for an exact declaration.
+	Extra provider.AclEntryActualArrayOutput `pulumi:"extra"`
+	// The owning group getfacl reports, while one is declared.
+	Group     pulumi.StringPtrOutput             `pulumi:"group"`
+	Normalise provider.AclNormaliseArgsPtrOutput `pulumi:"normalise"`
 	// How many directories the last normalise changed.
 	Normalised pulumi.IntPtrOutput `pulumi:"normalised"`
-	Path       pulumi.StringOutput `pulumi:"path"`
+	// The owning user getfacl reports, while one is declared.
+	Owner pulumi.StringPtrOutput `pulumi:"owner"`
+	Path  pulumi.StringOutput    `pulumi:"path"`
 }
 
 // NewPosixAcl registers a new resource with the given unique name, arguments, and options.
@@ -76,8 +85,14 @@ type posixAclArgs struct {
 	DefaultEntries []provider.AclEntryArgs `pulumi:"defaultEntries"`
 	// Access entries: named users and groups.
 	Entries []provider.AclEntryArgs `pulumi:"entries"`
+	// The path's named entries, access and default, are exactly the declared ones: any other is removed, as setfacl --set would, and one that appears later is drift. Without it, entries this resource did not declare are left alone.
+	Exact *bool `pulumi:"exact"`
+	// The owning group, by name, chowned and read back from getfacl. Left alone when absent.
+	Group *string `pulumi:"group"`
 	// Correct directories under the path that have one exact mode and group to another mode.
 	Normalise *provider.AclNormaliseArgs `pulumi:"normalise"`
+	// The owning user, by name, chowned and read back from getfacl. Left alone when absent.
+	Owner *string `pulumi:"owner"`
 	// The path whose ACL this sets.
 	Path string `pulumi:"path"`
 }
@@ -88,8 +103,14 @@ type PosixAclArgs struct {
 	DefaultEntries provider.AclEntryArgsArrayInput
 	// Access entries: named users and groups.
 	Entries provider.AclEntryArgsArrayInput
+	// The path's named entries, access and default, are exactly the declared ones: any other is removed, as setfacl --set would, and one that appears later is drift. Without it, entries this resource did not declare are left alone.
+	Exact pulumi.BoolPtrInput
+	// The owning group, by name, chowned and read back from getfacl. Left alone when absent.
+	Group pulumi.StringPtrInput
 	// Correct directories under the path that have one exact mode and group to another mode.
 	Normalise provider.AclNormaliseArgsPtrInput
+	// The owning user, by name, chowned and read back from getfacl. Left alone when absent.
+	Owner pulumi.StringPtrInput
 	// The path whose ACL this sets.
 	Path pulumi.StringInput
 }
@@ -145,8 +166,27 @@ func (o PosixAclOutput) DefaultEntries() provider.AclEntrySettledArrayOutput {
 	return o.ApplyT(func(v *PosixAcl) provider.AclEntrySettledArrayOutput { return v.DefaultEntries }).(provider.AclEntrySettledArrayOutput)
 }
 
+// Named default entries on the path that are not declared, for an exact declaration.
+func (o PosixAclOutput) DefaultExtra() provider.AclEntryActualArrayOutput {
+	return o.ApplyT(func(v *PosixAcl) provider.AclEntryActualArrayOutput { return v.DefaultExtra }).(provider.AclEntryActualArrayOutput)
+}
+
 func (o PosixAclOutput) Entries() provider.AclEntrySettledArrayOutput {
 	return o.ApplyT(func(v *PosixAcl) provider.AclEntrySettledArrayOutput { return v.Entries }).(provider.AclEntrySettledArrayOutput)
+}
+
+func (o PosixAclOutput) Exact() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *PosixAcl) pulumi.BoolPtrOutput { return v.Exact }).(pulumi.BoolPtrOutput)
+}
+
+// Named access entries on the path that are not declared, for an exact declaration.
+func (o PosixAclOutput) Extra() provider.AclEntryActualArrayOutput {
+	return o.ApplyT(func(v *PosixAcl) provider.AclEntryActualArrayOutput { return v.Extra }).(provider.AclEntryActualArrayOutput)
+}
+
+// The owning group getfacl reports, while one is declared.
+func (o PosixAclOutput) Group() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *PosixAcl) pulumi.StringPtrOutput { return v.Group }).(pulumi.StringPtrOutput)
 }
 
 func (o PosixAclOutput) Normalise() provider.AclNormaliseArgsPtrOutput {
@@ -156,6 +196,11 @@ func (o PosixAclOutput) Normalise() provider.AclNormaliseArgsPtrOutput {
 // How many directories the last normalise changed.
 func (o PosixAclOutput) Normalised() pulumi.IntPtrOutput {
 	return o.ApplyT(func(v *PosixAcl) pulumi.IntPtrOutput { return v.Normalised }).(pulumi.IntPtrOutput)
+}
+
+// The owning user getfacl reports, while one is declared.
+func (o PosixAclOutput) Owner() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *PosixAcl) pulumi.StringPtrOutput { return v.Owner }).(pulumi.StringPtrOutput)
 }
 
 func (o PosixAclOutput) Path() pulumi.StringOutput {
