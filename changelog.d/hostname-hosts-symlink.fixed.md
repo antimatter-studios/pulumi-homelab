@@ -1,0 +1,1 @@
+- Reject dangling hosts-file symlinks before Hostname can write through them.
