@@ -1,0 +1,1 @@
+- The Go SDK now provides the FluxApp, T3 Code, and Claude profile helpers with registrations that match the Node SDK.
