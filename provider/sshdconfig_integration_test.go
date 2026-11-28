@@ -29,7 +29,11 @@ func startSshd(t *testing.T) dockerRunner {
 	}
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", id).Run() })
-	return dockerRunner{id: id}
+	d := dockerRunner{id: id}
+	d.sh(t, `install -d -m 0700 -o chris -g chris /home/chris/.ssh &&
+sudo -u chris ssh-keygen -q -t ed25519 -N '' -f /home/chris/.ssh/deploy &&
+install -m 0600 -o chris -g chris /home/chris/.ssh/deploy.pub /home/chris/.ssh/authorized_keys`)
+	return d
 }
 
 // onRunningSshd is onDebian with sshd running and a systemctl that reloads it, which SshdConfig
@@ -81,6 +85,43 @@ func TestSshdConfigRealSshd(t *testing.T) {
 	}
 	pid := d.sh(t, "cat /run/sshd.pid")
 	banner(t)
+
+	// A Match block that excludes the deployment account passes syntax checking.
+	login := func() string {
+		return d.sh(t, `sudo -u chris ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -i /home/chris/.ssh/deploy chris@127.0.0.1 id -un`)
+	}
+	if got := login(); got != "chris\n" {
+		t.Fatalf("deployment login before update: %q", got)
+	}
+	main := d.sh(t, "cat /etc/ssh/sshd_config")
+	log := d.sh(t, "cat /tmp/systemctl.log")
+	for _, c := range []struct {
+		name  string
+		input map[string]string
+		want  string
+	}{
+		{"Match AllowUsers", map[string]string{"AllowUsers": "root"}, "AllowUsers does not match"},
+		{"quoted user pattern", map[string]string{"AllowUsers": `"root chris"`}, "AllowUsers does not match"},
+		{"changed key path", map[string]string{"AuthorizedKeysFile": ".ssh/missing"}, "AuthorizedKeysFile no longer includes"},
+		{"quoted key path", map[string]string{"AuthorizedKeysFile": `".ssh/authorized_keys .ssh/missing"`}, "AuthorizedKeysFile paths with quoted whitespace"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			lockout := sshdInputs(c.input).Set("match", property.New(map[string]property.Value{"User": property.New("chris")}))
+			_, err := s.Update(p.UpdateRequest{ID: created.ID, Urn: sshdURN, State: created.Properties, Inputs: lockout})
+			if err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "nothing was changed") {
+				t.Fatalf("deployment lockout: %v", err)
+			}
+			if d.sh(t, "cat "+path) != good || d.sh(t, "cat /etc/ssh/sshd_config") != main {
+				t.Fatal("refusal changed the live configuration")
+			}
+			if d.sh(t, "cat /tmp/systemctl.log") != log {
+				t.Fatal("refusal touched the running service")
+			}
+			if got := login(); got != "chris\n" {
+				t.Fatalf("deployment login after refusal: %q", got)
+			}
+		})
+	}
 
 	// sshd -t rejects it: refused before anything live is touched
 	_, err = s.Update(p.UpdateRequest{ID: created.ID, Urn: sshdURN, State: created.Properties, Inputs: sshdInputs(map[string]string{"PermitRootLogin": "bogus"})})

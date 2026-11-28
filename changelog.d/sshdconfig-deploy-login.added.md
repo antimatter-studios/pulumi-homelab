@@ -1,0 +1,1 @@
+- SshdConfig checks the deploying account’s public-key login settings before applying a drop-in change and refuses changes that would block access.
