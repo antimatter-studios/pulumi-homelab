@@ -495,6 +495,8 @@ exist — and every command exits zero.
 | **`SambaUser`** | `name` `password` | `pdbedit -L` — existence only |
 | **`RcloneRemote`** | `remote` `type` `settings?` `secrets?` `config?` | `rclone config dump`, credentials revealed |
 
+Creating or updating an `RcloneRemote` with settings or secrets requires `curl` and OpenSSL on the host running rclone.
+
 ### Access control
 
 | | Arguments | Reads from |
@@ -842,10 +844,9 @@ obscuring the same password twice gives two different strings. A resource that o
 password and compared it against what is stored would report drift on every refresh, for ever, on a
 remote nobody had touched. It is the `644` versus `0644` bug with a cryptographic hat on.
 
-So the comparison is done in plaintext: `rclone reveal` turns the stored value back into what it
-was, and that is what is compared. The cost is that the plaintext ends up in the Pulumi state file,
-marked as a secret output, because there is nowhere else for it to be if drift is to be detected at
-all.
+The provider decodes rclone's obscured format in-process and compares the resulting plaintext
+against the desired value. Pulumi stores the plaintext as a secret output so the provider can
+detect drift.
 
 Worth knowing either way: obscuring is obfuscation, not encryption. The key is a constant in
 rclone's own source, so a remote's credentials are protected by the config file's mode and by
