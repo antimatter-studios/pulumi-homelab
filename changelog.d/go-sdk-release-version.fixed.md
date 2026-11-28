@@ -1,0 +1,1 @@
+- Publish a versioned Go SDK module with each release so Go programs request the matching Pulumi plugin.

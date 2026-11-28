@@ -125,7 +125,7 @@ func unitApplyCommand(s SystemdUnitState, current *SystemdUnitState) string {
 	file, unit := unitPath(s.Name, s.Directory), shellQuote(s.Name)
 	var steps []string
 	if acts.rewrite {
-		steps = append(steps, heredoc(file, s.Unit)+"\nchmod "+s.Mode+" "+shellQuote(file), "systemctl daemon-reload")
+		steps = append(steps, "chmod "+s.Mode+" "+shellQuote(file), "systemctl daemon-reload")
 	}
 	if acts.relabel {
 		verb := "disable"
@@ -140,6 +140,9 @@ func unitApplyCommand(s SystemdUnitState, current *SystemdUnitState) string {
 			verb = "restart"
 		}
 		steps = append(steps, "systemctl "+verb+" "+unit)
+	}
+	if acts.rewrite {
+		return heredoc(file, s.Unit, steps...)
 	}
 	return strings.Join(steps, " && ")
 }

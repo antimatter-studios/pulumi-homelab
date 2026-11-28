@@ -231,7 +231,7 @@ func readProtectedCommand(path, enforce string) string {
 	q := shell.Quote(path)
 	digest := ""
 	if needsMaterial(enforce) {
-		digest = fmt.Sprintf("sha256sum %s | cut -d' ' -f1; ", q)
+		digest = fmt.Sprintf(`digest=$(sha256sum < %s) || exit 1; printf '%%s\n' "${digest%%%% *}" || exit 1; `, q)
 	}
 	return fmt.Sprintf("test -f %s || exit 9; %sstat -c '%%a %%U %%G' %s", q, digest, q)
 }

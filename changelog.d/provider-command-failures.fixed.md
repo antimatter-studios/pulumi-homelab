@@ -1,0 +1,1 @@
+- Serialize Samba share and setting edits and report failed Samba share reads, ProtectedFile reads, Archive removals, RcloneRemote config commands, AuthorizedKey writes, and SystemdUnit writes.

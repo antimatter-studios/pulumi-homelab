@@ -34,6 +34,9 @@ jobs:
       - name: Unit tests
         run: pnpm run test:unit
 
+      - name: Check Node component golden fixture
+        run: node scripts/gen-components-golden.mjs --check
+
   # test, go and the CI gate run on the homelab's own ARC runners (ryzen-linux-x64). On a public
   # repository that is safe only while fork pull requests need approval before they run: the
   # organisation and repository setting must stay "all_external_contributors".
@@ -86,6 +89,10 @@ jobs:
       - name: Build Go SDK
         working-directory: sdk/go
         run: go build ./...
+
+      - name: Test Go SDK component parity
+        working-directory: sdk/go
+        run: go test ./...
 
       - name: Release dry run
         # What the next merge to main would release, computed from the real history, and its notes.

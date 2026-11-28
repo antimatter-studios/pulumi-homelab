@@ -5,6 +5,7 @@ package rclone
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
@@ -18,37 +19,48 @@ func ParseDump(out string, remote string) map[string]string {
 
 // ParseDumpOrdered also returns the JavaScript enumeration order of the remote's fields.
 func ParseDumpOrdered(out, remote string) (map[string]string, []string) {
+	settings, keys, _ := ParseDumpChecked(out, remote)
+	return settings, keys
+}
+
+// ParseDumpChecked distinguishes a missing remote from an invalid dump. Errors
+// omit the dump content because it can contain credentials.
+func ParseDumpChecked(out, remote string) (map[string]string, []string, error) {
 	var all map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(out), &all); err != nil {
-		return nil, nil
+	if err := json.Unmarshal([]byte(out), &all); err != nil || all == nil {
+		return nil, nil, errors.New("invalid rclone config dump")
 	}
-	section := bytes.TrimSpace(all[remote])
+	raw, found := all[remote]
+	if !found {
+		return nil, nil, nil
+	}
+	section := bytes.TrimSpace(raw)
 	if len(section) == 0 || section[0] != '{' {
-		return nil, nil
+		return nil, nil, errors.New("invalid remote in rclone config dump")
 	}
 	settings := map[string]string{}
 	keys := []string{}
 	dec := json.NewDecoder(bytes.NewReader(section))
 	if _, err := dec.Token(); err != nil {
-		return nil, nil
+		return nil, nil, errors.New("invalid remote in rclone config dump")
 	}
 	for dec.More() {
 		token, err := dec.Token()
 		if err != nil {
-			return nil, nil
+			return nil, nil, errors.New("invalid remote in rclone config dump")
 		}
 		key, ok := token.(string)
 		if !ok {
-			return nil, nil
+			return nil, nil, errors.New("invalid remote in rclone config dump")
 		}
 		var value string
 		if err := dec.Decode(&value); err != nil {
-			return nil, nil
+			return nil, nil, errors.New("invalid remote in rclone config dump")
 		}
 		if _, exists := settings[key]; !exists {
 			keys = append(keys, key)
 		}
 		settings[key] = value
 	}
-	return settings, jscompat.KeyOrder(keys)
+	return settings, jscompat.KeyOrder(keys), nil
 }
