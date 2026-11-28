@@ -1,0 +1,29 @@
+#!/bin/sh
+# Stands in for systemd managing swap units in /etc/systemd/system: enabled is a link in
+# swap.target.wants, started is the unit's What= swapping at its Priority=.
+echo "systemctl $*" >> /tmp/calls.log
+command=$1; shift
+now=
+while [ $# -gt 0 ]; do
+  case $1 in
+    --now) now=1; shift ;;
+    --quiet) shift ;;
+    *) unit=$1; shift ;;
+  esac
+done
+file=/etc/systemd/system/$unit
+wants=/etc/systemd/system/swap.target.wants/$unit
+what() { sed -n 's/^What=//p' "$file"; }
+active() { grep -q "^$(readlink -f "$(what)") " /run/swaps 2>/dev/null; }
+start() { [ -f "$file" ] || exit 5; active || swapon -p "$(sed -n 's/^Priority=//p' "$file")" "$(what)"; }
+stop() { [ -f "$file" ] || exit 5; ! active || swapoff "$(what)"; }
+case $command in
+  daemon-reload) ;;
+  enable) [ -f "$file" ] || exit 1; mkdir -p "${wants%/*}"; ln -sfn "$file" "$wants"; [ -z "$now" ] || start ;;
+  disable) rm -f "$wants"; [ -z "$now" ] || stop ;;
+  is-enabled) [ -L "$wants" ] ;;
+  start) start ;;
+  stop) stop ;;
+  restart) stop; start ;;
+  *) exit 1 ;;
+esac
