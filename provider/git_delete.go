@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	p "github.com/pulumi/pulumi-go-provider"
+
 	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 )
 
-// deleteCheckout checks the owner's working tree and local refs before removing the checkout.
+// deleteCheckout checks the owner's working tree and compares local commits with refreshed remote refs.
 func deleteCheckout(ctx context.Context, m *machine, path string) error {
 	probe := "p=" + shellQuote(path) + `
 set -e
@@ -22,20 +24,22 @@ as_owner() {
 }
 changes=$(as_owner status --porcelain)
 stashes=$(as_owner stash list)
-commits=$(as_owner log --branches --not --remotes --oneline)
 if [ -n "$changes" ]; then printf 'Working tree changes:\n%s\n' "$changes"; fi
 if [ -n "$stashes" ]; then printf 'Stashes:\n%s\n' "$stashes"; fi
-if [ -n "$commits" ]; then printf 'Unpushed branch commits:\n%s\n' "$commits"; fi
+if ! GIT_TERMINAL_PROMPT=0 as_owner fetch --all --prune --quiet >/dev/null; then
+ printf 'Git fetch --prune failed, so remote-tracking refs could not be verified.\n'
+ exit 0
+fi
+commits=$(as_owner log HEAD --branches --not --remotes --oneline)
+if [ -n "$commits" ]; then printf 'Unpushed commits:\n%s\n' "$commits"; fi
 `
 	output, err := m.must(ctx, m.escalate(probe))
 	if err != nil {
 		return fmt.Errorf("refusing to delete the checkout at %s on %s: %w", path, m.describe(), err)
 	}
 	if findings := jscompat.Trim(output); findings != "" {
-		return fmt.Errorf("refusing to delete the checkout at %s on %s: it holds work that exists nowhere else, "+
-			"and deleting it would lose that. Found:\n%s\n"+
-			"Nothing was removed. To proceed, commit the work and push it to the remote, then delete again; or, "+
-			"if the work should go, remove the checkout at %s by hand and delete again.", path, m.describe(), findings, path)
+		p.GetLogger(ctx).Warningf("Leaving %s in place because the checkout could not be safely removed.\n%s", path, findings)
+		return nil
 	}
 	_, err = m.must(ctx, m.escalate("rm -rf "+shellQuote(path)))
 	return err

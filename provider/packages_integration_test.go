@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"testing"
@@ -98,19 +99,32 @@ func TestDebian13GitCheckout(t *testing.T) {
 		}
 	})
 
-	sh(t, m, "useradd -m checkout-owner")
+	// The checkout owner must be able to fetch from the root-owned fixture.
+	sh(t, m, "useradd -m checkout-owner && git config --system --add safe.directory /srv/origin.git")
 	for _, tc := range []struct{ name, change, finding string }{
-		{"working tree", "echo changed > a", "Working tree changes:\n M a"},
-		{"stash", "echo changed > a && git stash -q", "Stashes:\nstash@{0}"},
-		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "Unpushed branch commits:"},
+		{"working tree", "echo changed > a", "Working tree changes:"},
+		{"stash", "echo changed > a && git stash -q", "stash@{0}"},
+		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "local-work"},
+		{"unpushed detached HEAD", "echo changed > a && git commit -qam detached-work", "detached-work"},
+		{"stale remote ref", `echo changed > a && git commit -qam pruned-work &&
+			git push -q origin HEAD:refs/heads/pruned &&
+			test "$(git rev-parse refs/remotes/origin/pruned)" = "$(git rev-parse HEAD)" &&
+			git --git-dir=/srv/origin.git update-ref -d refs/heads/pruned`, "pruned-work"},
+		{"fetch failure", "git remote set-url origin file:///srv/missing.git", "Git fetch --prune failed"},
 	} {
-		t.Run("refuses "+tc.name, func(t *testing.T) {
+		t.Run("retains "+tc.name, func(t *testing.T) {
+			var warnings bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&warnings, nil)))
+			t.Cleanup(func() { slog.SetDefault(previous) })
 			path := "/srv/w-" + strings.ReplaceAll(tc.name, " ", "-")
 			checkout(t, path)
 			sh(t, m, "cd "+shellQuote(path)+" && "+tc.change+" && chown -R checkout-owner:checkout-owner "+shellQuote(path))
-			err := deleteCheckout(t.Context(), m, path)
-			if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.finding) {
-				t.Fatalf("got %v, want refusal naming %s and %q", err, path, tc.finding)
+			if err := deleteCheckout(t.Context(), m, path); err != nil {
+				t.Fatal(err)
+			}
+			if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, path) || !strings.Contains(log, tc.finding) {
+				t.Fatalf("expected a warning naming %s and %q, got %q", path, tc.finding, log)
 			}
 			if !exists(t, m, path) {
 				t.Fatal("checkout was removed")
