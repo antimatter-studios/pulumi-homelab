@@ -3,6 +3,7 @@ package homelab
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	p "github.com/pulumi/pulumi-go-provider"
@@ -273,7 +274,68 @@ func (SystemdUnit) Delete(ctx context.Context, req infer.DeleteRequest[SystemdUn
 	// the directory in state as written, even an explicitly empty one: substituting the default
 	// would remove a different unit of the same name (review of #98)
 	directory := req.State.Directory
-	_, err = m.must(ctx, m.escalate("systemctl disable --now "+shellQuote(req.ID)+" || true; "+
-		"rm -f "+shellQuote(unitPath(req.ID, directory))+" && systemctl daemon-reload"))
-	return infer.DeleteResponse{}, err
+	file := unitPath(req.ID, directory)
+	status, err := m.commandResult(ctx, "test unit file", m.escalate(filePresenceFunction+
+		"file_present "+shellQuote(file)+`; case $? in 0) echo present ;; 1) echo absent ;; *) exit 2 ;; esac`))
+	if err != nil || strings.TrimSpace(status.out) == "absent" {
+		return infer.DeleteResponse{}, err
+	}
+
+	unit := shellQuote(req.ID + ".service")
+	shown, err := m.commandResult(ctx, "systemctl show", m.escalate("systemctl show --property=FragmentPath -- "+unit))
+	if err != nil {
+		return infer.DeleteResponse{}, err
+	}
+	fragment := systemd.ParseShow(shown.out)["FragmentPath"]
+	if fragment != "" && fragment != file {
+		warnRetained(ctx, file, "systemd loaded the unit from a different path")
+		return infer.DeleteResponse{}, nil
+	}
+	digest := ""
+	content := req.State.Unit
+	if raw, ok := infer.GetRawRequest[p.DeleteRequest](ctx); ok && raw.OldInputs.Get("unit").IsString() {
+		expected := raw.OldInputs.Get("unit").AsString()
+		// heredoc adds a final newline to the supplied unit text.
+		if content != expected && (strings.HasSuffix(expected, "\n") || content != expected+"\n") {
+			content = ""
+		}
+	}
+	if content != "" {
+		digest = digestOf([]byte(content))
+	}
+	// Keep the staged file available for restoration if the reload fails.
+	before := ""
+	if fragment == file {
+		before = "systemctl disable --now -- " + unit + statusForUnitDelete(15)
+	}
+	after := "systemctl daemon-reload" + statusForUnitDelete(16)
+	remove := stagedFileDeleteCommand(file, &digest, before, after)
+	result, err := m.commandResult(ctx, "sha256sum / mktemp / mv / rm", m.escalate(remove), 9, 10, 11, 14, 15, 16)
+	if err != nil {
+		return infer.DeleteResponse{}, err
+	}
+	switch result.code {
+	case 9:
+		return infer.DeleteResponse{}, nil
+	case 10, 11, 14:
+		warnRetained(ctx, file, "its contents cannot be verified against state")
+		return infer.DeleteResponse{}, nil
+	case 15, 16:
+		name := "systemctl disable --now"
+		if result.code == 16 {
+			name = "systemctl daemon-reload"
+		}
+		first, _, _ := strings.Cut(result.out, "\n")
+		code, err := strconv.Atoi(first)
+		if err != nil {
+			code = result.code
+		}
+		return infer.DeleteResponse{}, fmt.Errorf("%s on %s failed (exit %d)", name, m.describe(), code)
+	}
+	return infer.DeleteResponse{}, nil
+}
+
+// Keep systemctl's status separate from the file-removal protocol's exit codes.
+func statusForUnitDelete(code int) string {
+	return fmt.Sprintf(` >/dev/null 2>&1 || { status=$?; printf '%%s\n' "$status"; exit %d; }`, code)
 }

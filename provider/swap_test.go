@@ -90,8 +90,8 @@ func TestParseSwapRead(t *testing.T) {
 }
 
 func TestSwapDisableCommandOnlyTouchesTheDeclaredPathWhenOthersAreAllowed(t *testing.T) {
-	got := swapDisableCommand(sp("masked"), "dphys-swapfile", "/etc/fstab", sp("/var/swap"))
-	want := `swapoff '/var/swap' 2>/dev/null || true; awk -v only='/var/swap' 'BEGIN{OFS=FS=" "} /^[[:space:]]*#/ {print; next} $3 == "swap" && (only == "" || $1 == only) {print "#" $0; next} {print}' '/etc/fstab' > '/etc/fstab.pulumi' && mv '/etc/fstab.pulumi' '/etc/fstab'; systemctl disable --now 'dphys-swapfile' || true; systemctl mask 'dphys-swapfile' || true`
+	got := swapDisableCommand("/etc/fstab", sp("/var/swap"))
+	want := `only='/var/swap' awk 'BEGIN{OFS=FS=" "; only=ENVIRON["only"]} /^[[:space:]]*#/ {print; next} $3 == "swap" && (only == "" || $1 == only) {print "#" $0; next} {print}' '/etc/fstab' > '/etc/fstab.pulumi' && mv '/etc/fstab.pulumi' '/etc/fstab'`
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}

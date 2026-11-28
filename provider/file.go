@@ -171,6 +171,11 @@ func readManagedFile(ctx context.Context, m *machine, path string) (*actualFile,
 
 // writtenFileDeleteCommand checks the on-disk bytes without transmitting file contents.
 func writtenFileDeleteCommand(file string, digest *string) string {
+	return stagedFileDeleteCommand(file, digest, "", "")
+}
+
+// beforeStage and afterStage run only while the file matches the expected digest.
+func stagedFileDeleteCommand(file string, digest *string, beforeStage, afterStage string) string {
 	return "file=" + shellQuote(file) + "; expected=" + shellQuote(deref(digest)) + `
 if [ ! -e "$file" ] && [ ! -L "$file" ]; then exit 9; fi
 [ -n "$expected" ] || exit 10
@@ -182,6 +187,7 @@ check_file() {
     [ "${actual%% *}" = "$expected" ] || return 11
 }
 check_file "$file" || exit $?
+` + beforeStage + `
 staging=$(mktemp -d ./.pulumi-file.XXXXXXXX) || exit 13
 cleanup() {
     if [ -e "$staging/file" ] || [ -L "$staging/file" ]; then
@@ -195,6 +201,7 @@ cleanup() {
 trap cleanup EXIT
 mv -T -- "$file" "$staging/file" || exit 13
 check_file "$staging/file" || exit $?
+` + afterStage + `
 rm -- "$staging/file"`
 }
 

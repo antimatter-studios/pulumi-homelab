@@ -64,20 +64,22 @@ func (r *AptPackages) Annotate(an infer.Annotator) {
 	an.SetToken("index", "AptPackages")
 }
 
-// readPackageState is what the machine has and how apt holds it, in one round trip.
+// readPackageState is what dpkg knows about the requested names and how apt holds them.
 func readPackageState(ctx context.Context, m *machine, names []string) (apt.PackageState, error) {
 	if len(names) == 0 {
 		return apt.PackageState{Installed: map[string]string{}, Manual: []string{}}, nil
 	}
 	quoted := quoteAll(names)
-	// dpkg-query exits non-zero when any name is unknown, which is an answer about that name rather
-	// than a failure of the question: the packages it does know are still on stdout
-	asked, err := m.ask(ctx, "dpkg-query -W -f='${binary:Package} ${db:Status-Status} ${Version}\\n' "+quoted+" 2>/dev/null || true; "+
-		"echo '"+apt.ManualMarker+"'; apt-mark showmanual "+quoted+" 2>/dev/null || true")
+	// Exit 1 can carry a partial answer when only some packages are known.
+	dpkg, err := m.commandResult(ctx, "dpkg-query", "dpkg-query -W -f='${binary:Package} ${db:Status-Status} ${Version}\\n' -- "+quoted, 1)
 	if err != nil {
 		return apt.PackageState{}, err
 	}
-	return apt.ParsePackageState(asked.out), nil
+	marked, err := m.commandResult(ctx, "apt-mark showmanual", "apt-mark showmanual -- "+quoted)
+	if err != nil {
+		return apt.PackageState{}, err
+	}
+	return apt.PackageState{Installed: apt.ParseInstalled(dpkg.out), Manual: aptmark.ParseManual(marked.out)}, nil
 }
 
 func quoteAll(names []string) string {

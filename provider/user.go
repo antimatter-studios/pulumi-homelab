@@ -336,6 +336,20 @@ func (User) Delete(ctx context.Context, req infer.DeleteRequest[UserState]) (inf
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate("userdel "+shellQuote(req.ID)+" || true"))
+	// Query local passwd records since userdel only manages local accounts.
+	account, err := m.commandResult(ctx, "getent passwd", "getent -s files passwd -- "+shellQuote(req.ID), 2)
+	if err != nil || account.code == 2 {
+		return infer.DeleteResponse{}, err
+	}
+	actual := getent.ParseUserRead(req.ID, account.out)
+	name, _, _ := strings.Cut(account.out, ":")
+	if name != req.ID || req.State.Uid == nil || actual.UID == nil || *req.State.Uid != *actual.UID {
+		warnRetained(ctx, req.ID, "its local UID cannot be verified against state")
+		return infer.DeleteResponse{}, nil
+	}
+	// userdel exit 6 means the account disappeared after lookup. An inner
+	// check avoids confusing this with the exit status of sudo itself.
+	command := "userdel -- " + shellQuote(req.ID) + `; status=$?; [ "$status" -eq 6 ] || exit "$status"`
+	_, err = m.commandResult(ctx, "userdel", m.escalate(command))
 	return infer.DeleteResponse{}, err
 }

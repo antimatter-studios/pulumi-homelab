@@ -3,6 +3,7 @@ package homelab
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/remote"
@@ -140,4 +141,45 @@ func asRoot(command string) string {
 // shellQuote quotes a string so a shell treats it as one argument, whatever is in it.
 func shellQuote(text string) string {
 	return "'" + strings.ReplaceAll(text, "'", `'\''`) + "'"
+}
+
+// commandResult reports exit status without including arguments or remote output,
+// either of which can contain credentials or configuration data.
+func (m *machine) commandResult(ctx context.Context, name, command string, accepted ...int) (ran, error) {
+	result, err := m.ask(ctx, command)
+	if err != nil {
+		return ran{}, err
+	}
+	if result.code != 0 && !slices.Contains(accepted, result.code) {
+		return ran{}, fmt.Errorf("%s on %s failed (exit %d)", name, m.describe(), result.code)
+	}
+	return result, nil
+}
+
+// filePresenceFunction checks for directory entries, including dangling symlinks.
+// Check the nearest existing ancestor before treating a failed test as absence.
+const filePresenceFunction = `file_present() {
+    [ -e "$1" ] || [ -L "$1" ] || {
+        p=$1
+        while :; do
+            case "$p" in
+                */*) p=${p%/*}; p=${p:-/} ;;
+                *) p=. ;;
+            esac
+            if [ -d "$p" ]; then
+                [ -x "$p" ] || return 2
+                return 1
+            fi
+            if [ -e "$p" ]; then return 1; fi
+            if [ -L "$p" ] || [ "$p" = / ] || [ "$p" = . ]; then return 2; fi
+        done
+    }
+}
+`
+
+// whenFilePresent skips a read when its backing directory entry is absent.
+func whenFilePresent(path, command string) string {
+	return filePresenceFunction + "file_present " + shellQuote(path) +
+		`; case $? in 1) exit 0 ;; 0) ;; *) exit 2 ;; esac
+` + command
 }

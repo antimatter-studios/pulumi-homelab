@@ -2,7 +2,8 @@ package homelab
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -81,37 +82,47 @@ func fstabLineOf(s FstabEntryState) string {
 
 // normalFstabLine is the line with its whitespace collapsed, which is all fstab itself reads; so
 // tabs in a hand-written line are not drift (an import of one previews as no change).
-func fstabReadCommand(file, target string) string {
-	return "cat " + shellQuote(file) + "; echo '#pulumi-homelab#mounted'; " +
-		"findmnt -no SOURCE,FSTYPE,OPTIONS " + shellQuote(target) + " 2>/dev/null || true"
-}
-
 type fstabRead struct {
 	line    *string
 	mounted *string
 }
 
-func parseFstabRead(out, target string) fstabRead {
-	contents, mounted := splitOnce(out, "#pulumi-homelab#mounted\n")
-	read := fstabRead{}
-	if line, ok := fstab.FindEntry(contents, target); ok {
-		read.line = &line
-	}
-	if m := jscompat.Trim(mounted); m != "" {
-		read.mounted = &m
-	}
-	return read
-}
-
 func readFstabEntry(ctx context.Context, m *machine, target, file string) (fstabRead, error) {
-	asked, err := m.ask(ctx, m.escalate(fstabReadCommand(file, target)))
+	contents, err := m.commandResult(ctx, "cat fstab", m.escalate(whenFilePresent(file, "cat -- "+shellQuote(file))))
 	if err != nil {
 		return fstabRead{}, err
 	}
-	if asked.code != 0 {
-		return fstabRead{}, fmt.Errorf("could not read %s: %s", file, jscompat.Trim(asked.err))
+	line, ok := fstab.FindEntry(contents.out, target)
+	if !ok {
+		return fstabRead{}, nil
 	}
-	return parseFstabRead(asked.out, target), nil
+
+	// With a filter, findmnt uses exit 1 for both no match and failures.
+	// Read the mount table successfully first, then look for the target.
+	mounts, err := m.commandResult(ctx, "findmnt", m.escalate("findmnt --kernel --list --json -o TARGET,SOURCE,FSTYPE,OPTIONS"))
+	if err != nil {
+		return fstabRead{}, err
+	}
+	var table struct {
+		Filesystems []struct {
+			Target, Source, Fstype, Options string
+		}
+	}
+	if err := json.Unmarshal([]byte(mounts.out), &table); err != nil || table.Filesystems == nil {
+		return fstabRead{}, errors.New("findmnt returned an invalid mount table")
+	}
+	var matches []string
+	for _, mount := range table.Filesystems {
+		if mount.Target == target {
+			matches = append(matches, strings.Join([]string{mount.Source, mount.Fstype, mount.Options}, " "))
+		}
+	}
+	read := fstabRead{line: &line}
+	if len(matches) != 0 {
+		mounted := strings.Join(matches, "\n")
+		read.mounted = &mounted
+	}
+	return read, nil
 }
 
 func settleFstab(ctx context.Context, m *machine, wanted FstabEntryState) (FstabEntryState, error) {

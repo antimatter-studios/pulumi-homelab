@@ -138,6 +138,7 @@ func TestSudoRuleImportRecoversTheRule(t *testing.T) {
 
 func TestDeletesUseTheDirectoryInStateEvenWhenEmpty(t *testing.T) {
 	fake := remotetest.New()
+	fake.When(contains2("echo present"), reply("present\n", 0), 1)
 	fake.When(func(string) bool { return true }, reply("", 0), 0)
 	s := configured(t, fake)
 	sudo := property.NewMap(map[string]property.Value{"file": property.New("admin"), "directory": property.New(""), "content": property.New("x"), "mode": property.New("0440"), "owner": property.New("root")})
@@ -150,7 +151,7 @@ func TestDeletesUseTheDirectoryInStateEvenWhenEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	commands := strings.Join(fake.Commands(), "\n")
-	if !strings.Contains(commands, `rm -f '\''/admin'\''`) || !strings.Contains(commands, `rm -f '\''/x.service'\''`) || strings.Contains(commands, "/etc/") {
+	if !strings.Contains(commands, `rm -f '\''/admin'\''`) || !strings.Contains(commands, `file='\''/x.service'\''`) || !strings.Contains(commands, `rm -- "$staging/file"`) || strings.Contains(commands, "/etc/") {
 		t.Fatalf("%s", commands)
 	}
 }
