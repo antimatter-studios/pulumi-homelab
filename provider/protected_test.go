@@ -249,8 +249,37 @@ func TestCollectRunsTheSourceLocally(t *testing.T) {
 	if _, err := os.Stat(string(where)); !os.IsNotExist(err) {
 		t.Fatalf("the temporary file %s is still there: %v", where, err)
 	}
-	if _, err := collect(t.Context(), Source{Kind: "exec", Argv: []string{"sh", "-c", "echo nope >&2; exit 3"}}); err == nil || !strings.Contains(err.Error(), "nope") {
-		t.Fatalf("a failing source: %v", err)
+}
+
+func TestProtectedFileSourceErrorOmitsCommandOutput(t *testing.T) {
+	const secret = "protected-file-canary"
+	for _, kind := range []string{"exec", "execFile"} {
+		t.Run(kind, func(t *testing.T) {
+			argv := []property.Value{
+				property.New("sh"), property.New("-c"),
+				property.New(`printf '%s' "$1"; printf '%s' "$1" >&2; exit 37`),
+				property.New("sh"), property.New(secret),
+			}
+			if kind == "execFile" {
+				argv = append(argv, property.New("{}"))
+			}
+			source := property.New(map[string]property.Value{
+				"kind": property.New(kind), "argv": property.New(argv),
+			})
+			fake := remotetest.New()
+			_, err := configured(t, fake).Create(p.CreateRequest{
+				Urn: protectedURN, Properties: protectedInputs(source, "always"),
+			})
+			if err == nil || !strings.Contains(err.Error(), "ProtectedFile: local source command \"sh\" failed (exit status 37)") {
+				t.Fatal("expected a generic failure with the source exit status")
+			}
+			if strings.Contains(err.Error(), secret) {
+				t.Fatal("the source error exposed secret material")
+			}
+			if len(fake.Commands()) != 0 {
+				t.Fatal("the failed source triggered a remote command")
+			}
+		})
 	}
 }
 
