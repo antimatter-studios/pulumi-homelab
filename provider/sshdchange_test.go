@@ -278,6 +278,32 @@ func TestSshdChangeInstallsInOrder(t *testing.T) {
 	}
 }
 
+func TestSshdChangeRefusesFailedIncludeRewrite(t *testing.T) {
+	b := newSshdBox(t)
+	const previous = "X11Forwarding yes\n"
+	b.write(t, filepath.Join(b.directory, "90-tunnel.conf"), previous)
+	const awk = `#!/bin/sh
+echo 'awk failed' >&2
+exit 42
+`
+	if err := os.WriteFile(filepath.Join(b.root, "bin", "awk"), []byte(awk), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	s := b.server(t)
+	_, err := s.Create(p.CreateRequest{Urn: sshdURN, Properties: b.inputs(nil)})
+	if err == nil || !strings.Contains(err.Error(), "could not rewrite Include directives") ||
+		!strings.Contains(err.Error(), "nothing was changed") {
+		t.Fatalf("expected refusal after the Include rewrite failed, got %v", err)
+	}
+	if got, ok := b.dropIn(); !ok || got != previous {
+		t.Fatalf("live drop-in changed: %q", got)
+	}
+	if calls := b.calls(t); indexOf(calls, "sshd -t", "") >= 0 || indexOf(calls, "systemctl", "") >= 0 {
+		t.Fatalf("ran validation or touched the service after the rewrite failed: %v", calls)
+	}
+}
+
 func TestSshdChangeRollsBack(t *testing.T) {
 	const previous = "# Managed by Pulumi. Hand edits show up as drift on the next `pulumi up --refresh`.\nX11Forwarding no\n"
 	cases := []struct {

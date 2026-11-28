@@ -1,0 +1,1 @@
+- Refuse SshdConfig changes when Include directives cannot be rewritten in the temporary configuration.
