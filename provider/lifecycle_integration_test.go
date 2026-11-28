@@ -183,8 +183,7 @@ func TestBootConfigLifecycleOnDebian13(t *testing.T) {
 }
 
 func TestSshdConfigLifecycleOnDebian13(t *testing.T) {
-	s, root := onDebian(t)
-	root("mkdir -p /run/sshd && ssh-keygen -A >/dev/null")
+	s, root := onRunningSshd(t)
 	drop := func(interval float64) property.Map {
 		return m("file", "90-tunnel", "directory", sshdDirectory, "config", sshdConfig,
 			"settings", m("allowTcpForwarding", "remote", "clientAliveInterval", interval), "unchecked", map[string]string{"PermitTTY": "no"}, "match", m("User", "tunnel"))

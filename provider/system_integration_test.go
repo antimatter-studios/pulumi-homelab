@@ -355,8 +355,7 @@ func TestBootConfigOnDebian13(t *testing.T) {
 // The real sshd validates the drop-in, which is written in the production order; an import diffs
 // as no change; delete removes only the drop-in.
 func TestSshdConfigOnDebian13(t *testing.T) {
-	s, root := onDebian(t)
-	root("ssh-keygen -A >/dev/null")
+	s, root := onRunningSshd(t)
 	urn := urnOf("SshdConfig", "tunnel")
 	inputs := property.NewMap(map[string]property.Value{"file": property.New("90-tunnel"), "directory": property.New(sshdDirectory), "config": property.New(sshdConfig),
 		"settings":  property.New(map[string]property.Value{"x11Forwarding": property.New(false), "allowTcpForwarding": property.New("remote"), "clientAliveInterval": property.New(30.0)}),
@@ -379,7 +378,7 @@ func TestSshdConfigOnDebian13(t *testing.T) {
 	}
 	bad := property.NewMap(map[string]property.Value{"file": property.New("91-bad"), "directory": property.New(sshdDirectory), "config": property.New(sshdConfig),
 		"unchecked": property.New(map[string]property.Value{"NoSuchKeyword": property.New("x")})})
-	if _, err := s.Create(p.CreateRequest{Urn: urnOf("SshdConfig", "bad"), Properties: bad}); err == nil || !strings.Contains(err.Error(), "does not parse") {
+	if _, err := s.Create(p.CreateRequest{Urn: urnOf("SshdConfig", "bad"), Properties: bad}); err == nil || !strings.Contains(err.Error(), "sshd -t rejects the configuration with this change") {
 		t.Fatalf("%v", err)
 	}
 	if err := s.Delete(p.DeleteRequest{ID: created.ID, Urn: urn, Properties: created.Properties}); err != nil {
