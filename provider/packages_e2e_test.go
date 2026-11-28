@@ -1,6 +1,7 @@
 package homelab
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -225,5 +226,64 @@ func TestPackageImportsFromIDOnly(t *testing.T) {
 				t.Fatalf("changed declaration: %+v, %v", diff, err)
 			}
 		})
+	}
+}
+
+func TestArchiveDeleteKeepsRepointedLink(t *testing.T) {
+	dir := t.TempDir()
+	old, current, link := dir+"/old", dir+"/current", dir+"/link"
+	for _, path := range []string{old, current} {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(current, link); err != nil {
+		t.Fatal(err)
+	}
+	runner := shellStepRunner(t, map[string]string{"rm": "", "readlink": ""})
+	s := configuredServer(t, runner)
+	urn := urnOf("Archive", "test")
+	inputs := props(map[string]property.Value{
+		"name": property.New("test"), "link": property.New(link), "prefix": property.New(""),
+		"owner": property.New("root"), "group": property.New("root"), "versionCommand": property.New(""),
+		"installed": property.New(true), "version": property.New(""),
+	})
+	if err := s.Delete(p.DeleteRequest{ID: "test", Urn: urn, Properties: inputs}); err == nil || !strings.Contains(err.Error(), "state carries no prefix") || len(runner.Commands()) != 0 {
+		t.Fatalf("delete without prefix: %v, commands %v", err, runner.Commands())
+	}
+	if err := s.Delete(p.DeleteRequest{ID: "test", Urn: urn, Properties: inputs.Set("prefix", property.New(old))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("old prefix still exists: %v", err)
+	}
+	if got, err := os.Readlink(link); err != nil || got != current {
+		t.Fatalf("link: %q, %v", got, err)
+	}
+	if _, err := os.Stat(link); err != nil {
+		t.Fatalf("current prefix is gone: %v", err)
+	}
+}
+
+func TestAptPackageDeletePassesUnattendedPurgeOptions(t *testing.T) {
+	runner := shellStepRunner(t, map[string]string{
+		"apt-get": `test "$DEBIAN_FRONTEND" = noninteractive || exit 1
+test "$#" = 10 || exit 2
+test "$1" = -o && test "$2" = DPkg::Lock::Timeout=600 &&
+test "$3" = -o && test "$4" = Dpkg::Options::=--force-confdef &&
+test "$5" = -o && test "$6" = Dpkg::Options::=--force-confold &&
+test "$7" = purge && test "$8" = -y && test "$9" = -qq &&
+test "${10}" = demo`,
+	})
+	s := configuredServer(t, runner)
+	state := props(map[string]property.Value{
+		"name": property.New("demo"), "update": property.New(false),
+		"version": property.New("1"), "manual": property.New(true),
+	})
+	if err := s.Delete(p.DeleteRequest{ID: "demo", Urn: urnOf("AptPackage", "demo"), Properties: state}); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(runner.Commands()); n != 1 {
+		t.Fatalf("delete ran %d commands, want one purge", n)
 	}
 }

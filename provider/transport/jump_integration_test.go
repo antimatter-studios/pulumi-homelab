@@ -68,7 +68,8 @@ func TestDebian13JumpHost(t *testing.T) {
 	bad := newT(t, Config{Hops: []Hop{jumpHop, targetHop}, AgentSocket: startAgent(t, userPEM),
 		HostKeys: []string{jumpPin, wrong}, StrictHostKeyChecking: true})
 	_, _, _, err := bad.Run(context.Background(), "true", nil)
-	if err == nil || !strings.Contains(err.Error(), "host key for chris@target:22 does not match its pin") {
+	if err == nil || !strings.Contains(err.Error(), "host key for chris@target:22 does not match its pin") ||
+		!strings.Contains(err.Error(), "chris@target:22 via "+jumpHop.String()) {
 		t.Fatalf("a wrong pin for the target behind the jump: got %v, want the target's pin mismatch", err)
 	}
 }

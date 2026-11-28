@@ -1,6 +1,7 @@
 package homelab
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -129,5 +130,70 @@ func TestBootConfigImportAndDelete(t *testing.T) {
 	}
 	if !strings.Contains(wrote, "dtparam=audio=on\n\n[pi5]\n# fast\n") || strings.Contains(wrote, "arm_freq") || strings.Contains(wrote, "dwc2") {
 		t.Fatalf("%q", wrote)
+	}
+}
+
+func TestHostnameWritesAndRefreshes(t *testing.T) {
+	dir := t.TempDir()
+	hostFile, nameFile, restartLog := dir+"/hosts", dir+"/hostname", dir+"/restarts"
+	const before = "127.0.0.1\tlocalhost\n127.0.1.1\told old.lan\n192.0.2.10\tother\n"
+	for path, content := range map[string]string{hostFile: before, nameFile: "old\n"} {
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runner := shellStepRunner(t, map[string]string{
+		"cat":      "",
+		"hostname": "cat " + shellQuote(nameFile),
+		"hostnamectl": "case \"$1\" in\n" +
+			" --static) cat " + shellQuote(nameFile) + ";;\n" +
+			" set-hostname) printf '%s\\n' \"$2\" > " + shellQuote(nameFile) + ";;\n esac",
+		"systemctl": "printf '%s\\n' \"$*\" >> " + shellQuote(restartLog),
+	})
+	s := configured(t, runner)
+	urn := urnOf("Hostname", "test")
+	inputs := property.NewMap(map[string]property.Value{
+		"name": property.New("new"), "domain": property.New("lan"), "hosts": property.New(hostFile),
+	})
+	created, err := s.Create(p.CreateRequest{Urn: urn, Properties: inputs})
+	if err != nil || created.ID != hostFile {
+		t.Fatalf("create: %+v, %v", created, err)
+	}
+
+	assertFile := func(path, want string) {
+		t.Helper()
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != want {
+			t.Fatalf("%s: got %q, %v, want %q", path, got, err, want)
+		}
+	}
+	assertFile(nameFile, "new\n")
+	assertFile(hostFile, "127.0.0.1\tlocalhost\n127.0.1.1\tnew.lan new\n192.0.2.10\tother\n")
+	assertFile(restartLog, "try-restart avahi-daemon\n")
+
+	newInputs := inputs.Set("name", property.New("updated")).Set("restartAvahi", property.New(false))
+	diff, err := s.Diff(p.DiffRequest{Urn: urn, ID: created.ID, State: created.Properties, Inputs: newInputs})
+	if err != nil || !diff.HasChanges || diff.DeleteBeforeReplace {
+		t.Fatalf("rename diff: %+v, %v", diff, err)
+	}
+	for field, change := range diff.DetailedDiff {
+		if change.Kind == p.UpdateReplace || change.Kind == p.AddReplace || change.Kind == p.DeleteReplace {
+			t.Fatalf("rename replaces %s: %+v", field, change)
+		}
+	}
+	updated, err := s.Update(p.UpdateRequest{Urn: urn, ID: created.ID, State: created.Properties, Inputs: newInputs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFile(nameFile, "updated\n")
+	assertFile(hostFile, "127.0.0.1\tlocalhost\n127.0.1.1\tupdated.lan updated\n192.0.2.10\tother\n")
+	assertFile(restartLog, "try-restart avahi-daemon\n")
+
+	read, err := s.Read(p.ReadRequest{Urn: urn, ID: created.ID, Properties: updated.Properties, Inputs: newInputs})
+	if err != nil || read.ID != created.ID {
+		t.Fatalf("refresh: %+v, %v", read, err)
+	}
+	if diff, err := s.Diff(p.DiffRequest{Urn: urn, ID: read.ID, State: read.Properties, Inputs: newInputs}); err != nil || diff.HasChanges {
+		t.Fatalf("diff after refresh: %+v, %v", diff, err)
 	}
 }
