@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 	"github.com/antimatter-studios/pulumi-homelab/provider/samba"
@@ -16,6 +17,10 @@ import (
 // src/resources/samba.ts. The pure file editing is provider/samba.
 
 const smbConf = "/etc/samba/smb.conf"
+
+// Hold across the read, edit, install and readback in both resources. Different
+// provider instances in this process can reach the same file via different SSH routes.
+var sambaConfigMu sync.Mutex
 
 var (
 	sambaYes        = []string{"yes", "true", "1"}
@@ -109,8 +114,8 @@ func readShare(ctx context.Context, m *machine, share, config string) (samba.Set
 
 func readShareSectionCommand(config string) string {
 	q := shellQuote(config)
-	return "test -f " + q + " || exit 9; cat " + q + "; echo '#pulumi-homelab#parses'; " +
-		"testparm -s " + q + " >/dev/null 2>&1 && echo ok || true"
+	return "test -f " + q + " || exit 9; cat " + q + " && echo '#pulumi-homelab#parses' && { " +
+		"testparm -s " + q + " >/dev/null 2>&1 && echo ok || true; }"
 }
 
 // readShareSection is the section as the file says it, and whether samba can parse the file; nil
@@ -206,6 +211,9 @@ func settleShare(ctx context.Context, m *machine, args SambaShareArgs, previous 
 	if settings == nil {
 		settings = map[string]string{}
 	}
+	sambaConfigMu.Lock()
+	defer sambaConfigMu.Unlock()
+
 	current, err := catConf(ctx, m, config)
 	if err != nil {
 		return SambaShareState{}, err
@@ -362,6 +370,9 @@ func (SambaShare) Delete(ctx context.Context, req infer.DeleteRequest[SambaShare
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
+	sambaConfigMu.Lock()
+	defer sambaConfigMu.Unlock()
+
 	current, err := catConf(ctx, m, config)
 	if err != nil {
 		return infer.DeleteResponse{}, err
