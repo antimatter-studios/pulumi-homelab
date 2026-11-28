@@ -185,6 +185,9 @@ version, so pinning the SDK pins the plugin Pulumi downloads:
 { "dependencies": { "@antimatter-studios/homelab": "https://github.com/antimatter-studios/pulumi-homelab/releases/download/vX.Y.Z/antimatter-studios-homelab-X.Y.Z.tgz" } }
 ```
 
+For Go releases with an SDK tag, run `go get github.com/antimatter-studios/pulumi-homelab/sdk/go@vX.Y.Z`.
+Pulumi downloads plugin version `X.Y.Z` from the provider's GitHub releases.
+
 To use a checkout instead, depend on `link:../pulumi-homelab/sdk/nodejs`, run `pnpm install` at the
 checkout's root (the linked SDK finds its dependencies there), and install the plugin under the
 checkout's version:
