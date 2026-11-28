@@ -19,6 +19,8 @@ type SambaShare struct {
 	// The section as the file says it.
 	Actual pulumi.StringMapOutput `pulumi:"actual"`
 	Config pulumi.StringOutput    `pulumi:"config"`
+	// Whether the provider added this section, used to guard deletion.
+	Created pulumi.BoolPtrOutput `pulumi:"created"`
 	// Whether testparm can parse the whole file.
 	Parses   pulumi.BoolOutput      `pulumi:"parses"`
 	Path     pulumi.StringOutput    `pulumi:"path"`
@@ -141,6 +143,11 @@ func (o SambaShareOutput) Actual() pulumi.StringMapOutput {
 
 func (o SambaShareOutput) Config() pulumi.StringOutput {
 	return o.ApplyT(func(v *SambaShare) pulumi.StringOutput { return v.Config }).(pulumi.StringOutput)
+}
+
+// Whether the provider added this section, used to guard deletion.
+func (o SambaShareOutput) Created() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SambaShare) pulumi.BoolPtrOutput { return v.Created }).(pulumi.BoolPtrOutput)
 }
 
 // Whether testparm can parse the whole file.

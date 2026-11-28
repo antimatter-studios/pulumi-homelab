@@ -20,7 +20,7 @@ export declare class ProtectedFile extends pulumi.CustomResource {
      */
     static isInstance(obj: any): obj is ProtectedFile;
     /**
-     * SHA-256 of the content under always, and the word "seeded" under once. The only thing here derived from the content.
+     * SHA-256 of the content under always, and the word "seeded" under once.
      */
     readonly digest: pulumi.Output<string>;
     readonly enforce: pulumi.Output<string>;
@@ -29,6 +29,10 @@ export declare class ProtectedFile extends pulumi.CustomResource {
     readonly owner: pulumi.Output<string>;
     readonly path: pulumi.Output<string>;
     readonly source: pulumi.Output<outputs.provider.Source>;
+    /**
+     * SHA-256 of the bytes last written by the provider, used to guard deletion.
+     */
+    readonly writtenDigest: pulumi.Output<string | undefined>;
     /**
      * Create a ProtectedFile resource with the given unique name, arguments, and options.
      *

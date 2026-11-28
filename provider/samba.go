@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/jscompat"
 	"github.com/antimatter-studios/pulumi-homelab/provider/samba"
@@ -164,6 +165,7 @@ type SambaShareState struct {
 	Config   string            `pulumi:"config"`
 	Actual   map[string]string `pulumi:"actual"`
 	Parses   bool              `pulumi:"parses"`
+	Created  *bool             `pulumi:"created,optional"`
 }
 
 func (s *SambaShareArgs) Annotate(a infer.Annotator) {
@@ -177,6 +179,7 @@ func (s *SambaShareArgs) Annotate(a infer.Annotator) {
 func (s *SambaShareState) Annotate(a infer.Annotator) {
 	a.Describe(&s.Actual, "The section as the file says it.")
 	a.Describe(&s.Parses, "Whether testparm can parse the whole file.")
+	a.Describe(&s.Created, "Whether the provider added this section, used to guard deletion.")
 }
 
 func (s *SambaShare) Annotate(a infer.Annotator) {
@@ -197,7 +200,7 @@ func wantedShare(path string, settings map[string]string) samba.Settings {
 	return wanted
 }
 
-func settleShare(ctx context.Context, m *machine, args SambaShareArgs) (SambaShareState, error) {
+func settleShare(ctx context.Context, m *machine, args SambaShareArgs, previous *SambaShareState) (SambaShareState, error) {
 	config := orConf(args.Config)
 	settings := args.Settings
 	if settings == nil {
@@ -206,6 +209,19 @@ func settleShare(ctx context.Context, m *machine, args SambaShareArgs) (SambaSha
 	current, err := catConf(ctx, m, config)
 	if err != nil {
 		return SambaShareState{}, err
+	}
+	var created *bool
+	if previous == nil {
+		added := true
+		for name := range samba.ParseSections(current) {
+			if strings.EqualFold(name, args.Share) {
+				added = false
+				break
+			}
+		}
+		created = &added
+	} else if previous.Config == config {
+		created = previous.Created
 	}
 	updated := samba.UpsertSection(current, args.Share, samba.ShareSection(args.Share, args.Path, samba.SettingsFromInput(settings)))
 	if updated != current {
@@ -225,7 +241,7 @@ func settleShare(ctx context.Context, m *machine, args SambaShareArgs) (SambaSha
 			"back as declared — something else is editing the same file", args.Share, config, m.describe())
 	}
 	return SambaShareState{Share: args.Share, Path: args.Path, Settings: settings, Config: config,
-		Actual: settingsMap(after.Actual), Parses: after.Parses}, nil
+		Actual: settingsMap(after.Actual), Parses: after.Parses, Created: created}, nil
 }
 
 func previewShare(args SambaShareArgs) SambaShareState {
@@ -245,7 +261,7 @@ func (SambaShare) Create(ctx context.Context, req infer.CreateRequest[SambaShare
 	if err != nil {
 		return infer.CreateResponse[SambaShareState]{}, err
 	}
-	state, err := settleShare(ctx, m, req.Inputs)
+	state, err := settleShare(ctx, m, req.Inputs, nil)
 	if err != nil {
 		return infer.CreateResponse[SambaShareState]{}, err
 	}
@@ -308,7 +324,7 @@ func (SambaShare) Update(ctx context.Context, req infer.UpdateRequest[SambaShare
 	if err != nil {
 		return infer.UpdateResponse[SambaShareState]{}, err
 	}
-	state, err := settleShare(ctx, m, args)
+	state, err := settleShare(ctx, m, args, &req.State)
 	if err != nil {
 		return infer.UpdateResponse[SambaShareState]{}, err
 	}
@@ -334,17 +350,25 @@ func (SambaShare) Diff(_ context.Context, req infer.DiffRequest[SambaShareArgs, 
 
 // Delete removes this share's own section and nothing else of the file.
 func (SambaShare) Delete(ctx context.Context, req infer.DeleteRequest[SambaShareState]) (infer.DeleteResponse, error) {
-	m, err := machineFrom(ctx)
-	if err != nil {
-		return infer.DeleteResponse{}, err
-	}
 	config := req.State.Config
 	if config == "" {
 		config = smbConf
+	}
+	if !deref(req.State.Created) {
+		warnRetained(ctx, fmt.Sprintf("Samba share %q in %s", req.ID, config), "state does not record that the provider created it.")
+		return infer.DeleteResponse{}, nil
+	}
+	m, err := machineFrom(ctx)
+	if err != nil {
+		return infer.DeleteResponse{}, err
 	}
 	current, err := catConf(ctx, m, config)
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	return infer.DeleteResponse{}, applyConf(ctx, m, samba.RemoveSection(current, req.ID), config)
+	updated := samba.RemoveSection(current, req.ID)
+	if updated == current {
+		return infer.DeleteResponse{}, nil
+	}
+	return infer.DeleteResponse{}, applyConf(ctx, m, updated, config)
 }

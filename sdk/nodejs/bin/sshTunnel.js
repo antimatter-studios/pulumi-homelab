@@ -66,6 +66,7 @@ class SshTunnel extends pulumi.CustomResource {
             resourceInputs["file"] = undefined /*out*/;
             resourceInputs["restarts"] = undefined /*out*/;
             resourceInputs["running"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         else {
             resourceInputs["active"] = undefined /*out*/;
@@ -80,6 +81,7 @@ class SshTunnel extends pulumi.CustomResource {
             resourceInputs["running"] = undefined /*out*/;
             resourceInputs["to"] = undefined /*out*/;
             resourceInputs["unit"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         opts = pulumi.mergeOptions(utilities.resourceOptsDefaults(), opts);
         super(SshTunnel.__pulumiType, name, resourceInputs, opts);

@@ -44,6 +44,10 @@ export declare class SshTunnel extends pulumi.CustomResource {
     readonly to: pulumi.Output<string>;
     readonly unit: pulumi.Output<string>;
     /**
+     * SHA-256 of the unit last written by the provider, used to guard deletion.
+     */
+    readonly writtenDigest: pulumi.Output<string | undefined>;
+    /**
      * Create a SshTunnel resource with the given unique name, arguments, and options.
      *
      * @param name The _unique_ name of the resource.

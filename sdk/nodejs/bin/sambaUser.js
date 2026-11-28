@@ -49,9 +49,11 @@ class SambaUser extends pulumi.CustomResource {
             }
             resourceInputs["name"] = args ? args.name : undefined;
             resourceInputs["password"] = (args === null || args === void 0 ? void 0 : args.password) ? pulumi.secret(args.password) : undefined;
+            resourceInputs["created"] = undefined /*out*/;
             resourceInputs["exists"] = undefined /*out*/;
         }
         else {
+            resourceInputs["created"] = undefined /*out*/;
             resourceInputs["exists"] = undefined /*out*/;
             resourceInputs["name"] = undefined /*out*/;
             resourceInputs["password"] = undefined /*out*/;

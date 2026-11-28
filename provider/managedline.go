@@ -281,7 +281,7 @@ func (ManagedLine) Delete(ctx context.Context, req infer.DeleteRequest[ManagedLi
 	if current.code != 0 {
 		return infer.DeleteResponse{}, fmt.Errorf("could not read %s: %s", path, jscompat.Trim(current.err))
 	}
-	if updated := line.RemoveLine(current.out, marker); updated != current.out {
+	if updated := line.RemoveLine(current.out, marker, req.State.Comment); updated != current.out {
 		_, err = m.must(ctx, m.escalate(heredoc(path, updated)))
 	}
 	return infer.DeleteResponse{}, err
