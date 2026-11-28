@@ -115,6 +115,15 @@ func TestWriteLargeFileRealShell(t *testing.T) {
 			if got := onMachine(t, d, "ls -A /srv/"+escalation+"/deep; ls -A /tmp"); got != "page.html\n" {
 				t.Fatalf("left behind: %q", got)
 			}
+			failing := w
+			failing.content = strings.Repeat("x", len(w.content))
+			failing.mode = "invalid"
+			if err := writeManagedFile(ctx, m, failing); err == nil {
+				t.Fatal("write with an invalid mode succeeded")
+			}
+			if got := onMachine(t, d, "ls -A "+shellQuote(parentOf(w.path))+"; ls -A /tmp"); got != "page.html\n" {
+				t.Fatalf("failed write left files behind: %q", got)
+			}
 			found, err := readManagedFile(ctx, m, w.path)
 			if err != nil || found == nil || found.Content != content+"\n" {
 				t.Fatalf("read back %v", err)
