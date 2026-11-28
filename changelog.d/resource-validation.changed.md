@@ -1,0 +1,2 @@
+- SshTunnel installation fails if systemd-analyze is missing.
+- SambaSetting rejects invalid apply values.
