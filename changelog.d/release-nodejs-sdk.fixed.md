@@ -1,0 +1,1 @@
+- Each release now carries the Node.js SDK as a package stamped with the release's version (`<package>-X.Y.Z.tgz`), so a project can pin the SDK and the plugin it asks for to the same release. The SDK in the repository still says `0.0.0-dev`.
