@@ -337,7 +337,7 @@ func TestWriteCommand(t *testing.T) {
 		}
 	})
 	t.Run("writes to a private staging directory rather than over the live unit", func(t *testing.T) {
-		if !strings.Contains(command, "mktemp -d") || !strings.Contains(command, `cat > "$dir/autossh-b-22.service"`) || strings.Count(command, "/etc/systemd/system") != 1 {
+		if !strings.Contains(command, "mktemp -d") || !strings.Contains(command, `cat > "$dir"/'autossh-b-22.service'`) || strings.Count(command, "/etc/systemd/system") != 1 {
 			t.Fatal(command)
 		}
 	})

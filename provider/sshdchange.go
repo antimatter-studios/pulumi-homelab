@@ -15,7 +15,8 @@ import (
 //     touched: the main configuration's directory and the drop-in directory are copied into a
 //     private temporary tree, every Include there is rewritten to point into the copy, the
 //     candidate is put into (or taken out of) the copy, and `sshd -t -f <copy>/sshd_config` runs
-//     on it. A rejection stops here, with nothing changed.
+//     on it. Then sshd -T resolves the deploying user's settings in the copy to check that
+//     public-key login is still permitted. A rejection stops here, with nothing changed.
 //  2. sshd must be healthy before the change, or there is no telling afterwards whether the
 //     change broke it; if it is not, nothing is changed.
 //  3. The previous drop-in, if any, is kept, the new one is written to a temporary file in the
@@ -33,14 +34,16 @@ import (
 //     killed it) and checked again, and the error says what failed and how the rollback went.
 //
 // Two of these on one machine take turns, under flock where it exists.
-func sshdChangeCommand(target, directory, config string, content *string) string {
+func sshdChangeCommand(target, directory, config, deployUser string, content *string) string {
 	mode := "remove"
 	if content != nil {
 		mode = "install"
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "target=%s; dir=%s; config=%s; mode=%s\n", shellQuote(target), shellQuote(directory), shellQuote(config), mode)
+	fmt.Fprintf(&b, "deploy_user=%s\n", shellQuote(deployUser))
 	b.WriteString(sshdChangePrelude)
+	b.WriteString(sshdDeployCheck)
 	if content != nil {
 		b.WriteString(heredocInto(`"$work/candidate"`, *content))
 		b.WriteString(`[ $? -eq 0 ] || refuse "could not stage the new drop-in"` + "\n")
@@ -140,14 +143,20 @@ if [ -f "$target" ]; then
   cp -p "$target" "$work/previous" || refuse "could not keep a copy of $target"
 fi
 [ "$mode" = install ] || [ "$had" = yes ] || exit 0
-mkdir -p "$dir" || refuse "could not create $dir"
 mirror=$work/root
 roots="$(dirname "$config") $dir"
 for r in $roots; do
-  mkdir -p "$mirror$r" && cp -a "$r/." "$mirror$r/" || refuse "could not copy $r to check the change"
+  mkdir -p "$mirror$r" || refuse "could not stage $r to check the change"
+  if [ -d "$r" ]; then
+    cp -a "$r/." "$mirror$r/" || refuse "could not copy $r to check the change"
+  fi
 done
-find "$mirror" -type f | while IFS= read -r f; do
-  grep -qi '^[[:space:]]*include[[:space:]]' "$f" 2>/dev/null || continue
+find "$mirror" -type f > "$work/mirror-files" || refuse "could not list the mirrored configuration files"
+while IFS= read -r f; do
+  grep -qi '^[[:space:]]*include[[:space:]]' "$f" || {
+    [ "$?" -eq 1 ] && continue
+    refuse "could not inspect Include directives in $f"
+  }
   awk -v m="$mirror" -v roots="$roots" '
     BEGIN { n = split(roots, r, " ") }
     tolower($1) == "include" {
@@ -160,16 +169,19 @@ find "$mirror" -type f | while IFS= read -r f; do
       }
       print out; next
     }
-    { print }' "$f" > "$f.pulumi-include" && cat "$f.pulumi-include" > "$f" && rm -f "$f.pulumi-include"
-done
+    { print }' "$f" > "$f.pulumi-include" && cat "$f.pulumi-include" > "$f" && rm -f "$f.pulumi-include" ||
+    refuse "could not rewrite Include directives in $f"
+done < "$work/mirror-files"
 if [ "$mode" = install ]; then
   cp "$work/candidate" "$mirror$target" || refuse "could not stage the new drop-in"
 else
   rm -f "$mirror$target"
 fi
 out=$(sshd -t -f "$mirror$config" 2>&1) || refuse "sshd -t rejects the configuration with this change: $out"
+check_deploy_login
 settle || refuse "sshd is not healthy before the change ($problem), so whether the change broke it could not be told"
 if [ "$mode" = install ]; then
+  mkdir -p "$dir" || refuse "could not create $dir"
   put "$work/candidate" || refuse "could not install $target"
 else
   rm -f "$target" || refuse "could not remove $target"
@@ -182,7 +194,7 @@ settle || rollback "sshd is not healthy after the reload: $problem"
 // changeSshd runs sshdChangeCommand as root and turns a failure into an error naming the drop-in
 // and the machine, without quoting the whole script back.
 func changeSshd(ctx context.Context, m *machine, target, directory, config string, content *string) error {
-	asked, err := m.ask(ctx, m.escalate(sshdChangeCommand(target, directory, config, content)))
+	asked, err := m.ask(ctx, m.escalate(sshdChangeCommand(target, directory, config, m.cfg.User, content)))
 	if err != nil {
 		return err
 	}

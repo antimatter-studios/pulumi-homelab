@@ -1,0 +1,1 @@
+- Quote Directory ownership and SshTunnel staging paths in privileged shell commands.

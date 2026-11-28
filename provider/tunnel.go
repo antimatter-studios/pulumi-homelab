@@ -267,7 +267,7 @@ func sameForwards(a, b []TunnelForward) bool {
 // writeCommand stages the unit in a private directory, verifies it with systemd-analyze,
 // installs it and reloads systemd, with the heredoc terminator alone on its line.
 func writeCommand(unit, path, file string) string {
-	staged := `"$dir/` + unit + `.service"`
+	staged := `"$dir"/` + shellQuote(unit+".service")
 	return `dir=$(mktemp -d) && trap 'rm -rf "$dir"' EXIT && ` +
 		heredocInto(staged, file,
 			"systemd-analyze verify "+staged,
