@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	presource "github.com/pulumi/pulumi/sdk/v3/go/common/resource"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/plugin"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/remote/remotetest"
@@ -153,9 +155,16 @@ func TestProtectedFileLifecycle(t *testing.T) {
 	fake.On(asRoot(refaceCommand(ProtectedFileState{Path: state.Path, Mode: "0600", Owner: "chris", Group: "chris"})), remotetest.Reply{})
 	digest := digestOf([]byte(secret))
 	fake.On(asRoot(writtenFileDeleteCommand(state.Path, &digest)), remotetest.Reply{})
-	s := configured(t, fake)
+	s := newServer(t, (&capture{runner: fake}).factory)
+	if err := s.Configure(p.ConfigureRequest{Args: property.NewMap(homelabServerConfig())}); err != nil {
+		t.Fatal(err)
+	}
 
-	created, err := s.Create(p.CreateRequest{Urn: protectedURN, Properties: protectedInputs(fileSource(src), "always")})
+	checked, err := s.Check(p.CheckRequest{Urn: protectedURN, Inputs: protectedInputs(fileSource(src), "always")})
+	if err != nil || len(checked.Failures) != 0 {
+		t.Fatalf("check: %+v, %v", checked, err)
+	}
+	created, err := s.Create(p.CreateRequest{Urn: protectedURN, Properties: checked.Inputs})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,15 +179,41 @@ func TestProtectedFileLifecycle(t *testing.T) {
 			t.Fatalf("the material went into a command: %s", c.Command)
 		}
 	}
-	if strings.Contains(created.Properties.GoString(), "secret material") {
-		t.Fatal("the material is in the state")
+	checkCheckpoint := func(inputs, outputs property.Map) {
+		t.Helper()
+		// Unwrap Pulumi secrets so encryption cannot conceal material in either
+		// of the property maps the engine would persist.
+		marshal := func(values property.Map) map[string]any {
+			t.Helper()
+			wire, err := plugin.MarshalProperties(presource.ToResourcePropertyMap(values), plugin.MarshalOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return wire.AsMap()
+		}
+		checkpoint, err := json.Marshal(apitype.CheckpointV3{Stack: "s", Latest: &apitype.DeploymentV3{
+			Resources: []apitype.ResourceV3{{
+				Type: protectedURN.Type(), URN: protectedURN, Custom: true, ID: presource.ID(created.ID),
+				Inputs: marshal(inputs), Outputs: marshal(outputs),
+			}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if text := string(checkpoint); strings.Contains(text, "secret material") ||
+			!strings.Contains(text, string(protectedURN)) || !strings.Contains(text, digestOf([]byte(secret))) {
+			t.Fatal("checkpoint must contain the resource and digest without the source material")
+		}
 	}
+	checkCheckpoint(checked.Inputs, created.Properties)
 
 	// read under always: the digest from sha256sum, the mode normalised
-	read, err := s.Read(p.ReadRequest{ID: state.Path, Urn: protectedURN, Properties: created.Properties})
+	read, err := s.Read(p.ReadRequest{ID: state.Path, Urn: protectedURN, Properties: created.Properties, Inputs: checked.Inputs})
 	if err != nil || read.Properties.Get("digest").AsString() != digestOf([]byte(secret)) || read.Properties.Get("mode").AsString() != "0600" {
 		t.Fatalf("read %+v %v", read, err)
 	}
+
+	checkCheckpoint(read.Inputs, read.Properties)
 
 	// diff under always asks the source: unchanged, then rotated
 	same, err := s.Diff(p.DiffRequest{ID: state.Path, Urn: protectedURN, State: read.Properties, Inputs: protectedInputs(fileSource(src), "always")})
