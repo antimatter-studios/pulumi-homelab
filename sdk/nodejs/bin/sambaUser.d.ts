@@ -17,6 +17,10 @@ export declare class SambaUser extends pulumi.CustomResource {
      * when multiple copies of the Pulumi SDK have been loaded into the same process.
      */
     static isInstance(obj: any): obj is SambaUser;
+    /**
+     * Whether the provider added this Samba account, used to guard deletion.
+     */
+    readonly created: pulumi.Output<boolean | undefined>;
     readonly exists: pulumi.Output<boolean>;
     readonly name: pulumi.Output<string>;
     readonly password: pulumi.Output<string | undefined>;

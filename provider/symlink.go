@@ -269,8 +269,19 @@ func symlinkDeleteCommand(file string, target *string) string {
 	if target != nil {
 		check += ` && [ "$(readlink -- "$staging/entry")" = ` + shellQuote(*target) + " ]"
 	}
-	return "set -e; [ -L " + shellQuote(file) + " ] || exit 0; cd -- " + shellQuote(path.Dir(file)) + "; entry=" + shellQuote("./"+path.Base(file)) + `
-[ -L "$entry" ] || exit 0
+	return "set -e; entry=" + shellQuote(file) + `
+check_link() {
+    if [ -L "$entry" ]; then return 0; fi
+    if [ -e "$entry" ]; then
+        printf 'the path no longer holds a symlink.\n' >&2
+        exit 10
+    fi
+    exit 0
+}
+check_link
+cd -- ` + shellQuote(path.Dir(file)) + ` || exit 12
+entry=` + shellQuote("./"+path.Base(file)) + `
+check_link
 staging=$(mktemp -d ./.pulumi-symlink.XXXXXXXX)
 trap 'rmdir -- "$staging" 2>/dev/null || true' EXIT
 if ! mv -T -- "$entry" "$staging/entry"; then
@@ -287,7 +298,7 @@ if ! mv -nT -- "$staging/entry" "$entry" || [ -e "$staging/entry" ] || [ -L "$st
 else
     printf 'The path changed during deletion. The captured entry was restored.\n' >&2
 fi
-exit 1`
+exit 10`
 }
 
 // Delete removes the path only while it is still a link: if something replaced it with a real
@@ -297,6 +308,6 @@ func (Symlink) Delete(ctx context.Context, req infer.DeleteRequest[SymlinkState]
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate(symlinkDeleteCommand(req.ID, nil)))
+	err = guardedDelete(ctx, m, req.ID, symlinkDeleteCommand(req.ID, nil))
 	return infer.DeleteResponse{}, err
 }

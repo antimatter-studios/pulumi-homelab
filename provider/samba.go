@@ -349,16 +349,17 @@ func (SambaShare) Diff(_ context.Context, req infer.DiffRequest[SambaShareArgs, 
 
 // Delete removes this share's own section and nothing else of the file.
 func (SambaShare) Delete(ctx context.Context, req infer.DeleteRequest[SambaShareState]) (infer.DeleteResponse, error) {
+	config := req.State.Config
+	if config == "" {
+		config = smbConf
+	}
 	if !deref(req.State.Created) {
+		warnRetained(ctx, fmt.Sprintf("Samba share %q in %s", req.ID, config), "state does not record that the provider created it.")
 		return infer.DeleteResponse{}, nil
 	}
 	m, err := machineFrom(ctx)
 	if err != nil {
 		return infer.DeleteResponse{}, err
-	}
-	config := req.State.Config
-	if config == "" {
-		config = smbConf
 	}
 	current, err := catConf(ctx, m, config)
 	if err != nil {

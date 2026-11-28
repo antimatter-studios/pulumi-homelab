@@ -55,6 +55,7 @@ class ProtectedFile extends pulumi.CustomResource {
             resourceInputs["path"] = args ? args.path : undefined;
             resourceInputs["source"] = args ? args.source : undefined;
             resourceInputs["digest"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         else {
             resourceInputs["digest"] = undefined /*out*/;
@@ -64,8 +65,11 @@ class ProtectedFile extends pulumi.CustomResource {
             resourceInputs["owner"] = undefined /*out*/;
             resourceInputs["path"] = undefined /*out*/;
             resourceInputs["source"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         opts = pulumi.mergeOptions(utilities.resourceOptsDefaults(), opts);
+        const secretOpts = { additionalSecretOutputs: ["writtenDigest"] };
+        opts = pulumi.mergeOptions(opts, secretOpts);
         super(ProtectedFile.__pulumiType, name, resourceInputs, opts);
     }
 }

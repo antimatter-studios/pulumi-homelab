@@ -155,8 +155,8 @@ func TestManagedAndProtectedFileRealShell(t *testing.T) {
 	if diff, _ := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: inputs}); !diff.HasChanges {
 		t.Fatal("a hand edit was not drift")
 	}
-	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err == nil ||
-		!strings.Contains(err.Error(), "the file changed") || onMachine(t, d, "cat "+path) != "edited\n" {
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err != nil ||
+		onMachine(t, d, "cat "+path) != "edited\n" {
 		t.Fatalf("delete of drifted file: %v", err)
 	}
 	updated, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: inputs})
@@ -172,6 +172,41 @@ func TestManagedAndProtectedFileRealShell(t *testing.T) {
 	if got := onMachine(t, d, "ls -A /etc/demo"); got != "" {
 		t.Fatalf("delete left %q", got)
 	}
+
+	t.Run("same-path create-before-delete preserves replacement", func(t *testing.T) {
+		warnings := captureDeleteWarnings(t)
+		old, err := s.Create(p.CreateRequest{Urn: fileURN, Properties: inputs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		newURN := urnOf("ManagedFile", "replacement")
+		newInputs := inputs.Set("content", property.New("replacement\n"))
+		replacement, err := s.Create(p.CreateRequest{Urn: newURN, Properties: newInputs})
+		if err != nil || replacement.ID != old.ID {
+			t.Fatalf("create replacement at the same path: %v, old ID %q, new ID %q", err, old.ID, replacement.ID)
+		}
+		if err := s.Delete(p.DeleteRequest{ID: old.ID, Urn: fileURN, Properties: old.Properties}); err != nil {
+			t.Fatalf("delete old resource: %v", err)
+		}
+		if got := onMachine(t, d, "cat "+path); got != "replacement\n" {
+			t.Fatalf("replacement contents %q", got)
+		}
+		if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, path) ||
+			!strings.Contains(log, "the file changed since the provider wrote it") {
+			t.Fatalf("old-resource delete warning %q", log)
+		}
+		legacy := replacement.Properties.Delete("writtenDigest")
+		if err := s.Delete(p.DeleteRequest{ID: replacement.ID, Urn: newURN, Properties: legacy}); err != nil {
+			t.Fatalf("delete with legacy state: %v", err)
+		}
+		if got := onMachine(t, d, "cat "+path); got != "replacement\n" {
+			t.Fatalf("legacy delete changed the replacement: %q", got)
+		}
+		if err := s.Delete(p.DeleteRequest{ID: replacement.ID, Urn: newURN, Properties: replacement.Properties}); err != nil {
+			t.Fatal(err)
+		}
+		onMachine(t, d, "test ! -e "+path)
+	})
 
 	// ProtectedFile: binary material from an exec source lands byte-exact, private from the first byte
 	const secretPath = "/home/chris/.config/token"
@@ -206,8 +241,8 @@ func TestManagedAndProtectedFileRealShell(t *testing.T) {
 		if err != nil || refreshed.Properties.Get("digest").AsString() != seeded {
 			t.Fatalf("read once: %v", err)
 		}
-		if err := s.Delete(p.DeleteRequest{ID: oncePath, Urn: protectedURN, Properties: refreshed.Properties}); err == nil ||
-			!strings.Contains(err.Error(), "the file changed") || onMachine(t, d, "cat "+oncePath) != "rotated" {
+		if err := s.Delete(p.DeleteRequest{ID: oncePath, Urn: protectedURN, Properties: refreshed.Properties}); err != nil ||
+			onMachine(t, d, "cat "+oncePath) != "rotated" {
 			t.Fatalf("delete of rotated file: %v", err)
 		}
 		onMachine(t, d, `printf '\000\377secret' > `+oncePath)

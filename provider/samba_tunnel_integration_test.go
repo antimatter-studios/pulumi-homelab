@@ -103,8 +103,12 @@ func TestSshTunnelUnitFileRealShell(t *testing.T) {
 	}
 	d.sh(t, "echo '# edited' >> "+path)
 	digest := digestOf([]byte(file))
-	if err := deleteTunnel(t.Context(), m, testTunnel.Unit, path, &digest); err == nil || !strings.Contains(err.Error(), "the file changed") {
+	if err := deleteTunnel(t.Context(), m, testTunnel.Unit, path, &digest); err != nil {
 		t.Fatalf("delete of edited unit: %v", err)
+	}
+	d.sh(t, "grep -Fx '# edited' "+path)
+	if err := deleteTunnel(t.Context(), m, testTunnel.Unit, path, nil); err != nil {
+		t.Fatalf("delete with legacy state: %v", err)
 	}
 	d.sh(t, "grep -Fx '# edited' "+path)
 	d.sh(t, "sed -i '/^# edited$/d' "+path)

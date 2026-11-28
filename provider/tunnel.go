@@ -594,13 +594,22 @@ func deleteTunnel(ctx context.Context, m *machine, unit, path string, digest *st
 	service := shellQuote(unit + ".service")
 	quotedPath := shellQuote(path)
 	disable := "systemctl disable --now " + service + " || { [ ! -e " + quotedPath + " ] && [ ! -L " + quotedPath + " ]; }"
-	if _, err := m.must(ctx, m.escalate(disable)); err != nil {
+	stopped, err := m.ask(ctx, m.escalate(disable))
+	if err != nil {
 		return err
 	}
-	if err := removeWrittenFile(ctx, m, path, digest); err != nil {
+	if stopped.code != 0 {
+		warnRetained(ctx, path, fmt.Sprintf("systemctl could not disable %s (exit %d). %s", unit, stopped.code, strings.TrimSpace(stopped.err)))
+		return nil
+	}
+	removed, err := removeWrittenFile(ctx, m, path, digest)
+	if err != nil || !removed {
 		return err
 	}
-	_, err := m.must(ctx, m.escalate("systemctl daemon-reload"))
+	reloaded, err := m.ask(ctx, m.escalate("systemctl daemon-reload"))
+	if err == nil && reloaded.code != 0 {
+		p.GetLogger(ctx).Warningf("Removed %s, but systemctl daemon-reload failed (exit %d). %s", path, reloaded.code, strings.TrimSpace(reloaded.err))
+	}
 	return err
 }
 

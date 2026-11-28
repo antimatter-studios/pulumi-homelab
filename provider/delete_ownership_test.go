@@ -1,6 +1,8 @@
 package homelab
 
 import (
+	"bytes"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -8,6 +10,15 @@ import (
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 )
+
+func captureDeleteWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &logs
+}
 
 func TestOldStateDeletionGuardsDiffClean(t *testing.T) {
 	const file = "/srv/app/config"
@@ -45,6 +56,7 @@ func TestOldStateDeletionGuardsDiffClean(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.resource, func(t *testing.T) {
+			warnings := captureDeleteWarnings(t)
 			fake := remotetest.New()
 			if tc.guardedPath != "" {
 				fake.On(asRoot(writtenFileDeleteCommand(tc.guardedPath, nil)), remotetest.Reply{Code: 10})
@@ -64,13 +76,20 @@ func TestOldStateDeletionGuardsDiffClean(t *testing.T) {
 				t.Fatalf("legacy state diff ran remote commands: %v", fake.Commands())
 			}
 
-			err = s.Delete(p.DeleteRequest{ID: tc.id, Urn: urn, Properties: tc.state})
-			if tc.guardedPath == "" {
-				if err != nil || len(fake.Commands()) != 0 {
-					t.Fatalf("delete of legacy state: %v, commands %v", err, fake.Commands())
+			if err := s.Delete(p.DeleteRequest{ID: tc.id, Urn: urn, Properties: tc.state}); err != nil {
+				t.Fatalf("delete of legacy state should succeed: %v", err)
+			}
+			target := tc.guardedPath
+			reason := "state has no digest from a provider write"
+			if target == "" {
+				if len(fake.Commands()) != 0 {
+					t.Fatalf("legacy delete touched the machine: %v", fake.Commands())
 				}
-			} else if err == nil || !strings.Contains(err.Error(), "state has no digest from a provider write") {
-				t.Fatalf("delete of legacy state should leave the file: %v", err)
+				target, reason = tc.id, "state"
+			}
+			log := warnings.String()
+			if !strings.Contains(log, "level=WARN") || !strings.Contains(log, target) || !strings.Contains(log, reason) {
+				t.Fatalf("legacy delete should warn about retaining %s, got %q", target, log)
 			}
 		})
 	}

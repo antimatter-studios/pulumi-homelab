@@ -1,12 +1,42 @@
 package homelab
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
 
 	p "github.com/pulumi/pulumi-go-provider"
 )
+
+func warnRetained(ctx context.Context, target, reason string) {
+	p.GetLogger(ctx).Warningf("Leaving %s in place because %s", target, reason)
+}
+
+// guardedDelete runs a shell removal that refuses an unverified target. Exit 12
+// means verification could not read the target. Other failures retain the entry
+// or report where it was kept if a concurrent writer prevented restoring it.
+func guardedDelete(ctx context.Context, m *machine, path, command string) error {
+	command = m.escalate(command)
+	result, err := m.ask(ctx, command)
+	if err != nil {
+		return err
+	}
+	switch result.code {
+	case 0:
+		return nil
+	case 12:
+		_, err := m.check(command, result)
+		return err
+	default:
+		reason := strings.TrimSpace(result.err)
+		if reason == "" {
+			reason = fmt.Sprintf("the delete operation exited with status %d", result.code)
+		}
+		warnRetained(ctx, path, reason)
+		return nil
+	}
+}
 
 // heredoc is src/ssh.ts heredoc: write content to a literal path through a quoted here-document.
 func heredoc(path, content string, after ...string) string {

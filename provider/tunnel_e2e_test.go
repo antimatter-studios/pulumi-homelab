@@ -188,8 +188,8 @@ func TestSshTunnelDeleteAfterUnitEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Delete(p.DeleteRequest{ID: wanted.Unit, Urn: tunnelURN, Properties: read.Properties}); err == nil ||
-		!strings.Contains(err.Error(), "the file changed") || f.unitRM || f.active {
+	if err := s.Delete(p.DeleteRequest{ID: wanted.Unit, Urn: tunnelURN, Properties: read.Properties}); err != nil ||
+		f.unitRM || f.active || f.file != "edited unit\n" {
 		t.Fatalf("edited unit must be disabled and kept: %v", err)
 	}
 }

@@ -35,6 +35,10 @@ export class Archive extends pulumi.CustomResource {
     }
 
     public readonly binary!: pulumi.Output<string | undefined>;
+    /**
+     * Identity of the tree unpacked by the provider, used to guard deletion and reinstall.
+     */
+    public /*out*/ readonly createdTree!: pulumi.Output<string | undefined>;
     public readonly format!: pulumi.Output<string | undefined>;
     public readonly group!: pulumi.Output<string>;
     public readonly healthCommand!: pulumi.Output<string | undefined>;
@@ -95,10 +99,12 @@ export class Archive extends pulumi.CustomResource {
             resourceInputs["url"] = args ? args.url : undefined;
             resourceInputs["versionCommand"] = args ? args.versionCommand : undefined;
             resourceInputs["versionPattern"] = args ? args.versionPattern : undefined;
+            resourceInputs["createdTree"] = undefined /*out*/;
             resourceInputs["installed"] = undefined /*out*/;
             resourceInputs["version"] = undefined /*out*/;
         } else {
             resourceInputs["binary"] = undefined /*out*/;
+            resourceInputs["createdTree"] = undefined /*out*/;
             resourceInputs["format"] = undefined /*out*/;
             resourceInputs["group"] = undefined /*out*/;
             resourceInputs["healthCommand"] = undefined /*out*/;

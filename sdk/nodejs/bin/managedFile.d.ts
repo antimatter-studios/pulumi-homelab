@@ -27,6 +27,10 @@ export declare class ManagedFile extends pulumi.CustomResource {
     readonly path: pulumi.Output<string>;
     readonly reloadSystemd: pulumi.Output<boolean | undefined>;
     /**
+     * SHA-256 of the bytes last written by the provider, used to guard deletion.
+     */
+    readonly writtenDigest: pulumi.Output<string | undefined>;
+    /**
      * Create a ManagedFile resource with the given unique name, arguments, and options.
      *
      * @param name The _unique_ name of the resource.

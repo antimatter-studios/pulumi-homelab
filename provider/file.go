@@ -174,7 +174,7 @@ if [ ! -e "$file" ] && [ ! -L "$file" ]; then exit 9; fi
 cd -- ` + shellQuote(path.Dir(file)) + ` || exit 12
 file=` + shellQuote("./"+path.Base(file)) + `
 check_file() {
-    [ -f "$1" ] && [ ! -L "$1" ] || return 11
+    [ -f "$1" ] && [ ! -L "$1" ] || return 14
     actual=$(sha256sum < "$1") || return 12
     [ "${actual%% *}" = "$expected" ] || return 11
 }
@@ -195,25 +195,30 @@ check_file "$staging/file" || exit $?
 rm -- "$staging/file"`
 }
 
-func removeWrittenFile(ctx context.Context, m *machine, path string, digest *string) error {
+func removeWrittenFile(ctx context.Context, m *machine, path string, digest *string) (bool, error) {
 	result, err := m.ask(ctx, m.escalate(writtenFileDeleteCommand(path, digest)))
 	if err != nil {
-		return err
+		return false, err
 	}
 	var reason string
 	switch result.code {
-	case 0, 9:
-		return nil
+	case 0:
+		return true, nil
+	case 9:
+		return false, nil
 	case 10:
 		reason = "state has no digest from a provider write"
 	case 11:
 		reason = "the file changed since the provider wrote it"
 	case 12:
-		reason = "the file could not be read"
+		return false, fmt.Errorf("could not read %s on %s.%s", path, m.describe(), result.out)
+	case 14:
+		reason = "the path no longer holds a regular file"
 	default:
 		reason = fmt.Sprintf("the operation failed (exit %d)", result.code)
 	}
-	return fmt.Errorf("could not delete %s on %s because %s.%s", path, m.describe(), reason, result.out)
+	warnRetained(ctx, path, reason+"."+result.out)
+	return false, nil
 }
 
 func (w wantedFile) state() ManagedFileState {
@@ -334,6 +339,6 @@ func (ManagedFile) Delete(ctx context.Context, req infer.DeleteRequest[ManagedFi
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	err = removeWrittenFile(ctx, m, req.ID, req.State.WrittenDigest)
+	_, err = removeWrittenFile(ctx, m, req.ID, req.State.WrittenDigest)
 	return infer.DeleteResponse{}, err
 }

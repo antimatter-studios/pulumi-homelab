@@ -173,6 +173,7 @@ func (SambaUser) Diff(_ context.Context, req infer.DiffRequest[SambaUserArgs, Sa
 // Delete removes the user from samba's database, never the unix account or its files.
 func (SambaUser) Delete(ctx context.Context, req infer.DeleteRequest[SambaUserState]) (infer.DeleteResponse, error) {
 	if !deref(req.State.Created) {
+		warnRetained(ctx, fmt.Sprintf("Samba account %q", req.ID), "state does not record that the provider created it.")
 		return infer.DeleteResponse{}, nil
 	}
 	m, err := machineFrom(ctx)

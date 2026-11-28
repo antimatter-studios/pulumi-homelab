@@ -377,6 +377,6 @@ func (ProtectedFile) Delete(ctx context.Context, req infer.DeleteRequest[Protect
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	err = removeWrittenFile(ctx, m, req.ID, req.State.WrittenDigest)
+	_, err = removeWrittenFile(ctx, m, req.ID, req.State.WrittenDigest)
 	return infer.DeleteResponse{}, err
 }

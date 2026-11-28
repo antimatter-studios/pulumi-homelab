@@ -148,12 +148,15 @@ tree_identity() {
     ' bash "$1"
 }
 check_tree() {
-    if [ -n "$expected" ] && [ -d "$1" ] && [ ! -L "$1" ] &&
-       actual=$(tree_identity "$1") && [ "$actual" = "$expected" ]; then
-        return 0
+    if [ -n "$expected" ] && [ -d "$1" ] && [ ! -L "$1" ]; then
+        if ! actual=$(tree_identity "$1"); then
+            printf 'Could not read the archive tree at %s.\n' "$prefix" >&2
+            return 12
+        fi
+        if [ "$actual" = "$expected" ]; then return 0; fi
     fi
-    printf 'Refusing to remove %s because it is not the tree recorded at install.\n' "$prefix" >&2
-    return 1
+    printf '%s is not the tree recorded at install.\n' "$prefix" >&2
+    return 10
 }
 `
 
@@ -626,16 +629,22 @@ fi`
 // Delete leaves a prefix adopted during Create or Read in place.
 func (Archive) Delete(ctx context.Context, req infer.DeleteRequest[ArchiveState]) (infer.DeleteResponse, error) {
 	if deref(req.State.CreatedTree) == "" {
+		target := req.State.Prefix
+		if target == "" {
+			target = req.ID
+		}
+		warnRetained(ctx, target, "state has no archive tree recorded at install.")
 		return infer.DeleteResponse{}, nil
 	}
 	prefix := path.Clean(req.State.Prefix)
 	if req.State.Prefix == "" || prefix == "/" || prefix == "." {
-		return infer.DeleteResponse{}, fmt.Errorf("cannot delete %s: state carries no valid archive prefix", req.ID)
+		warnRetained(ctx, req.ID, "state has no valid archive prefix.")
+		return infer.DeleteResponse{}, nil
 	}
 	m, err := machineFrom(ctx)
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate(archiveDeleteCommand(req.State.Prefix, deref(req.State.Link), *req.State.CreatedTree)))
+	err = guardedDelete(ctx, m, req.State.Prefix, archiveDeleteCommand(req.State.Prefix, deref(req.State.Link), *req.State.CreatedTree))
 	return infer.DeleteResponse{}, err
 }

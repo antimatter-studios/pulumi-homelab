@@ -100,19 +100,22 @@ func TestDebian13GitCheckout(t *testing.T) {
 
 	sh(t, m, "useradd -m checkout-owner")
 	for _, tc := range []struct{ name, change, finding string }{
-		{"working tree", "echo changed > a", "Working tree changes:\n M a"},
-		{"stash", "echo changed > a && git stash -q", "Stashes:\nstash@{0}"},
+		{"working tree", "echo changed > a", "Working tree changes:"},
+		{"stash", "echo changed > a && git stash -q", "Stashes:"},
 		{"untracked file", "git config status.showUntrackedFiles no && touch local.txt", "?? local.txt"},
 		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "Unpushed commits:"},
 		{"unpushed detached HEAD", "echo changed > a && git commit -qam local-detached-work", "Unpushed commits:"},
 	} {
-		t.Run("refuses "+tc.name, func(t *testing.T) {
+		t.Run("retains "+tc.name, func(t *testing.T) {
+			warnings := captureDeleteWarnings(t)
 			path := "/srv/w-" + strings.ReplaceAll(tc.name, " ", "-")
 			checkout(t, path)
 			sh(t, m, "cd "+shellQuote(path)+" && "+tc.change+" && chown -R checkout-owner:checkout-owner "+shellQuote(path))
-			err := deleteCheckout(t.Context(), m, path)
-			if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.finding) {
-				t.Fatalf("got %v, want refusal naming %s and %q", err, path, tc.finding)
+			if err := deleteCheckout(t.Context(), m, path); err != nil {
+				t.Fatal(err)
+			}
+			if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, path) || !strings.Contains(log, tc.finding) {
+				t.Fatalf("expected a warning naming %s and %q, got %q", path, tc.finding, log)
 			}
 			if !exists(t, m, path) {
 				t.Fatal("checkout was removed")
@@ -179,11 +182,15 @@ func TestDebian13Archive(t *testing.T) {
 		t.Fatalf("chown changed the recorded tree: %+v", state)
 	}
 	deleteTree := func(state ArchiveState) error {
-		_, err := m.must(ctx, m.escalate(archiveDeleteCommand(state.Prefix, deref(state.Link), deref(state.CreatedTree))))
-		return err
+		return guardedDelete(ctx, m, state.Prefix, archiveDeleteCommand(state.Prefix, deref(state.Link), deref(state.CreatedTree)))
 	}
-	if err := deleteTree(state); err == nil || !strings.Contains(err.Error(), "not the tree recorded") {
-		t.Fatalf("delete should refuse a tree with new files: %v", err)
+	warnings := captureDeleteWarnings(t)
+	if err := deleteTree(state); err != nil {
+		t.Fatalf("delete should leave a tree with new files: %v", err)
+	}
+	if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, state.Prefix) ||
+		!strings.Contains(log, "not the tree recorded at install") {
+		t.Fatalf("archive delete warning %q", log)
 	}
 	reinstall := args
 	reinstall.URL = strp(*args.URL + "?reinstall")

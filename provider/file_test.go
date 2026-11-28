@@ -212,8 +212,8 @@ func TestManagedFileLifecycle(t *testing.T) {
 		t.Fatal("a hand edit was not drift")
 	}
 
-	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err == nil ||
-		!strings.Contains(err.Error(), "the file changed") || disk.content != "hand edited\n" {
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err != nil ||
+		!disk.exists || disk.content != "hand edited\n" {
 		t.Fatalf("delete after refresh of an edited file: %v", err)
 	}
 
