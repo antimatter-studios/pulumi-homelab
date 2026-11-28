@@ -1,0 +1,596 @@
+[
+  {
+    "name": "flux app source name",
+    "helper": "fluxApp",
+    "args": {
+      "name": "app",
+      "options": {
+        "url": "https://github.com/example/app",
+        "branch": "main",
+        "path": "./deploy/flux"
+      }
+    }
+  },
+  {
+    "name": "flux app source namespace",
+    "helper": "fluxApp",
+    "args": {
+      "name": "app",
+      "options": {
+        "url": "https://github.com/example/app",
+        "branch": "main",
+        "path": "./deploy/flux"
+      }
+    }
+  },
+  {
+    "name": "flux app source kind",
+    "helper": "fluxApp",
+    "args": {
+      "name": "app",
+      "options": {
+        "url": "https://github.com/example/app",
+        "branch": "main",
+        "path": "./deploy/flux"
+      }
+    }
+  },
+  {
+    "name": "flux app default prune",
+    "helper": "fluxApp",
+    "args": {
+      "name": "app",
+      "options": {
+        "url": "https://github.com/example/app",
+        "branch": "main",
+        "path": "./deploy/flux"
+      }
+    }
+  },
+  {
+    "name": "ignore rules reinclude paths",
+    "helper": "ignoreRules",
+    "args": {
+      "paths": [
+        "/chart",
+        "/deploy"
+      ]
+    }
+  },
+  {
+    "name": "ignore rules add slash",
+    "helper": "ignoreRules",
+    "args": {
+      "paths": [
+        "chart"
+      ]
+    }
+  },
+  {
+    "name": "ready waits for the condition",
+    "helper": "fluxReady",
+    "args": {
+      "name": "app"
+    }
+  },
+  {
+    "name": "ready uses Kustomization defaults",
+    "helper": "fluxReady",
+    "args": {
+      "name": "app"
+    }
+  },
+  {
+    "name": "ready can wait for the source",
+    "helper": "fluxReady",
+    "args": {
+      "name": "app",
+      "options": {
+        "kind": "gitrepository"
+      }
+    }
+  },
+  {
+    "name": "ready takes a timeout",
+    "helper": "fluxReady",
+    "args": {
+      "name": "app",
+      "options": {
+        "timeout": "300s"
+      }
+    }
+  },
+  {
+    "name": "ready quotes the resource name",
+    "helper": "fluxReady",
+    "args": {
+      "name": "ai'world"
+    }
+  },
+  {
+    "name": "reason reads the Ready message",
+    "helper": "fluxReason",
+    "args": {
+      "name": "app"
+    }
+  },
+  {
+    "name": "reason includes sudo",
+    "helper": "fluxReason",
+    "args": {
+      "name": "app"
+    }
+  },
+  {
+    "name": "shared target join",
+    "helper": "sharedTarget",
+    "args": {
+      "shared": "/home/agent/.claude",
+      "entry": "projects"
+    }
+  },
+  {
+    "name": "shared target trailing slash",
+    "helper": "sharedTarget",
+    "args": {
+      "shared": "/home/agent/.claude/",
+      "entry": "sessions"
+    }
+  },
+  {
+    "name": "shared target several trailing slashes",
+    "helper": "sharedTarget",
+    "args": {
+      "shared": "/home/agent/.claude///",
+      "entry": "plugins"
+    }
+  },
+  {
+    "name": "shared target absolute path",
+    "helper": "sharedTarget",
+    "args": {
+      "shared": "/mnt/storage/t3code/.claude",
+      "entry": "settings.json"
+    }
+  },
+  {
+    "name": "profile refusal sibling",
+    "helper": "profileRefusal",
+    "args": {
+      "shared": "/home/agent/.claude",
+      "dir": "/home/agent/.claude-work"
+    }
+  },
+  {
+    "name": "profile refusal itself",
+    "helper": "profileRefusal",
+    "args": {
+      "shared": "/home/agent/.claude",
+      "dir": "/home/agent/.claude"
+    }
+  },
+  {
+    "name": "profile refusal itself with trailing slash",
+    "helper": "profileRefusal",
+    "args": {
+      "shared": "/home/agent/.claude",
+      "dir": "/home/agent/.claude/"
+    }
+  },
+  {
+    "name": "profile refusal nested",
+    "helper": "profileRefusal",
+    "args": {
+      "shared": "/home/agent/.claude",
+      "dir": "/home/agent/.claude/other"
+    }
+  },
+  {
+    "name": "shared defaults work entries",
+    "helper": "sharedDefaults",
+    "args": {}
+  },
+  {
+    "name": "shared defaults credential exemptions",
+    "helper": "sharedDefaults",
+    "args": {}
+  },
+  {
+    "name": "shared defaults entry modes",
+    "helper": "sharedDefaults",
+    "args": {}
+  },
+  {
+    "name": "shared defaults file entry",
+    "helper": "sharedDefaults",
+    "args": {}
+  },
+  {
+    "name": "t3 release pin",
+    "helper": "t3Default",
+    "args": {}
+  },
+  {
+    "name": "t3 release URL",
+    "helper": "t3Default",
+    "args": {
+      "version": "1.2.3-nightly.4.5"
+    }
+  },
+  {
+    "name": "t3 release channel",
+    "helper": "t3Default",
+    "args": {}
+  },
+  {
+    "name": "agent defaults default agents",
+    "helper": "agentDefaults",
+    "args": {}
+  },
+  {
+    "name": "agent defaults archive checksum",
+    "helper": "agentDefaults",
+    "args": {}
+  },
+  {
+    "name": "agent defaults official installers",
+    "helper": "agentDefaults",
+    "args": {}
+  },
+  {
+    "name": "agent defaults relative executables",
+    "helper": "agentDefaults",
+    "args": {}
+  },
+  {
+    "name": "unit without options",
+    "helper": "unitResourceLines",
+    "args": {}
+  },
+  {
+    "name": "unit resource controls",
+    "helper": "unitResourceLines",
+    "args": {
+      "options": {
+        "limits": {
+          "memoryHigh": "6G",
+          "memoryMax": "8G",
+          "cpuWeight": 20,
+          "ioWeight": 20
+        },
+        "tmpDir": "/mnt/storage/t3code/tmp"
+      }
+    }
+  },
+  {
+    "name": "unit swap and OOM policy",
+    "helper": "unitResourceLines",
+    "args": {
+      "options": {
+        "limits": {
+          "memoryMax": "8G",
+          "memorySwapMax": "32G",
+          "oomPolicy": "continue"
+        }
+      }
+    }
+  },
+  {
+    "name": "unit without swap or OOM policy",
+    "helper": "unitResourceLines",
+    "args": {
+      "options": {
+        "limits": {
+          "memoryMax": "8G"
+        }
+      }
+    }
+  },
+  {
+    "name": "unit refuses zero weight",
+    "helper": "unitResourceLines",
+    "args": {
+      "options": {
+        "limits": {
+          "cpuWeight": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "unit with name only",
+    "helper": "unitResourceLines",
+    "args": {
+      "options": {
+        "name": "t3code",
+        "limits": {}
+      }
+    }
+  },
+  {
+    "name": "unit refuses excessive weight",
+    "helper": "unitResourceLines",
+    "args": {
+      "options": {
+        "limits": {
+          "ioWeight": 20000
+        }
+      }
+    }
+  },
+  {
+    "name": "unit refuses fractional weight",
+    "helper": "unitResourceLines",
+    "args": {
+      "options": {
+        "limits": {
+          "cpuWeight": 2.5
+        }
+      }
+    }
+  },
+  {
+    "name": "unit refuses negative zero weight",
+    "helper": "unitResourceLines",
+    "args": {
+      "options": {
+        "limits": {
+          "cpuWeight": -0.0
+        }
+      }
+    }
+  },
+  {
+    "name": "fluxReady with spaces",
+    "helper": "fluxReady",
+    "args": {
+      "name": "two words",
+      "options": {
+        "kind": "two words",
+        "namespace": "two words",
+        "kubeconfig": "two words",
+        "timeout": "two words"
+      }
+    }
+  },
+  {
+    "name": "fluxReason with spaces",
+    "helper": "fluxReason",
+    "args": {
+      "name": "two words",
+      "options": {
+        "kind": "two words",
+        "namespace": "two words",
+        "kubeconfig": "two words",
+        "timeout": "two words"
+      }
+    }
+  },
+  {
+    "name": "fluxReady with apostrophe",
+    "helper": "fluxReady",
+    "args": {
+      "name": "it's",
+      "options": {
+        "kind": "it's",
+        "namespace": "it's",
+        "kubeconfig": "it's",
+        "timeout": "it's"
+      }
+    }
+  },
+  {
+    "name": "fluxReason with apostrophe",
+    "helper": "fluxReason",
+    "args": {
+      "name": "it's",
+      "options": {
+        "kind": "it's",
+        "namespace": "it's",
+        "kubeconfig": "it's",
+        "timeout": "it's"
+      }
+    }
+  },
+  {
+    "name": "fluxReady with dollar",
+    "helper": "fluxReady",
+    "args": {
+      "name": "$HOME",
+      "options": {
+        "kind": "$HOME",
+        "namespace": "$HOME",
+        "kubeconfig": "$HOME",
+        "timeout": "$HOME"
+      }
+    }
+  },
+  {
+    "name": "fluxReason with dollar",
+    "helper": "fluxReason",
+    "args": {
+      "name": "$HOME",
+      "options": {
+        "kind": "$HOME",
+        "namespace": "$HOME",
+        "kubeconfig": "$HOME",
+        "timeout": "$HOME"
+      }
+    }
+  },
+  {
+    "name": "fluxReady with empty",
+    "helper": "fluxReady",
+    "args": {
+      "name": "",
+      "options": {
+        "kind": "",
+        "namespace": "",
+        "kubeconfig": "",
+        "timeout": ""
+      }
+    }
+  },
+  {
+    "name": "fluxReason with empty",
+    "helper": "fluxReason",
+    "args": {
+      "name": "",
+      "options": {
+        "kind": "",
+        "namespace": "",
+        "kubeconfig": "",
+        "timeout": ""
+      }
+    }
+  },
+  {
+    "name": "fluxReady with newline",
+    "helper": "fluxReady",
+    "args": {
+      "name": "first\nsecond",
+      "options": {
+        "kind": "first\nsecond",
+        "namespace": "first\nsecond",
+        "kubeconfig": "first\nsecond",
+        "timeout": "first\nsecond"
+      }
+    }
+  },
+  {
+    "name": "fluxReason with newline",
+    "helper": "fluxReason",
+    "args": {
+      "name": "first\nsecond",
+      "options": {
+        "kind": "first\nsecond",
+        "namespace": "first\nsecond",
+        "kubeconfig": "first\nsecond",
+        "timeout": "first\nsecond"
+      }
+    }
+  },
+  {
+    "name": "flux wiring with patch and provider",
+    "helper": "fluxApp",
+    "args": {
+      "name": "app",
+      "options": {
+        "url": "https://github.com/example/app",
+        "branch": "stage",
+        "path": "./deploy",
+        "namespace": "ops",
+        "interval": "2m",
+        "reconcileInterval": "10m",
+        "prune": false,
+        "include": [
+          "deploy"
+        ],
+        "secretRef": "deploy-key"
+      },
+      "patch": "[{\"op\":\"add\",\"path\":\"/spec/priorityClassName\",\"value\":\"critical\"}]"
+    }
+  },
+  {
+    "name": "flux wiring with empty optional inputs",
+    "helper": "fluxApp",
+    "args": {
+      "name": "app",
+      "options": {
+        "url": "https://github.com/example/app",
+        "namespace": "",
+        "ignore": "",
+        "secretRef": ""
+      }
+    }
+  },
+  {
+    "name": "flux conflicting ignore and include",
+    "helper": "fluxApp",
+    "args": {
+      "name": "app",
+      "options": {
+        "url": "https://github.com/example/app",
+        "include": [],
+        "ignore": ""
+      }
+    }
+  },
+  {
+    "name": "claude backend and profile wiring",
+    "helper": "claudeResources",
+    "args": {
+      "backend": {
+        "account": "dev",
+        "path": "/home/dev/.claude/"
+      },
+      "profile": {
+        "account": "dev",
+        "dir": "/home/dev/.claude-work",
+        "group": "work",
+        "mode": "0700"
+      }
+    }
+  },
+  {
+    "name": "default t3code wiring",
+    "helper": "t3codeResource",
+    "args": {
+      "options": {
+        "home": "/srv/t3code",
+        "workspace": "/srv/projects",
+        "uid": 1100,
+        "groups": [
+          "kvm"
+        ],
+        "git": {
+          "config": "[user]\n    name = Test\n"
+        }
+      },
+      "groups": true
+    }
+  },
+  {
+    "name": "secondary t3code wiring",
+    "helper": "t3codeResource",
+    "args": {
+      "options": {
+        "account": "other",
+        "home": "/srv/other",
+        "workspace": "/work",
+        "git": {
+          "config": "",
+          "keyComment": ""
+        },
+        "agents": [],
+        "sudo": false,
+        "unit": {
+          "name": "t3-other",
+          "limits": {
+            "cpuWeight": 25
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "t3code rejects an invalid service weight",
+    "helper": "t3codeResource",
+    "args": {
+      "options": {
+        "home": "/srv/t3code",
+        "workspace": "/srv/projects",
+        "git": {
+          "config": ""
+        },
+        "agents": [],
+        "sudo": false,
+        "unit": {
+          "limits": {
+            "cpuWeight": 2.5
+          }
+        }
+      }
+    }
+  }
+]

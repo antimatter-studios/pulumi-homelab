@@ -202,9 +202,10 @@ func splitAuthorized(text string) (options []string, key string) {
 func authorizedWriteCommand(path, user, content string) string {
 	directory := parentOf(path)
 	return "mkdir -p " + shellQuote(directory) + " && " +
-		heredoc(path, content) + "\n" +
-		"chmod " + authorizedDirectoryMode + " " + shellQuote(directory) + " && chmod " + authorizedFileMode + " " + shellQuote(path) + " && " +
-		"chown -R " + shellQuote(user) + " " + shellQuote(directory)
+		heredoc(path, content,
+			"chmod "+authorizedDirectoryMode+" "+shellQuote(directory),
+			"chmod "+authorizedFileMode+" "+shellQuote(path),
+			"chown -R "+shellQuote(user)+" "+shellQuote(directory))
 }
 
 func settleAuthorizedKey(ctx context.Context, m *machine, a AuthorizedKeyArgs) (AuthorizedKeyState, error) {

@@ -602,9 +602,9 @@ func archiveDeleteCommand(prefix, link, expected string) string {
 	command := "set -e; prefix=" + shellQuote(strings.TrimRight(prefix, "/")) +
 		"; expected=" + shellQuote(expected) + archiveTreeFunctions + `
 if [ -e "$prefix" ] || [ -L "$prefix" ]; then
-    check_tree "$prefix"
-    parent=$(dirname -- "$prefix")
-    dir=$(mktemp -d -- "$parent/.pulumi-archive.XXXXXXXX")
+    check_tree "$prefix" || exit $?
+    parent=$(dirname -- "$prefix") || exit 12
+    dir=$(mktemp -d -- "$parent/.pulumi-archive.XXXXXXXX") || exit 12
     cleanup() {
         if [ -e "$dir/tree" ] || [ -L "$dir/tree" ]; then
             mv -nT -- "$dir/tree" "$prefix" || true
@@ -615,9 +615,9 @@ if [ -e "$prefix" ] || [ -L "$prefix" ]; then
         rmdir -- "$dir" 2>/dev/null || true
     }
     trap cleanup EXIT
-    mv -T -- "$prefix" "$dir/tree"
-    check_tree "$dir/tree"
-    rm -rf --one-file-system -- "$dir/tree"
+    mv -T -- "$prefix" "$dir/tree" || exit 12
+    check_tree "$dir/tree" || exit $?
+    rm -rf --one-file-system -- "$dir/tree" || exit 12
 fi`
 	if link != "" {
 		command += "\nif [ \"$(readlink -- " + shellQuote(link) + " 2>/dev/null)\" = " + shellQuote(prefix) +

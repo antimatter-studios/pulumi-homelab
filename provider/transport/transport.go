@@ -248,6 +248,7 @@ func (t *Transport) client(ctx context.Context) (*ssh.Client, error) {
 		}
 		return nil, err
 	}
+	var rootConn net.Conn
 	for i, hop := range t.cfg.Hops {
 		cc := &ssh.ClientConfig{
 			User:              hop.User,
@@ -269,16 +270,32 @@ func (t *Transport) client(ctx context.Context) (*ssh.Client, error) {
 			cancel()
 			return fail(fmt.Errorf("transport: connecting to %s%s: %w", hop, t.via(i), err))
 		}
-		if dl, ok := dctx.Deadline(); ok {
-			_ = nc.SetDeadline(dl)
+		var stopHandshakeTimer func() bool
+		if i == 0 {
+			rootConn = nc
+			if dl, ok := dctx.Deadline(); ok {
+				_ = nc.SetDeadline(dl)
+			}
+		} else {
+			// SSH channels don't support deadlines. Close the underlying TCP
+			// connection first so closing the channel can't stall on the jump.
+			stopHandshakeTimer = context.AfterFunc(dctx, func() {
+				rootConn.Close()
+				nc.Close()
+			})
 		}
 		conn, chans, reqs, err := ssh.NewClientConn(nc, hop.hostPort(), cc)
+		if stopHandshakeTimer != nil && !stopHandshakeTimer() {
+			err = dctx.Err()
+		}
 		cancel()
 		if err != nil {
 			nc.Close()
 			return fail(fmt.Errorf("transport: ssh handshake with %s%s: %w", hop, t.via(i), err))
 		}
-		_ = nc.SetDeadline(time.Time{})
+		if i == 0 {
+			_ = nc.SetDeadline(time.Time{})
+		}
 		c := ssh.NewClient(conn, chans, reqs)
 		clients = append(clients, c)
 	}

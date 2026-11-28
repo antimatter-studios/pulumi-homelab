@@ -111,6 +111,9 @@ func settleSetting(ctx context.Context, m *machine, args SambaSettingArgs) (Samb
 	if err := validateSambaApply(how); err != nil {
 		return SambaSettingState{}, err
 	}
+	sambaConfigMu.Lock()
+	defer sambaConfigMu.Unlock()
+
 	current, err := catConf(ctx, m, config)
 	if err != nil {
 		return SambaSettingState{}, err
@@ -264,6 +267,9 @@ func (SambaSetting) Delete(ctx context.Context, req infer.DeleteRequest[SambaSet
 	if config == "" {
 		config = smbConf
 	}
+	sambaConfigMu.Lock()
+	defer sambaConfigMu.Unlock()
+
 	current, err := catConf(ctx, m, config)
 	if err != nil {
 		return infer.DeleteResponse{}, err
