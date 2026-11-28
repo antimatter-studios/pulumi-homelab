@@ -40,6 +40,10 @@ export class ManagedFile extends pulumi.CustomResource {
     public /*out*/ readonly digest!: pulumi.Output<string>;
     public readonly group!: pulumi.Output<string>;
     public readonly mode!: pulumi.Output<string>;
+    /**
+     * Whether refresh observed a file without a final newline.
+     */
+    public /*out*/ readonly observedWithoutFinalNewline!: pulumi.Output<boolean | undefined>;
     public readonly owner!: pulumi.Output<string>;
     public readonly path!: pulumi.Output<string>;
     public readonly reloadSystemd!: pulumi.Output<boolean | undefined>;
@@ -72,11 +76,13 @@ export class ManagedFile extends pulumi.CustomResource {
             resourceInputs["path"] = args ? args.path : undefined;
             resourceInputs["reloadSystemd"] = (args ? args.reloadSystemd : undefined) ?? false;
             resourceInputs["digest"] = undefined /*out*/;
+            resourceInputs["observedWithoutFinalNewline"] = undefined /*out*/;
             resourceInputs["writtenDigest"] = undefined /*out*/;
         } else {
             resourceInputs["digest"] = undefined /*out*/;
             resourceInputs["group"] = undefined /*out*/;
             resourceInputs["mode"] = undefined /*out*/;
+            resourceInputs["observedWithoutFinalNewline"] = undefined /*out*/;
             resourceInputs["owner"] = undefined /*out*/;
             resourceInputs["path"] = undefined /*out*/;
             resourceInputs["reloadSystemd"] = undefined /*out*/;

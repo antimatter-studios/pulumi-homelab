@@ -212,7 +212,7 @@ func TestManagedFileLifecycle(t *testing.T) {
 	}
 
 	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err != nil ||
-		!disk.exists || disk.content != "hand edited\n" {
+		!disk.exists || disk.content != "one" {
 		t.Fatalf("delete after refresh of an edited file: %v", err)
 	}
 
@@ -252,39 +252,59 @@ func TestManagedFileLifecycle(t *testing.T) {
 	}
 }
 
-func TestManagedFileLegacyDigestUpdateSkipsWrite(t *testing.T) {
+func TestManagedFileLegacyDigest(t *testing.T) {
 	const path = "/srv/www/page.html"
 	const content = "one"
 	disk := &fakeDisk{path: path, content: content + "\n", stat: "640 www-data www-data", exists: true}
 	fake := disk.runner()
 	w := pageFile(content)
-	w.reloadSystemd = true
-	disk.write(fake, w)
+	changed := pageFile("two")
+	disk.write(fake, changed)
 	s := configured(t, fake)
 
 	inputs := fileInputs(path, content).Set("reloadSystemd", property.New(true))
+	legacyDigest := digestOf([]byte(content))
 	legacyState := property.NewMap(map[string]property.Value{
 		"path": property.New(path), "mode": property.New(w.mode),
 		"owner": property.New(w.owner), "group": property.New(w.group),
-		"reloadSystemd": property.New(true), "digest": property.New(digestOf([]byte(content))),
+		"reloadSystemd": property.New(true), "digest": property.New(legacyDigest),
 	})
-
-	diff, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: legacyState, OldInputs: inputs, Inputs: inputs})
-	if err != nil || !diff.HasChanges || len(diff.DetailedDiff) != 1 || diff.DetailedDiff["content"].Kind != p.Update {
-		t.Fatalf("legacy digest diff: %+v %v", diff, err)
+	normalizedDigest := digestOf([]byte(content + "\n"))
+	for _, state := range []property.Map{legacyState, legacyState.Set("digest", property.New(normalizedDigest))} {
+		diff, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: state, OldInputs: inputs, Inputs: inputs})
+		if err != nil || diff.HasChanges {
+			t.Fatalf("unchanged content diff: %+v %v", diff, err)
+		}
+		read, err := s.Read(p.ReadRequest{ID: path, Urn: fileURN, Properties: state, Inputs: inputs})
+		if err != nil || read.Properties.Get("digest").AsString() != state.Get("digest").AsString() {
+			t.Fatalf("refresh changed the digest representation: %+v %v", read, err)
+		}
+		more := inputs.Set("content", property.New(content+"\n\n"))
+		diff, err = s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: read.Properties, OldInputs: inputs, Inputs: more})
+		if err != nil || !diff.HasChanges || diff.DetailedDiff["content"].Kind != p.Update {
+			t.Fatalf("real change diff: %+v %v", diff, err)
+		}
 	}
-	updated, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: legacyState, Inputs: inputs})
+
+	disk.content = content
+	drifted, err := s.Read(p.ReadRequest{ID: path, Urn: fileURN, Properties: legacyState, Inputs: inputs})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if disk.writes != 0 || len(fake.Calls) != 1 || fake.Calls[0].Command != asRoot(readFileCommand(path)) {
-		t.Fatalf("updating the digest should only read the file, got %v", fake.Commands())
+	diff, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: drifted.Properties, OldInputs: inputs, Inputs: inputs})
+	if err != nil || !diff.HasChanges || diff.DetailedDiff["content"].Kind != p.Update {
+		t.Fatalf("missing newline on a legacy file did not report drift: %+v %v", diff, err)
 	}
-	if got, want := updated.Properties.Get("digest").AsString(), digestOf([]byte(content+"\n")); got != want {
-		t.Fatalf("updated digest %s, want %s", got, want)
+	disk.content = content + "\n"
+
+	updated, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: legacyState, OldInputs: inputs, Inputs: inputs})
+	if err != nil || updated.Properties.Get("digest").AsString() != legacyDigest || disk.writes != 0 {
+		t.Fatalf("no-op update changed the legacy digest or wrote the file: %+v %v, writes %d", updated, err, disk.writes)
 	}
-	if diff, err := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: updated.Properties, OldInputs: inputs, Inputs: inputs}); err != nil || diff.HasChanges {
-		t.Fatalf("diff after updating the digest: %+v %v", diff, err)
+	nextInputs := fileInputs(path, changed.content)
+	updated, err = s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: legacyState, OldInputs: inputs, Inputs: nextInputs})
+	if err != nil || updated.Properties.Get("digest").AsString() != digestOf([]byte("two\n")) || disk.writes != 1 {
+		t.Fatalf("real update should write and record the normalized digest: %+v %v, writes %d", updated, err, disk.writes)
 	}
 }
 

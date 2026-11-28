@@ -55,12 +55,14 @@ class ManagedFile extends pulumi.CustomResource {
             resourceInputs["path"] = args ? args.path : undefined;
             resourceInputs["reloadSystemd"] = (_d = (args ? args.reloadSystemd : undefined)) !== null && _d !== void 0 ? _d : false;
             resourceInputs["digest"] = undefined /*out*/;
+            resourceInputs["observedWithoutFinalNewline"] = undefined /*out*/;
             resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         else {
             resourceInputs["digest"] = undefined /*out*/;
             resourceInputs["group"] = undefined /*out*/;
             resourceInputs["mode"] = undefined /*out*/;
+            resourceInputs["observedWithoutFinalNewline"] = undefined /*out*/;
             resourceInputs["owner"] = undefined /*out*/;
             resourceInputs["path"] = undefined /*out*/;
             resourceInputs["reloadSystemd"] = undefined /*out*/;

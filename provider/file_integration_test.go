@@ -283,3 +283,28 @@ func TestManagedFileRefreshWithNormalizedNewline(t *testing.T) {
 		t.Fatalf("diff after refresh: %+v, %v", diff, err)
 	}
 }
+
+func TestManagedFileDeleteChecksLegacyDigestAgainstWrittenBytes(t *testing.T) {
+	d := startDebian(t)
+	s := realServer(t, d)
+	const path = "/etc/demo/legacy.conf"
+	const content = "A=$B"
+	inputs := property.NewMap(map[string]property.Value{"path": property.New(path), "content": property.New(content)})
+	created, err := s.Create(p.CreateRequest{Urn: fileURN, Properties: inputs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := created.Properties.Delete("writtenDigest").Set("digest", property.New(digestOf([]byte(content))))
+	onMachine(t, d, "printf '%s' 'A=$B' | sudo tee "+path+" >/dev/null")
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: legacy, OldInputs: inputs}); err != nil {
+		t.Fatal(err)
+	}
+	if got := onMachine(t, d, "cat "+path); got != content {
+		t.Fatalf("delete changed the edited file: %q", got)
+	}
+	onMachine(t, d, "printf '%s\\n' 'A=$B' | sudo tee "+path+" >/dev/null")
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: legacy, OldInputs: inputs}); err != nil {
+		t.Fatal(err)
+	}
+	onMachine(t, d, "test ! -e "+path)
+}
