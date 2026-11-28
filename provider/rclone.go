@@ -145,7 +145,10 @@ func rcloneCreatePayload(remote, typ string, settings, secrets map[string]string
 
 // A private, per-call CA authenticates both ends of the loopback connection. The
 // command reads the request from stdin and cleans up the daemon and its credentials.
-const rcloneCreateViaRC = `umask 077
+const rcloneCreateViaRC = `command -v openssl >/dev/null 2>&1 || exit 90
+command -v curl >/dev/null 2>&1 || exit 91
+command -v rclone >/dev/null 2>&1 || exit 92
+umask 077
 work=$(mktemp -d) || exit 1
 pid=
 cleanup() {
@@ -172,9 +175,9 @@ while kill -0 "$pid" 2>/dev/null; do
 	if [ -n "$url" ]; then
 		# Keep any request diagnostics off the filesystem while the daemon is active.
 		rm -f -- "$work/log" || exit 1
-		curl -qfsS --noproxy '*' --cacert "$work/cert" --cert "$work/cert" --key "$work/key" \
-			-H 'Content-Type: application/json' --data-binary @- "$url/config/create" >/dev/null
-		exit $?
+		curl -qfsS --connect-timeout 5 --max-time 60 --noproxy '*' --cacert "$work/cert" --cert "$work/cert" --key "$work/key" \
+			-H 'Content-Type: application/json' --data-binary @- "$url/config/create" >/dev/null || exit 1
+		exit 0
 	fi
 	attempt=$((attempt + 1))
 	[ "$attempt" -lt 100 ] || exit 1
@@ -210,10 +213,18 @@ func createRemote(ctx context.Context, m *machine, config string, args RcloneRem
 	if err != nil {
 		return fmt.Errorf("rclone config create failed on %s: %w", m.describe(), err)
 	}
-	if code != 0 {
+	switch code {
+	case 0:
+		return nil
+	case 90:
+		return fmt.Errorf("openssl is not installed on %s", m.describe())
+	case 91:
+		return fmt.Errorf("curl is not installed on %s", m.describe())
+	case 92:
+		return fmt.Errorf("rclone is not installed on %s", m.describe())
+	default:
 		return fmt.Errorf("rclone config create failed on %s (exit %d)", m.describe(), code)
 	}
-	return nil
 }
 
 func settleRemote(ctx context.Context, m *machine, args RcloneRemoteArgs) (RcloneRemoteState, error) {

@@ -64,10 +64,51 @@ func TestRcloneCreateCommand(t *testing.T) {
 		!strings.Contains(got, "/config/create") {
 		t.Fatal("command did not send stdin to rclone's config API")
 	}
+	for _, required := range []string{
+		`command -v openssl >/dev/null 2>&1 || exit 90`,
+		`command -v curl >/dev/null 2>&1 || exit 91`,
+		`command -v rclone >/dev/null 2>&1 || exit 92`,
+		`umask 077`,
+		`trap cleanup EXIT`,
+		`--rc-addr 127.0.0.1:0`,
+		`--rc-client-ca "$work/cert"`,
+		`--cert "$work/cert" --key "$work/key"`,
+		`--cacert "$work/cert"`,
+		`--connect-timeout 5 --max-time 60`,
+	} {
+		if !strings.Contains(got, required) {
+			t.Errorf("create command is missing %q", required)
+		}
+	}
 	got = rcloneCreateCommand("rclone.conf", "a", "s3", false)
 	want := "mkdir -p 'rclone.conf' && rclone --config 'rclone.conf' config create 'a' 's3'  --obscure --non-interactive >/dev/null"
 	if got != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestRcloneCreateReportsMissingTools(t *testing.T) {
+	for _, tc := range []struct {
+		tool string
+		code int
+	}{
+		{"openssl", 90},
+		{"curl", 91},
+		{"rclone", 92},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			fake := remotetest.New()
+			fake.When(func(c string) bool { return strings.Contains(c, "/config/create") }, func(string) remotetest.Reply {
+				return remotetest.Reply{Code: tc.code}
+			}, 1)
+			m := &machine{runner: fake, cfg: remote.Config{Escalation: "none", User: "user", Address: "host"}}
+			args := RcloneRemoteArgs{Remote: "archive", Type: "sftp", Secrets: map[string]string{"pass": "fixture"}}
+			err := createRemote(context.Background(), m, rcloneDefaultConfig, args)
+			want := tc.tool + " is not installed on user@host"
+			if err == nil || err.Error() != want {
+				t.Fatalf("got %v, want %q", err, want)
+			}
+		})
 	}
 }
 
@@ -150,6 +191,9 @@ func TestRcloneRemoteSecretTransport(t *testing.T) {
 func TestRcloneCreateCommandWithRclone(t *testing.T) {
 	for _, tool := range []string{"rclone", "curl", "openssl"} {
 		if _, err := exec.LookPath(tool); err != nil {
+			if os.Getenv("RCLONE_REQUIRE_TOOLS") != "" {
+				t.Fatalf("%s is required: %v", tool, err)
+			}
 			t.Skipf("%s is unavailable", tool)
 		}
 	}
@@ -249,5 +293,28 @@ esac`})
 				t.Fatalf("unexpected delete attempt: %v", fake.Commands())
 			}
 		})
+	}
+}
+
+func TestRcloneRemoteDeleteRedactsConnectionError(t *testing.T) {
+	const config = "/srv/rclone.conf"
+	const remote = "backup"
+	const credential = "test-credential"
+	command := "rclone --config " + shellQuote(config) + " config "
+	fake := remotetest.New().
+		On(asRoot(command+"dump"), remotetest.Reply{Stdout: `{"backup":{"type":"sftp"}}`}).
+		On(asRoot(command+"delete "+shellQuote(remote)), remotetest.Reply{Err: errors.New(credential)})
+
+	state := property.NewMap(map[string]property.Value{
+		"config": property.New(config), "remote": property.New(remote), "type": property.New("sftp"),
+		"settings": property.New(property.NewMap(nil)), "secrets": property.New(property.NewMap(nil)),
+	})
+	err := configuredServer(t, fake).Delete(p.DeleteRequest{ID: remote, Urn: urnOf("RcloneRemote", remote), Properties: state})
+	requireStepError(t, err, "the connection failed")
+	if strings.Contains(err.Error(), credential) {
+		t.Fatal("config delete error exposed a credential")
+	}
+	if !fake.Ran("config delete") {
+		t.Fatal("the config delete command did not run")
 	}
 }
