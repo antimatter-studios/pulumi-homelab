@@ -1,0 +1,19 @@
+#!/bin/sh
+# Stands in for the kernel and udev. partx -a|-u --nr N DISK: partition N, copied out of the image
+# into DISK<N>, linked at /dev/disk/by-partlabel/<name>. partx -d --nr N DISK: both removed.
+echo "partx $*" >> /tmp/calls.log
+op=$1 n=$3 disk=$4 node=$4$3
+case $op in
+  -a | -u)
+    line=$(sfdisk --dump "$disk" | grep "^$node :") || { echo "partx: $disk: no partition $n" >&2; exit 1; }
+    start=$(echo "$line" | sed -n 's/.*start= *\([0-9]*\).*/\1/p')
+    size=$(echo "$line" | sed -n 's/.*size= *\([0-9]*\).*/\1/p')
+    name=$(echo "$line" | sed -n 's/.*name="\([^"]*\)".*/\1/p')
+    [ "$op" = -a ] && [ -e "$node" ] && { echo "partx: $disk: error adding partition $n" >&2; exit 1; }
+    dd if="$disk" of="$node" bs=512 skip="$start" count="$size" conv=sparse status=none
+    if [ -n "$name" ]; then mkdir -p /dev/disk/by-partlabel && ln -sfn "$node" "/dev/disk/by-partlabel/$name"; fi ;;
+  -d)
+    for l in /dev/disk/by-partlabel/*; do [ "$(readlink "$l")" = "$node" ] && rm -f "$l"; done
+    rm -f "$node" ;;
+  *) exit 1 ;;
+esac

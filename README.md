@@ -483,6 +483,7 @@ exist — and every command exits zero.
 | | Arguments | Reads from |
 |---|---|---|
 | **`Swap`** | `enabled` `sizeMb?` `path?` | `/proc/swaps`, `/etc/fstab`, the `dphys-swapfile` unit |
+| **`SwapPartition`** | `disk` `name` `sizeGib` `priority` `start?` `discard?` `persistent?` `deletePartition?` | `sfdisk --json` of every disk, `blkid -p`, `swapon --show`, its own swap unit |
 | **`Journald`** | `settings` `file?` | `systemd-analyze cat-config` |
 | **`KernelCmdline`** | `flags` `path?` | the boot partition's `cmdline.txt` |
 | **`SambaShare`** | `share` `path` `settings?` `config?` | the section in `smb.conf`, plus `testparm` for validity |
@@ -648,6 +649,30 @@ new homelab.Swap('none', { enabled: false }, { provider: machine });
 Which is why turning swap off means `swapoff -a`, *and* masking `dphys-swapfile` rather than merely
 disabling it (an `apt upgrade` re-enables a disabled unit), *and* commenting the `fstab` lines
 rather than deleting them, so the machine keeps the record of what it used to do.
+
+`SwapPartition` is swap on a partition of its own, found by its GPT name (which is also the swap
+label and the id), so the drives being enumerated in another order after a boot changes nothing.
+It makes the partition only when no disk has that name, in free space only — after the last
+partition, or at a `start` sector — and refuses anything that would overlap, any disk that is not
+already GPT, and a partition with that name but another size, place or type. It formats only a
+partition with no signature at all, so a partition that holds anything is refused, never wiped. It
+partitions under the disk's lock and checks that the table is still the one it planned against,
+so two of them on one disk never take the same space. Boot is a systemd swap unit per partition
+(`What=/dev/disk/by-partlabel/<name>`), not an fstab line, so several never edit one shared file.
+Delete turns the swap off — but not when its pages would not fit in the memory available — and
+removes the unit; the partition stays unless `deletePartition` is set. A change of size, disk or
+start would need the partition rebuilt, so the diff refuses it unless `deletePartition` is already
+in the state. An import reads the declaration back with no change; `persistent: false` adopts a
+partition that something else still enables at boot, and flipping it on later writes the unit
+without touching the running swap:
+
+```ts
+new homelab.SwapPartition('swap-nvme0', {
+  disk: '/dev/nvme0n1', name: 'swap-nvme0', sizeGib: 32, priority: 10, discard: 'once',
+}, { provider: machine, import: 'swap-nvme0' });
+```
+
+Next to it, declare `Swap` with `otherSwap: 'allow'`, which leaves swap it does not own alone.
 
 `Journald` has the same shape from the other end. It writes a drop-in under
 `journald.conf.d/`, but a drop-in sorting later wins — so it reports `effective`, parsed from

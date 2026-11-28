@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stands in for swapoff, on the table swapon keeps.
+echo "swapoff $*" >> /tmp/calls.log
+dev=$(readlink -f "$1")
+grep -q "^$dev " /run/swaps 2>/dev/null || { echo "swapoff: $dev: swapoff failed: Invalid argument" >&2; exit 255; }
+grep -v "^$dev " /run/swaps > /run/swaps.new; mv /run/swaps.new /run/swaps

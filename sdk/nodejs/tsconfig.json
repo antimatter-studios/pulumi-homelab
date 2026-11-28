@@ -45,6 +45,7 @@
         "sshdConfig.ts",
         "sudoRule.ts",
         "swap.ts",
+        "swapPartition.ts",
         "symlink.ts",
         "systemdInstance.ts",
         "systemdUnit.ts",
