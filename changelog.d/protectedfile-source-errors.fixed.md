@@ -1,0 +1,1 @@
+- Keep local ProtectedFile source output out of errors while preserving the command exit status.
