@@ -3,6 +3,7 @@ package homelab
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -186,6 +187,25 @@ func TestFstabEntryReadFailureAndAbsence(t *testing.T) {
 	}
 }
 
+func TestFstabEntryReadNormalizesMountTargets(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "fstab")
+	const target = "/mnt//demo/."
+	writeProbeFile(t, file, "src "+target+" ext4 defaults 0 0\n")
+	runner := shellStepRunner(t, map[string]string{
+		"cat": "", "findmnt": `echo '{"filesystems":[{"target":"/mnt/demo/","source":"src","fstype":"ext4","options":"rw"}]}'`,
+	})
+	read, err := configured(t, runner).Read(p.ReadRequest{ID: target, Urn: urnOf("FstabEntry", "demo"), Properties: props(map[string]property.Value{
+		"file": property.New(file), "target": property.New(target),
+	})})
+	if err != nil || read.ID != target {
+		t.Fatalf("read returned ID %q, %v", read.ID, err)
+	}
+	mounted := read.Properties.Get("mounted")
+	if !mounted.IsString() || mounted.AsString() != "src ext4 rw" {
+		t.Fatalf("mounted: %v", mounted)
+	}
+}
+
 func TestUserDeleteFailureAndAbsence(t *testing.T) {
 	req := p.DeleteRequest{ID: "demo", Urn: urnOf("User", "demo"), Properties: props(map[string]property.Value{
 		"name": property.New("demo"), "uid": property.New(1000.0), "shell": property.New("/bin/sh"),
@@ -236,6 +256,9 @@ func TestSystemdInstanceDeleteFailureAndAbsence(t *testing.T) {
 }
 
 func TestSystemdUnitDeleteFailureAndAbsence(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses Linux file utilities, including mv -T")
+	}
 	for _, tc := range []struct{ name, failure string }{
 		{"disable fails", "disable"}, {"reload fails and restores file", "daemon-reload"}, {"file is absent", ""}, {"file changed", ""},
 	} {
@@ -248,21 +271,21 @@ func TestSystemdUnitDeleteFailureAndAbsence(t *testing.T) {
 			} else if tc.name == "file changed" {
 				writeProbeFile(t, path, "[Service]\nExecStart=/bin/false\n")
 			}
+			show := "printf 'LoadState=not-found\\nActiveState=inactive\\n'"
+			if tc.name != "file is absent" {
+				show = "echo FragmentPath=" + shellQuote(path)
+			}
 			runner := shellStepRunner(t, map[string]string{
-				"systemctl": "case $1 in show) echo FragmentPath=" + shellQuote(path) + " ;; " + tcStep(tc.failure) + "*) exit 0 ;; esac",
-				"sha256sum": "", "mktemp": "", "mv": "", "rmdir": "", "rm": "",
+				"systemctl": "case $1 in show) " + show + " ;; " + tcStep(tc.failure) + "*) exit 0 ;; esac",
+				"realpath":  "", "sha256sum": "", "mktemp": "", "mv": "", "rmdir": "", "rm": "",
 			})
-			state := props(map[string]property.Value{
-				"name": property.New("demo"), "unit": property.New(unit), "directory": property.New(dir),
-				"enabled": property.New(true), "started": property.New(true), "mode": property.New("0644"), "unitFileState": property.New("enabled"),
-			})
-			err := configured(t, runner).Delete(p.DeleteRequest{ID: "demo", Urn: urnOf("SystemdUnit", "demo"), Properties: state})
+			err := configured(t, runner).Delete(testSystemdUnitDeleteRequest(dir, unit))
 			if tc.failure != "" {
 				requirePrivateCommandError(t, err, "systemctl "+tc.failure, "17")
 				if content, err := os.ReadFile(path); err != nil || string(content) != unit {
 					t.Fatalf("unit after failed delete: %q, %v", content, err)
 				}
-			} else if err != nil || (tc.name == "file is absent" && runner.Ran("systemctl")) {
+			} else if err != nil || (tc.name == "file is absent" && (runner.Ran("systemctl disable") || runner.Ran("systemctl daemon-reload"))) {
 				t.Fatalf("delete returned %v, commands: %v", err, runner.Commands())
 			}
 			if tc.name == "file changed" {
@@ -271,6 +294,78 @@ func TestSystemdUnitDeleteFailureAndAbsence(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func testSystemdUnitDeleteRequest(directory, unit string) p.DeleteRequest {
+	state := props(map[string]property.Value{
+		"name": property.New("demo"), "unit": property.New(unit), "directory": property.New(directory),
+		"enabled": property.New(true), "started": property.New(true), "mode": property.New("0644"), "unitFileState": property.New("enabled"),
+	})
+	return p.DeleteRequest{ID: "demo", Urn: urnOf("SystemdUnit", "demo"), Properties: state}
+}
+
+func TestSystemdUnitDeleteCanonicalPathAndLegacyDigest(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses Linux file utilities, including mv -T")
+	}
+	const unit = "[Service]\nExecStart=/bin/true\n"
+	for _, tc := range []struct {
+		name, recorded, onDisk string
+		alias                  bool
+	}{
+		{"symlink alias and trailing slashes", unit, unit, true},
+		{"legacy state without final newline", strings.TrimSuffix(unit, "\n"), unit, false},
+		{"on-disk file without final newline", strings.TrimSuffix(unit, "\n"), strings.TrimSuffix(unit, "\n"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			file := filepath.Join(dir, "demo.service")
+			writeProbeFile(t, file, tc.onDisk)
+			directory := dir
+			if tc.alias {
+				directory = filepath.Join(t.TempDir(), "lib")
+				if err := os.Symlink(dir, directory); err != nil {
+					t.Fatal(err)
+				}
+				directory += "//"
+			}
+			log := filepath.Join(t.TempDir(), "systemctl.log")
+			runner := shellStepRunner(t, map[string]string{
+				"systemctl": "case $1 in show) echo FragmentPath=" + shellQuote(file) + " ;; " +
+					"disable|daemon-reload) echo \"$1\" >> " + shellQuote(log) + " ;; *) exit 98 ;; esac",
+				"realpath": "", "sha256sum": "", "mktemp": "", "mv": "", "rmdir": "", "rm": "",
+			})
+			if err := configured(t, runner).Delete(testSystemdUnitDeleteRequest(directory, tc.recorded)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(file); !os.IsNotExist(err) {
+				t.Fatalf("unit still present: %v", err)
+			}
+			if got, err := os.ReadFile(log); err != nil || string(got) != "disable\ndaemon-reload\n" {
+				t.Fatalf("systemctl calls: %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestSystemdUnitDeleteMissingFragmentStillStopsLoadedUnit(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses GNU realpath options")
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "demo.service")
+	log := filepath.Join(t.TempDir(), "systemctl.log")
+	runner := shellStepRunner(t, map[string]string{
+		"systemctl": "case $1 in show) printf 'LoadState=loaded\\nActiveState=active\\nFragmentPath=%s\\n' " + shellQuote(file) +
+			" ;; disable|daemon-reload) echo \"$1\" >> " + shellQuote(log) + " ;; *) exit 98 ;; esac",
+		"realpath": "",
+	})
+	if err := configured(t, runner).Delete(testSystemdUnitDeleteRequest(dir, "[Service]\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(log); err != nil || string(got) != "disable\ndaemon-reload\n" {
+		t.Fatalf("systemctl calls: %q, %v", got, err)
 	}
 }
 

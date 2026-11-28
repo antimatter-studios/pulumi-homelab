@@ -1,0 +1,3 @@
+- User deletion warns and leaves the account in place when its recorded UID is missing or differs from the local account's UID.
+- SystemdUnit deletion warns and leaves the unit in place when its file digest does not match or systemd loaded it from a different path.
+- Swap deletion warns and leaves a live mask in place unless it matches the recorded state.

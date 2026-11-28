@@ -280,46 +280,70 @@ func (SystemdUnit) Delete(ctx context.Context, req infer.DeleteRequest[SystemdUn
 	file := unitPath(req.ID, directory)
 	status, err := m.commandResult(ctx, "test unit file", m.escalate(filePresenceFunction+
 		"file_present "+shellQuote(file)+`; case $? in 0) echo present ;; 1) echo absent ;; *) exit 2 ;; esac`))
-	if err != nil || strings.TrimSpace(status.out) == "absent" {
+	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
 
 	unit := shellQuote(req.ID + ".service")
-	shown, err := m.commandResult(ctx, "systemctl show", m.escalate("systemctl show --property=FragmentPath -- "+unit))
+	shown, err := m.commandResult(ctx, "systemctl show", m.escalate("systemctl show --property=FragmentPath --property=LoadState --property=ActiveState -- "+unit))
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	fragment := systemd.ParseShow(shown.out)["FragmentPath"]
-	if fragment != "" && fragment != file {
-		warnRetained(ctx, file, "systemd loaded the unit from a different path")
-		return infer.DeleteResponse{}, nil
+	shownProperties := systemd.ParseShow(shown.out)
+	fragment := shownProperties["FragmentPath"]
+	if fragment != "" {
+		// Resolve both paths on the target. The last component may be missing
+		// even though systemd still remembers the fragment it loaded.
+		paths, err := m.commandResult(ctx, "realpath", m.escalate("realpath -mz -- "+shellQuote(file)+" "+shellQuote(fragment)))
+		if err != nil {
+			return infer.DeleteResponse{}, err
+		}
+		canonical := strings.Split(paths.out, "\x00")
+		if len(canonical) != 3 || canonical[0] == "" || canonical[1] == "" || canonical[2] != "" {
+			return infer.DeleteResponse{}, fmt.Errorf("realpath on %s returned invalid unit paths", m.describe())
+		}
+		if canonical[0] != canonical[1] {
+			warnRetained(ctx, file, "systemd loaded the unit from a different path")
+			return infer.DeleteResponse{}, nil
+		}
 	}
-	digest := ""
+	disable := ""
+	if fragment != "" && !(shownProperties["LoadState"] == "not-found" && shownProperties["ActiveState"] == "inactive") {
+		disable = "systemctl disable --now -- " + unit
+	}
+	if strings.TrimSpace(status.out) == "absent" {
+		return infer.DeleteResponse{}, reloadMissingUnit(ctx, m, disable)
+	}
+
+	digest, alternateDigest := "", ""
 	content := req.State.Unit
 	if raw, ok := infer.GetRawRequest[p.DeleteRequest](ctx); ok && raw.OldInputs.Get("unit").IsString() {
 		expected := raw.OldInputs.Get("unit").AsString()
 		// heredoc adds a final newline to the supplied unit text.
-		if content != expected && (strings.HasSuffix(expected, "\n") || content != expected+"\n") {
+		if content != expected && content != expected+"\n" && content+"\n" != expected {
 			content = ""
 		}
 	}
 	if content != "" {
 		digest = digestOf([]byte(content))
+		if !strings.HasSuffix(content, "\n") {
+			alternateDigest = digestOf([]byte(content + "\n"))
+		}
 	}
 	// Keep the staged file available for restoration if the reload fails.
 	before := ""
-	if fragment == file {
-		before = "systemctl disable --now -- " + unit + statusForUnitDelete(15)
+	if disable != "" {
+		before = disable + statusForUnitDelete(15)
 	}
 	after := "systemctl daemon-reload" + statusForUnitDelete(16)
-	remove := stagedFileDeleteCommand(file, &digest, before, after)
+	remove := stagedFileDeleteCommand(file, digest, alternateDigest, before, after)
 	result, err := m.commandResult(ctx, "sha256sum / mktemp / mv / rm", m.escalate(remove), 9, 10, 11, 14, 15, 16)
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
 	switch result.code {
 	case 9:
-		return infer.DeleteResponse{}, nil
+		return infer.DeleteResponse{}, reloadMissingUnit(ctx, m, disable)
 	case 10, 11, 14:
 		warnRetained(ctx, file, "its contents cannot be verified against state")
 		return infer.DeleteResponse{}, nil
@@ -336,6 +360,18 @@ func (SystemdUnit) Delete(ctx context.Context, req infer.DeleteRequest[SystemdUn
 		return infer.DeleteResponse{}, fmt.Errorf("%s on %s failed (exit %d)", name, m.describe(), code)
 	}
 	return infer.DeleteResponse{}, nil
+}
+
+// A removed fragment can still have a loaded unit with active processes.
+func reloadMissingUnit(ctx context.Context, m *machine, disable string) error {
+	if disable == "" {
+		return nil
+	}
+	if _, err := m.commandResult(ctx, "systemctl disable --now", m.escalate(disable)); err != nil {
+		return err
+	}
+	_, err := m.commandResult(ctx, "systemctl daemon-reload", m.escalate("systemctl daemon-reload"))
+	return err
 }
 
 // Keep systemctl's status separate from the file-removal protocol's exit codes.

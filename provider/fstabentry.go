@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path"
 	"strconv"
 	"strings"
 
@@ -112,8 +113,9 @@ func readFstabEntry(ctx context.Context, m *machine, target, file string) (fstab
 		return fstabRead{}, errors.New("findmnt returned an invalid mount table")
 	}
 	var matches []string
+	mountTarget := path.Clean(target)
 	for _, mount := range table.Filesystems {
-		if mount.Target == target {
+		if path.Clean(mount.Target) == mountTarget {
 			matches = append(matches, strings.Join([]string{mount.Source, mount.Fstype, mount.Options}, " "))
 		}
 	}
