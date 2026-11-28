@@ -68,18 +68,27 @@ type hostnameRead struct {
 func hostnameReadCommand(hostsPath string) string {
 	return "hostnamectl --static 2>/dev/null || cat /etc/hostname 2>/dev/null || true; " +
 		"echo " + shellQuote(hostnameMark+"now") + "; hostname 2>/dev/null || true; " +
-		"echo " + shellQuote(hostnameMark+"hosts") + "; cat " + shellQuote(hostsPath) + " 2>/dev/null || true"
+		"echo " + shellQuote(hostnameMark+"hosts") + "; LC_ALL=C cat -- " + shellQuote(hostsPath)
 }
 
 func readHostname(ctx context.Context, m *machine, hostsPath string) (hostnameRead, error) {
-	asked, err := m.ask(ctx, m.escalate(hostnameReadCommand(hostsPath)))
+	command := m.escalate(hostnameReadCommand(hostsPath))
+	asked, err := m.ask(ctx, command)
 	if err != nil {
-		return hostnameRead{}, err
-	}
-	if asked.code != 0 {
-		return hostnameRead{}, fmt.Errorf("could not read the hostname on %s: %s", m.describe(), jscompat.Trim(asked.err))
+		return hostnameRead{}, fmt.Errorf("`%s` failed on %s (exit status unavailable): %w", command, m.describe(), err)
 	}
 	found := hosts.ParseHostnameOutput(asked.out)
+	if asked.code != 0 {
+		// A failed existence test can also mean a permissions or I/O error.
+		// Check the single-file cat diagnostic in the fixed C locale instead.
+		diagnostic := strings.TrimSuffix(asked.err, "\n")
+		if asked.code != 1 || !strings.HasSuffix(asked.out, hostnameMark+"hosts\n") ||
+			!strings.HasPrefix(diagnostic, "cat: ") ||
+			!strings.HasSuffix(diagnostic, ": No such file or directory") || strings.Contains(diagnostic, "\n") {
+			_, err := m.check(command, asked)
+			return hostnameRead{}, err
+		}
+	}
 	line, _ := hosts.HostsName(found.HostsFile)
 	return hostnameRead{HostnameOutput: found, hostsLine: line}, nil
 }
@@ -107,10 +116,7 @@ func settleHostname(ctx context.Context, m *machine, a HostnameArgs) (HostnameSt
 		return HostnameState{}, err
 	}
 	renaming := before.Static != a.Name
-	current, err := m.must(ctx, m.escalate("cat "+shellQuote(hostsPath)+" 2>/dev/null || true"))
-	if err != nil {
-		return HostnameState{}, err
-	}
+	current := before.HostsFile
 	updated := hosts.SetHostsName(current, a.Name, domain)
 	if command := hostnameSettleCommand(a.Name, hostsPath, current, updated, renaming); command != "" {
 		if _, err := m.must(ctx, m.escalate(command)); err != nil {

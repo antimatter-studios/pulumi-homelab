@@ -93,12 +93,12 @@ type HostnameOutput struct {
 
 // ParseHostnameOutput splits the one reply at its two distinct markers.
 func ParseHostnameOutput(out string) HostnameOutput {
-	parts := strings.Split(out, mark+"now\n")
+	parts := strings.SplitN(out, mark+"now\n", 2)
 	fixed, rest := parts[0], ""
 	if len(parts) > 1 {
 		rest = parts[1]
 	}
-	parts = strings.Split(rest, mark+"hosts\n")
+	parts = strings.SplitN(rest, mark+"hosts\n", 2)
 	now, file := parts[0], ""
 	if len(parts) > 1 {
 		file = parts[1]
