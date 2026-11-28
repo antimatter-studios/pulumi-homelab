@@ -11,7 +11,11 @@ import (
 func deleteCheckout(ctx context.Context, m *machine, path string) error {
 	probe := "p=" + shellQuote(path) + `
 set -e
-if [ ! -e "$p" ] && [ ! -L "$p" ]; then exit 0; fi
+if [ ! -e "$p" ] && [ ! -L "$p" ]; then exit 9; fi
+if [ ! -d "$p" ] || [ -L "$p" ] || [ ! -e "$p/.git" ]; then
+    printf 'the path no longer holds a Git checkout.\n'
+    exit 0
+fi
 uid=$(stat -Lc %u -- "$p")
 as_owner() {
  if [ "$(id -u)" = "$uid" ]; then
@@ -20,23 +24,27 @@ as_owner() {
   runuser -u "$(stat -Lc %U -- "$p")" -- env GIT_OPTIONAL_LOCKS=0 git -C "$p" "$@"
  fi
 }
-changes=$(as_owner status --porcelain)
+changes=$(as_owner status --porcelain --untracked-files=all)
 stashes=$(as_owner stash list)
-commits=$(as_owner log --branches --not --remotes --oneline)
+commits=$(as_owner log HEAD --branches --not --remotes --oneline)
 if [ -n "$changes" ]; then printf 'Working tree changes:\n%s\n' "$changes"; fi
 if [ -n "$stashes" ]; then printf 'Stashes:\n%s\n' "$stashes"; fi
-if [ -n "$commits" ]; then printf 'Unpushed branch commits:\n%s\n' "$commits"; fi
+if [ -n "$commits" ]; then printf 'Unpushed commits:\n%s\n' "$commits"; fi
 `
-	output, err := m.must(ctx, m.escalate(probe))
+	command := m.escalate(probe)
+	status, err := m.ask(ctx, command)
 	if err != nil {
-		return fmt.Errorf("refusing to delete the checkout at %s on %s: %w", path, m.describe(), err)
+		return err
 	}
-	if findings := jscompat.Trim(output); findings != "" {
-		return fmt.Errorf("refusing to delete the checkout at %s on %s: it holds work that exists nowhere else, "+
-			"and deleting it would lose that. Found:\n%s\n"+
-			"Nothing was removed. To proceed, commit the work and push it to the remote, then delete again; or, "+
-			"if the work should go, remove the checkout at %s by hand and delete again.", path, m.describe(), findings, path)
+	if status.code == 9 {
+		return nil
 	}
-	_, err = m.must(ctx, m.escalate("rm -rf "+shellQuote(path)))
-	return err
+	if _, err := m.check(command, status); err != nil {
+		return fmt.Errorf("could not read the checkout at %s: %w", path, err)
+	}
+	if findings := jscompat.Trim(status.out); findings != "" {
+		warnRetained(ctx, path, "the checkout could not be safely removed.\n"+findings)
+		return nil
+	}
+	return guardedDelete(ctx, m, path, "rm -rf -- "+shellQuote(path))
 }

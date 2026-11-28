@@ -33,6 +33,8 @@ type SshTunnel struct {
 	Running provider.TunnelForwardArrayOutput `pulumi:"running"`
 	To      pulumi.StringOutput               `pulumi:"to"`
 	Unit    pulumi.StringOutput               `pulumi:"unit"`
+	// SHA-256 of the unit last written by the provider, used to guard deletion.
+	WrittenDigest pulumi.StringPtrOutput `pulumi:"writtenDigest"`
 }
 
 // NewSshTunnel registers a new resource with the given unique name, arguments, and options.
@@ -221,6 +223,11 @@ func (o SshTunnelOutput) To() pulumi.StringOutput {
 
 func (o SshTunnelOutput) Unit() pulumi.StringOutput {
 	return o.ApplyT(func(v *SshTunnel) pulumi.StringOutput { return v.Unit }).(pulumi.StringOutput)
+}
+
+// SHA-256 of the unit last written by the provider, used to guard deletion.
+func (o SshTunnelOutput) WrittenDigest() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SshTunnel) pulumi.StringPtrOutput { return v.WrittenDigest }).(pulumi.StringPtrOutput)
 }
 
 func init() {

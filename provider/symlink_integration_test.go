@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antimatter-studios/pulumi-homelab/provider/remote"
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 )
@@ -81,4 +82,32 @@ func TestSymlinkRealShell(t *testing.T) {
 		t.Fatalf("read %+v %v", read, err)
 	}
 	d.sh(t, "test -f /opt/bin/t3 && test ! -L /opt/bin/t3")
+}
+
+func TestSymlinkDeleteKeepsRegularFileSwappedInBeforeRename(t *testing.T) {
+	d := startDebianShell(t)
+	d.sh(t, `mkdir /tmp/symlink-race && cd /tmp/symlink-race &&
+ln -s /missing link && printf outside > replacement &&
+cat > mv <<'SH'
+#!/bin/sh
+if [ "$1" = -T ]; then
+    /usr/bin/mv -T -- replacement ./link || exit 1
+fi
+exec /usr/bin/mv "$@"
+SH
+chmod +x mv
+chown -R chris:chris /tmp/symlink-race`)
+	command := "PATH=/tmp/symlink-race:$PATH; export PATH; " + symlinkDeleteCommand("/tmp/symlink-race/link", nil)
+	warnings := captureDeleteWarnings(t)
+	m := &machine{runner: d, cfg: remote.Config{Escalation: "none"}}
+	const path = "/tmp/symlink-race/link"
+	if err := guardedDelete(t.Context(), m, path, command); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, path) || !strings.Contains(log, "restored") {
+		t.Fatalf("delete warning %q", log)
+	}
+	if contents := d.sh(t, "test ! -L /tmp/symlink-race/link && cat /tmp/symlink-race/link"); contents != "outside" {
+		t.Fatalf("replacement contents %q", contents)
+	}
 }

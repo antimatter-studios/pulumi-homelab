@@ -165,18 +165,58 @@ func TestManagedAndProtectedFileRealShell(t *testing.T) {
 	if diff, _ := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: inputs}); !diff.HasChanges {
 		t.Fatal("a hand edit was not drift")
 	}
-	if _, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: inputs}); err != nil {
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err != nil ||
+		onMachine(t, d, "cat "+path) != "edited\n" {
+		t.Fatalf("delete of drifted file: %v", err)
+	}
+	updated, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: inputs})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if got := onMachine(t, d, "cat "+path); got != "A=$B\n" {
 		t.Fatalf("after update %q", got)
 	}
-	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err != nil {
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: updated.Properties}); err != nil {
 		t.Fatal(err)
 	}
 	if got := onMachine(t, d, "ls -A /etc/demo"); got != "" {
 		t.Fatalf("delete left %q", got)
 	}
+
+	t.Run("same-path create-before-delete preserves replacement", func(t *testing.T) {
+		warnings := captureDeleteWarnings(t)
+		old, err := s.Create(p.CreateRequest{Urn: fileURN, Properties: inputs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		newURN := urnOf("ManagedFile", "replacement")
+		newInputs := inputs.Set("content", property.New("replacement\n"))
+		replacement, err := s.Create(p.CreateRequest{Urn: newURN, Properties: newInputs})
+		if err != nil || replacement.ID != old.ID {
+			t.Fatalf("create replacement at the same path: %v, old ID %q, new ID %q", err, old.ID, replacement.ID)
+		}
+		if err := s.Delete(p.DeleteRequest{ID: old.ID, Urn: fileURN, Properties: old.Properties}); err != nil {
+			t.Fatalf("delete old resource: %v", err)
+		}
+		if got := onMachine(t, d, "cat "+path); got != "replacement\n" {
+			t.Fatalf("replacement contents %q", got)
+		}
+		if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, path) ||
+			!strings.Contains(log, "the file changed since the provider wrote it") {
+			t.Fatalf("old-resource delete warning %q", log)
+		}
+		legacy := replacement.Properties.Delete("writtenDigest")
+		if err := s.Delete(p.DeleteRequest{ID: replacement.ID, Urn: newURN, Properties: legacy}); err != nil {
+			t.Fatalf("delete with legacy state: %v", err)
+		}
+		if got := onMachine(t, d, "cat "+path); got != "replacement\n" {
+			t.Fatalf("legacy delete changed the replacement: %q", got)
+		}
+		if err := s.Delete(p.DeleteRequest{ID: replacement.ID, Urn: newURN, Properties: replacement.Properties}); err != nil {
+			t.Fatal(err)
+		}
+		onMachine(t, d, "test ! -e "+path)
+	})
 
 	// ProtectedFile: binary material from an exec source lands byte-exact, private from the first byte
 	const secretPath = "/home/chris/.config/token"
@@ -198,6 +238,29 @@ func TestManagedAndProtectedFileRealShell(t *testing.T) {
 	if diff, err := s.Diff(p.DiffRequest{ID: secretPath, Urn: protectedURN, State: again.Properties, Inputs: pin}); err != nil || diff.HasChanges {
 		t.Fatalf("diff %+v %v", diff, err)
 	}
+
+	t.Run("once preserves a service rotation", func(t *testing.T) {
+		const oncePath = "/home/chris/.config/service-token"
+		once := pin.Set("enforce", property.New("once")).Set("path", property.New(oncePath))
+		created, err := s.Create(p.CreateRequest{Urn: protectedURN, Properties: once})
+		if err != nil || !created.Properties.Get("writtenDigest").IsSecret() {
+			t.Fatalf("create once: %v", err)
+		}
+		onMachine(t, d, "printf rotated > "+oncePath)
+		refreshed, err := s.Read(p.ReadRequest{ID: oncePath, Urn: protectedURN, Inputs: once, Properties: created.Properties})
+		if err != nil || refreshed.Properties.Get("digest").AsString() != seeded {
+			t.Fatalf("read once: %v", err)
+		}
+		if err := s.Delete(p.DeleteRequest{ID: oncePath, Urn: protectedURN, Properties: refreshed.Properties}); err != nil ||
+			onMachine(t, d, "cat "+oncePath) != "rotated" {
+			t.Fatalf("delete of rotated file: %v", err)
+		}
+		onMachine(t, d, `printf '\000\377secret' > `+oncePath)
+		if err := s.Delete(p.DeleteRequest{ID: oncePath, Urn: protectedURN, Properties: refreshed.Properties}); err != nil {
+			t.Fatal(err)
+		}
+		onMachine(t, d, "test ! -e "+oncePath)
+	})
 }
 
 func TestManagedFileRefreshWithNormalizedNewline(t *testing.T) {

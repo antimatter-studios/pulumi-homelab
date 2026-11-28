@@ -59,13 +59,14 @@ type ProtectedFileArgs struct {
 
 // ProtectedFileState is what is kept in state. Nothing in it is the content.
 type ProtectedFileState struct {
-	Path    string `pulumi:"path"`
-	Source  Source `pulumi:"source"`
-	Mode    string `pulumi:"mode"`
-	Owner   string `pulumi:"owner"`
-	Group   string `pulumi:"group"`
-	Enforce string `pulumi:"enforce"`
-	Digest  string `pulumi:"digest"`
+	Path          string  `pulumi:"path"`
+	Source        Source  `pulumi:"source"`
+	Mode          string  `pulumi:"mode"`
+	Owner         string  `pulumi:"owner"`
+	Group         string  `pulumi:"group"`
+	Enforce       string  `pulumi:"enforce"`
+	Digest        string  `pulumi:"digest"`
+	WrittenDigest *string `pulumi:"writtenDigest,optional" provider:"secret"`
 }
 
 func (f *ProtectedFileArgs) Annotate(a infer.Annotator) {
@@ -82,12 +83,17 @@ func (f *ProtectedFileArgs) Annotate(a infer.Annotator) {
 }
 
 func (f *ProtectedFileState) Annotate(a infer.Annotator) {
-	a.Describe(&f.Digest, "SHA-256 of the content under always, and the word \"seeded\" under once. The only thing here derived from the content.")
+	a.Describe(&f.Digest, "SHA-256 of the content under always, and the word \"seeded\" under once.")
+	a.Describe(&f.WrittenDigest, "SHA-256 of the bytes last written by the provider, used to guard deletion.")
 }
 
 func (f *ProtectedFile) Annotate(a infer.Annotator) {
 	a.Describe(&f, "A secret file on the machine, described by where it comes from rather than by what it says.")
 	a.SetToken("index", "ProtectedFile")
+}
+
+func (ProtectedFile) WireDependencies(f infer.FieldSelector, _ *ProtectedFileArgs, state *ProtectedFileState) {
+	f.OutputField(&state.WrittenDigest).AlwaysSecret()
 }
 
 var protectedDefaults = struct{ mode, owner, group, enforce string }{"0600", "root", "root", "once"}
@@ -247,9 +253,11 @@ func (ProtectedFile) Create(ctx context.Context, req infer.CreateRequest[Protect
 	if err != nil {
 		return infer.CreateResponse[ProtectedFileState]{}, err
 	}
+	digest := digestOf(content)
+	w.WrittenDigest = &digest
 	w.Digest = seeded
 	if needsMaterial(w.Enforce) {
-		w.Digest = digestOf(content)
+		w.Digest = digest
 	}
 	if _, err := m.feed(ctx, writeProtectedCommand(w), content); err != nil {
 		return infer.CreateResponse[ProtectedFileState]{}, err
@@ -314,6 +322,7 @@ func (ProtectedFile) Read(ctx context.Context, req infer.ReadRequest[ProtectedFi
 func (ProtectedFile) Update(ctx context.Context, req infer.UpdateRequest[ProtectedFileArgs, ProtectedFileState]) (infer.UpdateResponse[ProtectedFileState], error) {
 	w := wantedProtectedOf(req.Inputs)
 	w.Path = req.ID
+	w.WrittenDigest = req.State.WrittenDigest
 	if !needsMaterial(w.Enforce) {
 		w.Digest = seeded
 	}
@@ -333,6 +342,7 @@ func (ProtectedFile) Update(ctx context.Context, req infer.UpdateRequest[Protect
 		return infer.UpdateResponse[ProtectedFileState]{}, err
 	}
 	w.Digest = digestOf(content)
+	w.WrittenDigest = &w.Digest
 	if _, err := m.feed(ctx, writeProtectedCommand(w), content); err != nil {
 		return infer.UpdateResponse[ProtectedFileState]{}, err
 	}
@@ -374,6 +384,6 @@ func (ProtectedFile) Delete(ctx context.Context, req infer.DeleteRequest[Protect
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate("rm -f "+shell.Quote(req.ID)))
+	_, err = removeWrittenFile(ctx, m, req.ID, req.State.WrittenDigest)
 	return infer.DeleteResponse{}, err
 }

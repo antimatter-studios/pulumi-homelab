@@ -43,6 +43,10 @@ export class ManagedFile extends pulumi.CustomResource {
     public readonly owner!: pulumi.Output<string>;
     public readonly path!: pulumi.Output<string>;
     public readonly reloadSystemd!: pulumi.Output<boolean | undefined>;
+    /**
+     * SHA-256 of the bytes last written by the provider, used to guard deletion.
+     */
+    public /*out*/ readonly writtenDigest!: pulumi.Output<string | undefined>;
 
     /**
      * Create a ManagedFile resource with the given unique name, arguments, and options.
@@ -68,6 +72,7 @@ export class ManagedFile extends pulumi.CustomResource {
             resourceInputs["path"] = args ? args.path : undefined;
             resourceInputs["reloadSystemd"] = (args ? args.reloadSystemd : undefined) ?? false;
             resourceInputs["digest"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         } else {
             resourceInputs["digest"] = undefined /*out*/;
             resourceInputs["group"] = undefined /*out*/;
@@ -75,6 +80,7 @@ export class ManagedFile extends pulumi.CustomResource {
             resourceInputs["owner"] = undefined /*out*/;
             resourceInputs["path"] = undefined /*out*/;
             resourceInputs["reloadSystemd"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         opts = pulumi.mergeOptions(utilities.resourceOptsDefaults(), opts);
         super(ManagedFile.__pulumiType, name, resourceInputs, opts);

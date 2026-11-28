@@ -16,6 +16,8 @@ import (
 type SambaUser struct {
 	pulumi.CustomResourceState
 
+	// Whether the provider added this Samba account, used to guard deletion.
+	Created  pulumi.BoolPtrOutput   `pulumi:"created"`
 	Exists   pulumi.BoolOutput      `pulumi:"exists"`
 	Name     pulumi.StringOutput    `pulumi:"name"`
 	Password pulumi.StringPtrOutput `pulumi:"password"`
@@ -123,6 +125,11 @@ func (o SambaUserOutput) ToSambaUserOutput() SambaUserOutput {
 
 func (o SambaUserOutput) ToSambaUserOutputWithContext(ctx context.Context) SambaUserOutput {
 	return o
+}
+
+// Whether the provider added this Samba account, used to guard deletion.
+func (o SambaUserOutput) Created() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *SambaUser) pulumi.BoolPtrOutput { return v.Created }).(pulumi.BoolPtrOutput)
 }
 
 func (o SambaUserOutput) Exists() pulumi.BoolOutput {

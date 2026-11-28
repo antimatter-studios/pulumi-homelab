@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/antimatter-studios/pulumi-homelab/provider/samba"
 	p "github.com/pulumi/pulumi-go-provider"
@@ -29,6 +30,7 @@ type SambaUserState struct {
 	// know it, and Diff compares it only once a Create or Update has recorded it.
 	Password *string `pulumi:"password,optional" provider:"secret"`
 	Exists   bool    `pulumi:"exists"`
+	Created  *bool   `pulumi:"created,optional"`
 }
 
 func (s *SambaUserArgs) Annotate(a infer.Annotator) {
@@ -36,20 +38,25 @@ func (s *SambaUserArgs) Annotate(a infer.Annotator) {
 	a.Describe(&s.Password, "The samba password.")
 }
 
+func (s *SambaUserState) Annotate(a infer.Annotator) {
+	a.Describe(&s.Created, "Whether the provider added this Samba account, used to guard deletion.")
+}
+
 func (s *SambaUser) Annotate(a infer.Annotator) {
 	a.Describe(&s, "A samba user: a password in samba's database for an existing unix account.")
 	a.SetToken("index", "SambaUser")
 }
 
+const listSambaUsers = "pdbedit -L"
+
 func readSambaUser(ctx context.Context, m *machine, name string) (bool, error) {
-	asked, err := m.ask(ctx, m.escalate("pdbedit -L 2>/dev/null"))
+	users, err := m.must(ctx, m.escalate(listSambaUsers))
 	if err != nil {
 		return false, err
 	}
-	if asked.code != 0 {
-		return false, nil
-	}
-	return slices.Contains(samba.ParseSambaUsers(asked.out), name), nil
+	return slices.ContainsFunc(samba.ParseSambaUsers(users), func(user string) bool {
+		return strings.EqualFold(user, name)
+	}), nil
 }
 
 // setSambaPassword sends both password lines on stdin. When sudo may read its own
@@ -97,6 +104,12 @@ func (SambaUser) Create(ctx context.Context, req infer.CreateRequest[SambaUserAr
 	if unix.code != 0 {
 		return infer.CreateResponse[SambaUserState]{}, fmt.Errorf("there is no unix account called %s; samba maps onto one, so declare a User first", req.Inputs.Name)
 	}
+	exists, err := readSambaUser(ctx, m, req.Inputs.Name)
+	if err != nil {
+		return infer.CreateResponse[SambaUserState]{}, err
+	}
+	created := !exists
+	state.Created = &created
 	if err := setSambaPassword(ctx, m, req.Inputs.Name, req.Inputs.Password); err != nil {
 		return infer.CreateResponse[SambaUserState]{}, err
 	}
@@ -127,7 +140,7 @@ func (SambaUser) Read(ctx context.Context, req infer.ReadRequest[SambaUserArgs, 
 // Update sets the password again.
 func (SambaUser) Update(ctx context.Context, req infer.UpdateRequest[SambaUserArgs, SambaUserState]) (infer.UpdateResponse[SambaUserState], error) {
 	password := req.Inputs.Password
-	state := SambaUserState{Name: req.ID, Password: &password, Exists: true}
+	state := SambaUserState{Name: req.ID, Password: &password, Exists: true, Created: req.State.Created}
 	if req.DryRun {
 		return infer.UpdateResponse[SambaUserState]{Output: state}, nil
 	}
@@ -156,16 +169,20 @@ func (SambaUser) Diff(_ context.Context, req infer.DiffRequest[SambaUserArgs, Sa
 
 // Delete removes the user from samba's database, never the unix account or its files.
 func (SambaUser) Delete(ctx context.Context, req infer.DeleteRequest[SambaUserState]) (infer.DeleteResponse, error) {
+	if !deref(req.State.Created) {
+		warnRetained(ctx, fmt.Sprintf("Samba account %q", req.ID), "state does not record that the provider created it.")
+		return infer.DeleteResponse{}, nil
+	}
 	m, err := machineFrom(ctx)
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
 	// A failed passdb lookup cannot tell us the user is already gone.
-	users, err := m.must(ctx, m.escalate("pdbedit -L"))
+	exists, err := readSambaUser(ctx, m, req.ID)
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	if !slices.Contains(samba.ParseSambaUsers(users), req.ID) {
+	if !exists {
 		return infer.DeleteResponse{}, nil
 	}
 	_, err = m.must(ctx, m.escalate("smbpasswd -x "+shellQuote(req.ID)))

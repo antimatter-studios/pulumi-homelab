@@ -86,10 +86,22 @@ func (f *fakeTunnelMachine) runner(unit string, wanted resolvedTunnel) *remotete
 		}
 		return remotetest.Reply{}
 	}, 0)
-	r.When(func(c string) bool { return c == asRoot(tunnelDeleteCommand(unit, path)) }, func(string) remotetest.Reply {
-		f.unitRM, f.installed, f.active = true, false, false
+	r.When(func(c string) bool { return c == asRoot(tunnelDisableCommand(unit, path)) }, func(string) remotetest.Reply {
+		f.active = false
 		return remotetest.Reply{}
 	}, 0)
+	digest := digestOf([]byte(file))
+	r.When(func(c string) bool { return c == asRoot(writtenFileDeleteCommand(path, &digest)) }, func(string) remotetest.Reply {
+		if !f.installed {
+			return remotetest.Reply{Code: 9}
+		}
+		if f.file != file {
+			return remotetest.Reply{Code: 11}
+		}
+		f.unitRM, f.installed = true, false
+		return remotetest.Reply{}
+	}, 0)
+	r.On(asRoot("systemctl daemon-reload"), remotetest.Reply{})
 	return r
 }
 
@@ -172,8 +184,13 @@ func TestSshTunnelDeleteAfterUnitEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.file = "edited unit\n"
-	if err := s.Delete(p.DeleteRequest{ID: wanted.Unit, Urn: tunnelURN, Properties: created.Properties}); err != nil || !f.unitRM {
-		t.Fatalf("delete of edited unit: %v", err)
+	read, err := s.Read(p.ReadRequest{ID: wanted.Unit, Urn: tunnelURN, Properties: created.Properties, Inputs: tunnelInputs(testTunnel.Forwards...)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(p.DeleteRequest{ID: wanted.Unit, Urn: tunnelURN, Properties: read.Properties}); err != nil ||
+		f.unitRM || f.active || f.file != "edited unit\n" {
+		t.Fatalf("edited unit must be disabled and kept: %v", err)
 	}
 }
 
@@ -212,5 +229,28 @@ func TestSshTunnelRefusals(t *testing.T) {
 	want := "started autossh-bastion-example-com-10022 on chris@127.0.0.1:20022 but the running process carries 20022:localhost:22 rather than 20022:localhost:22 20080:localhost:80 20443:localhost:443. It has restarted 3 times"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSshTunnelDeleteReportsDisableFailureWithoutUnitFile(t *testing.T) {
+	dir := t.TempDir()
+	unit := testTunnel.Unit
+	fake := shellStepRunner(t, map[string]string{"systemctl": `
+case "$1" in
+  show) printf 'LoadState=loaded\nActiveState=active\n' ;;
+  disable) echo 'loaded unit could not be stopped' >&2; exit 22 ;;
+  *) exit 99 ;;
+esac`})
+	state := tunnelInputs(testTunnel.Forwards...).
+		Set("directory", property.New(dir)).
+		Set("unit", property.New(unit)).
+		Set("file", property.New("unit")).
+		Set("active", property.New(true)).
+		Set("running", forwardsValue()).
+		Set("restarts", property.New(0.0))
+	err := configured(t, fake).Delete(p.DeleteRequest{ID: unit, Urn: tunnelURN, Properties: state})
+	requireStepError(t, err, "(exit 22): loaded unit could not be stopped")
+	if len(fake.Commands()) != 1 {
+		t.Fatalf("delete continued after disable failed: %v", fake.Commands())
 	}
 }

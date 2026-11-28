@@ -89,7 +89,7 @@ func TestSambaRealShell(t *testing.T) {
 	}
 }
 
-// The unit is staged, installed and later removed even after an edit.
+// The unit is staged and installed. Delete disables an edited unit and keeps its file.
 func TestSshTunnelUnitFileRealShell(t *testing.T) {
 	d := startDebianShell(t)
 	shims(t, d)
@@ -103,9 +103,18 @@ func TestSshTunnelUnitFileRealShell(t *testing.T) {
 		t.Fatalf("installed %q", got)
 	}
 	d.sh(t, "echo '# edited' >> "+path)
-	asked, err := m.ask(t.Context(), m.escalate(tunnelDeleteCommand(testTunnel.Unit, path)))
-	if err != nil || asked.code != 0 {
-		t.Fatalf("delete: %+v %v", asked, err)
+	digest := digestOf([]byte(file))
+	if err := deleteTunnel(t.Context(), m, testTunnel.Unit, path, &digest); err != nil {
+		t.Fatalf("delete of edited unit: %v", err)
+	}
+	d.sh(t, "grep -Fx '# edited' "+path)
+	if err := deleteTunnel(t.Context(), m, testTunnel.Unit, path, nil); err != nil {
+		t.Fatalf("delete with legacy state: %v", err)
+	}
+	d.sh(t, "grep -Fx '# edited' "+path)
+	d.sh(t, "sed -i '/^# edited$/d' "+path)
+	if err := deleteTunnel(t.Context(), m, testTunnel.Unit, path, &digest); err != nil {
+		t.Fatal(err)
 	}
 	d.sh(t, "test ! -e "+path)
 	if log := d.sh(t, "cat /tmp/systemctl.log"); !strings.Contains(log, "disable --now "+testTunnel.Unit+".service") || !strings.Contains(log, "daemon-reload") {

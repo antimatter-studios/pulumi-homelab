@@ -3,6 +3,7 @@ package homelab
 import (
 	"context"
 	"fmt"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -58,6 +59,7 @@ type ArchiveState struct {
 	VersionPattern *string `pulumi:"versionPattern,optional"`
 	Installed      bool    `pulumi:"installed"`
 	Version        string  `pulumi:"version"`
+	CreatedTree    *string `pulumi:"createdTree,optional"`
 }
 
 func (a *ArchiveArgs) Annotate(an infer.Annotator) {
@@ -77,6 +79,7 @@ func (a *ArchiveArgs) Annotate(an infer.Annotator) {
 }
 
 func (s *ArchiveState) Annotate(an infer.Annotator) {
+	an.Describe(&s.CreatedTree, "Identity of the tree unpacked by the provider, used to guard deletion and reinstall.")
 	an.Describe(&s.Installed, "Whether it is there: the read, and the only thing this resource acts on.")
 	an.Describe(&s.Version, "What the software says it is, or the empty string when it could not be asked. Nothing compares it.")
 	an.Describe(&s.Owner, "Who owns the prefix itself, as the machine reports it after a read and as declared after an apply.")
@@ -134,37 +137,82 @@ type resolvedArchive struct {
 	Name, Binary, HealthCommand, Owner, Group, VersionCommand, VersionPattern, Where string
 }
 
-// archiveInstallScript downloads, verifies, unpacks into staging, moves into place, chowns, and only
-// then moves the link. The order is the substance.
-func archiveInstallScript(src archiveSource, owner, group string) (string, error) {
+// Include each entry's identity and path, plus size and mtime for regular files. The
+// relative paths keep the fingerprint stable when the tree is moved. Ownership can change
+// without a reinstall. Pipefail prevents a failed or incomplete walk from proving ownership.
+const archiveTreeFunctions = `
+tree_identity() {
+    bash -o pipefail -c '
+        find -P "$1" \( -type f -printf "%s:%T@:" -o -printf ":" \) -printf "%D:%i:%y:%P\0" |
+            LC_ALL=C sort -z | sha256sum
+    ' bash "$1"
+}
+check_tree() {
+    if [ -n "$expected" ] && [ -d "$1" ] && [ ! -L "$1" ]; then
+        if ! actual=$(tree_identity "$1"); then
+            printf 'Could not read the archive tree at %s.\n' "$prefix" >&2
+            return 12
+        fi
+        if [ "$actual" = "$expected" ]; then return 0; fi
+    fi
+    printf '%s is not the tree recorded at install.\n' "$prefix" >&2
+    return 10
+}
+`
+
+// archiveInstallScript downloads and verifies into staging before replacing a tree it can identify.
+func archiveInstallScript(src archiveSource, owner, group string, previous *string) (string, error) {
 	extract, err := extractCommand(src.Format, "$dir/archive", "$dir/unpacked", src.Strip)
 	if err != nil {
 		return "", err
 	}
-	prefix := shellQuote(src.Prefix)
+	target := strings.TrimRight(src.Prefix, "/")
+	if cleaned := path.Clean(src.Prefix); cleaned == "/" || cleaned == "." {
+		return "", fmt.Errorf("invalid archive prefix %q", src.Prefix)
+	}
 	steps := []string{
 		"set -e",
-		"dir=$(mktemp -d)",
-		`trap "rm -rf \"$dir\"" EXIT`,
+		"prefix=" + shellQuote(target),
+		"expected=" + shellQuote(deref(previous)) + strings.TrimRight(archiveTreeFunctions, "\n"),
+		`if [ -e "$prefix" ] || [ -L "$prefix" ]; then check_tree "$prefix"; fi`,
+		`parent=$(dirname -- "$prefix")`,
+		`mkdir -p -- "$parent"`,
+		`dir=$(mktemp -d -- "$parent/.pulumi-archive.XXXXXXXX")`,
+		`cleanup() {
+    if [ -e "$dir/previous" ] || [ -L "$dir/previous" ]; then
+        mv -nT -- "$dir/previous" "$prefix" || true
+        if [ -e "$dir/previous" ] || [ -L "$dir/previous" ]; then
+            printf 'The previous entry was kept at %s/previous.\n' "$dir" >&2
+            return
+        fi
+    fi
+    rm -rf --one-file-system -- "$dir"
+}
+trap cleanup EXIT`,
 		`curl -fsSL --retry 3 -o "$dir/archive" ` + shellQuote(src.URL),
-		"echo " + shellQuote(src.Sha256) + `"  $dir/archive" | sha256sum -c - >/dev/null`,
+		`(cd -- "$dir"; printf '%s  archive\n' ` + shellQuote(src.Sha256) + ` | sha256sum -c - >/dev/null)`,
 		`mkdir -p "$dir/unpacked"`,
-		// the paths inside the staging directory are shell variables and must not be quoted as literals
 		stagingLiteral.ReplaceAllString(extract, `"$1"`),
-		// the move is what makes the install atomic: everything above happens where nothing looks
-		"rm -rf " + prefix,
-		`mkdir -p "$(dirname ` + prefix + `)"`,
-		`mv "$dir/unpacked" ` + prefix,
-		// recursive here and only here: the account has to be able to rewrite every file its updater
-		// touches, and this is the one moment the tree is known to be exactly what was unpacked
-		chownCommand(src.Prefix, owner, group),
+		`chown -R -- ` + shellQuote(owner+":"+group) + ` "$dir/unpacked"`,
+		`installed=$(tree_identity "$dir/unpacked")`,
+		`if [ -e "$prefix" ] || [ -L "$prefix" ]; then
+    check_tree "$prefix"
+    mv -T -- "$prefix" "$dir/previous"
+    check_tree "$dir/previous"
+fi`,
+		`mv -nT -- "$dir/unpacked" "$prefix"`,
+		`if [ -e "$dir/unpacked" ]; then
+    printf 'The archive destination %s appeared during install.\n' "$prefix" >&2
+    exit 1
+fi`,
+		`rm -rf --one-file-system -- "$dir/previous"`,
 	}
 	if src.Link != "" {
 		// -n as well as -f: without it, relinking a link at a directory writes the new link inside it
-		steps = append(steps, "ln -sfn "+prefix+" "+shellQuote(src.Link))
-		// -h, so the link itself is chowned rather than what it points at
+		steps = append(steps, "ln -sfn "+shellQuote(src.Prefix)+" "+shellQuote(src.Link))
 		steps = append(steps, "chown -h "+shellQuote(owner+":"+group)+" "+shellQuote(src.Link))
 	}
+	steps = append(steps, `printf '%s\n' "$installed"`)
 	return strings.Join(steps, "; "), nil
 }
 
@@ -341,7 +389,7 @@ func readArchive(ctx context.Context, m *machine, where, prefix, binary, healthC
 	return parseProbe(asked.out, pattern), nil
 }
 
-func settleArchive(ctx context.Context, m *machine, args ArchiveArgs, previous *archiveSource) (ArchiveState, error) {
+func settleArchive(ctx context.Context, m *machine, args ArchiveArgs, previous *ArchiveState) (ArchiveState, error) {
 	wanted, err := resolveArchiveArgs(args)
 	if err != nil {
 		return ArchiveState{}, err
@@ -353,18 +401,37 @@ func settleArchive(ctx context.Context, m *machine, args ArchiveArgs, previous *
 	if err != nil {
 		return ArchiveState{}, err
 	}
-	act := archiveAct(before, previous, wanted)
+	var source *archiveSource
+	var createdTree *string
+	if previous != nil {
+		oldSource := previous.source()
+		source = &oldSource
+		if previous.Prefix == wanted.Prefix {
+			createdTree = previous.CreatedTree
+		}
+	}
+	stateOf := func(observed probe) ArchiveState {
+		state := wanted.state(observed)
+		state.CreatedTree = createdTree
+		return state
+	}
+	act := archiveAct(before, source, wanted)
 	if act == actNothing {
-		return wanted.state(before), nil
+		return stateOf(before), nil
 	}
 	command := chownCommand(wanted.Prefix, wanted.Owner, wanted.Group)
 	if act == actInstall {
-		if command, err = archiveInstallScript(wanted.archiveSource, wanted.Owner, wanted.Group); err != nil {
+		if command, err = archiveInstallScript(wanted.archiveSource, wanted.Owner, wanted.Group, createdTree); err != nil {
 			return ArchiveState{}, err
 		}
 	}
-	if _, err := m.must(ctx, m.escalate(command)); err != nil {
+	result, err := m.must(ctx, m.escalate(command))
+	if err != nil {
 		return ArchiveState{}, err
+	}
+	if act == actInstall {
+		fingerprint := strings.TrimSpace(result)
+		createdTree = &fingerprint
 	}
 	after, err := read()
 	if err != nil {
@@ -382,7 +449,7 @@ func settleArchive(ctx context.Context, m *machine, args ArchiveArgs, previous *
 		return ArchiveState{}, fmt.Errorf("installed %s to %s on %s but it is owned by %s:%s rather than %s:%s — check that both exist on the machine",
 			wanted.URL, wanted.Prefix, m.describe(), after.Owner, after.Group, wanted.Owner, wanted.Group)
 	}
-	return wanted.state(after), nil
+	return stateOf(after), nil
 }
 
 // Check reports version patterns RE2 cannot compile.
@@ -483,14 +550,15 @@ func (Archive) Update(ctx context.Context, req infer.UpdateRequest[ArchiveArgs, 
 			return infer.UpdateResponse[ArchiveState]{}, err
 		}
 		read := probe{Installed: true, Owner: req.State.Owner, Group: req.State.Group, Version: req.State.Version}
-		return infer.UpdateResponse[ArchiveState]{Output: wanted.state(read)}, nil
+		state := wanted.state(read)
+		state.CreatedTree = req.State.CreatedTree
+		return infer.UpdateResponse[ArchiveState]{Output: state}, nil
 	}
 	m, err := machineFrom(ctx)
 	if err != nil {
 		return infer.UpdateResponse[ArchiveState]{}, err
 	}
-	previous := req.State.source()
-	state, err := settleArchive(ctx, m, args, &previous)
+	state, err := settleArchive(ctx, m, args, &req.State)
 	if err != nil {
 		return infer.UpdateResponse[ArchiveState]{}, err
 	}
@@ -528,26 +596,55 @@ func (Archive) Diff(_ context.Context, req infer.DiffRequest[ArchiveArgs, Archiv
 	return resp, nil
 }
 
-// archiveDeleteCommand removes the prefix, and the link only if it still points there: a
-// replacement repoints it first, and deleting the old resource must not take the new one's link.
-func archiveDeleteCommand(prefix, link string) string {
-	unlink := ""
+// archiveDeleteCommand verifies the tree before removing it. The link can already point
+// to a newer prefix by the time Pulumi deletes this resource.
+func archiveDeleteCommand(prefix, link, expected string) string {
+	command := "set -e; prefix=" + shellQuote(strings.TrimRight(prefix, "/")) +
+		"; expected=" + shellQuote(expected) + archiveTreeFunctions + `
+if [ -e "$prefix" ] || [ -L "$prefix" ]; then
+    check_tree "$prefix"
+    parent=$(dirname -- "$prefix")
+    dir=$(mktemp -d -- "$parent/.pulumi-archive.XXXXXXXX")
+    cleanup() {
+        if [ -e "$dir/tree" ] || [ -L "$dir/tree" ]; then
+            mv -nT -- "$dir/tree" "$prefix" || true
+            if [ -e "$dir/tree" ] || [ -L "$dir/tree" ]; then
+                printf 'The directory entry was kept at %s/tree.\n' "$dir" >&2
+            fi
+        fi
+        rmdir -- "$dir" 2>/dev/null || true
+    }
+    trap cleanup EXIT
+    mv -T -- "$prefix" "$dir/tree"
+    check_tree "$dir/tree"
+    rm -rf --one-file-system -- "$dir/tree"
+fi`
 	if link != "" {
-		unlink = `; [ "$(readlink ` + shellQuote(link) + ` 2>/dev/null)" = ` + shellQuote(prefix) + " ] " +
-			"&& rm -f " + shellQuote(link) + " || true"
+		command += "\nif [ \"$(readlink -- " + shellQuote(link) + " 2>/dev/null)\" = " + shellQuote(prefix) +
+			" ]; then ( " + symlinkDeleteCommand(link, &prefix) + " ); fi"
 	}
-	return "rm -rf " + shellQuote(prefix) + unlink
+	return command
 }
 
-// Delete removes the unpacked tree.
+// Delete leaves a prefix adopted during Create or Read in place.
 func (Archive) Delete(ctx context.Context, req infer.DeleteRequest[ArchiveState]) (infer.DeleteResponse, error) {
-	if req.State.Prefix == "" {
-		return infer.DeleteResponse{}, fmt.Errorf("cannot delete %s: state carries no prefix to remove", req.ID)
+	if deref(req.State.CreatedTree) == "" {
+		target := req.State.Prefix
+		if target == "" {
+			target = req.ID
+		}
+		warnRetained(ctx, target, "state has no archive tree recorded at install.")
+		return infer.DeleteResponse{}, nil
+	}
+	prefix := path.Clean(req.State.Prefix)
+	if req.State.Prefix == "" || prefix == "/" || prefix == "." {
+		warnRetained(ctx, req.ID, "state has no valid archive prefix.")
+		return infer.DeleteResponse{}, nil
 	}
 	m, err := machineFrom(ctx)
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate(archiveDeleteCommand(req.State.Prefix, deref(req.State.Link))))
+	err = guardedDelete(ctx, m, req.State.Prefix, archiveDeleteCommand(req.State.Prefix, deref(req.State.Link), *req.State.CreatedTree))
 	return infer.DeleteResponse{}, err
 }
