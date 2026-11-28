@@ -71,11 +71,11 @@ func (o AclEntryActualArrayOutput) Index(i pulumi.IntInput) AclEntryActualOutput
 }
 
 type AclEntryArgs struct {
-	// Who the entry is for. Empty or absent for the owning entries, which only defaultEntries may set.
+	// Who the entry is for. Empty or absent for the owning entries user::, group:: and other::, which as access entries are the mode bits.
 	Name *string `pulumi:"name"`
 	// rwx, r-x, rw, an octal digit... settled to the three-letter form getfacl prints.
 	Perms string `pulumi:"perms"`
-	// user, group, mask or other. A mask is refused; user, group and other without a name are refused as access entries.
+	// user, group, mask or other. A mask is refused, because setfacl computes it.
 	Type string `pulumi:"type"`
 }
 
@@ -91,11 +91,11 @@ type AclEntryArgsInput interface {
 }
 
 type AclEntryArgsArgs struct {
-	// Who the entry is for. Empty or absent for the owning entries, which only defaultEntries may set.
+	// Who the entry is for. Empty or absent for the owning entries user::, group:: and other::, which as access entries are the mode bits.
 	Name pulumi.StringPtrInput `pulumi:"name"`
 	// rwx, r-x, rw, an octal digit... settled to the three-letter form getfacl prints.
 	Perms pulumi.StringInput `pulumi:"perms"`
-	// user, group, mask or other. A mask is refused; user, group and other without a name are refused as access entries.
+	// user, group, mask or other. A mask is refused, because setfacl computes it.
 	Type pulumi.StringInput `pulumi:"type"`
 }
 
@@ -150,7 +150,7 @@ func (o AclEntryArgsOutput) ToAclEntryArgsOutputWithContext(ctx context.Context)
 	return o
 }
 
-// Who the entry is for. Empty or absent for the owning entries, which only defaultEntries may set.
+// Who the entry is for. Empty or absent for the owning entries user::, group:: and other::, which as access entries are the mode bits.
 func (o AclEntryArgsOutput) Name() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v AclEntryArgs) *string { return v.Name }).(pulumi.StringPtrOutput)
 }
@@ -160,7 +160,7 @@ func (o AclEntryArgsOutput) Perms() pulumi.StringOutput {
 	return o.ApplyT(func(v AclEntryArgs) string { return v.Perms }).(pulumi.StringOutput)
 }
 
-// user, group, mask or other. A mask is refused; user, group and other without a name are refused as access entries.
+// user, group, mask or other. A mask is refused, because setfacl computes it.
 func (o AclEntryArgsOutput) Type() pulumi.StringOutput {
 	return o.ApplyT(func(v AclEntryArgs) string { return v.Type }).(pulumi.StringOutput)
 }

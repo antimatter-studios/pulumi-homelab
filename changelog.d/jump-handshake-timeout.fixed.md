@@ -1,0 +1,1 @@
+- Enforce `ConnectTimeout` during SSH handshakes through jump hosts and identify the timed-out hop in the error.

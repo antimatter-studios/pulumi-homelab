@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path"
 	"strings"
 
 	p "github.com/pulumi/pulumi-go-provider"
@@ -41,8 +42,9 @@ type ManagedFileState struct {
 	Group string `pulumi:"group"`
 	// ReloadSystemd is nil after an import: it is a behaviour, not a fact the file shows, so an
 	// imported file cannot know it and Diff does not compare it until a write records it.
-	ReloadSystemd *bool  `pulumi:"reloadSystemd,optional"`
-	Digest        string `pulumi:"digest"`
+	ReloadSystemd *bool   `pulumi:"reloadSystemd,optional"`
+	Digest        string  `pulumi:"digest"`
+	WrittenDigest *string `pulumi:"writtenDigest,optional"`
 }
 
 func (f *ManagedFileArgs) Annotate(a infer.Annotator) {
@@ -60,6 +62,7 @@ func (f *ManagedFileArgs) Annotate(a infer.Annotator) {
 
 func (f *ManagedFileState) Annotate(a infer.Annotator) {
 	a.Describe(&f.Digest, "SHA-256 in hex of the declared content after a write or the observed content after a read.")
+	a.Describe(&f.WrittenDigest, "SHA-256 of the bytes last written by the provider, used to guard deletion.")
 }
 
 func (f *ManagedFile) Annotate(a infer.Annotator) {
@@ -166,6 +169,62 @@ func readManagedFile(ctx context.Context, m *machine, path string) (*actualFile,
 	return &actualFile{FileStat: stat.ParseFileStat(first), Content: rest}, nil
 }
 
+// writtenFileDeleteCommand checks the on-disk bytes without transmitting file contents.
+func writtenFileDeleteCommand(file string, digest *string) string {
+	return "file=" + shellQuote(file) + "; expected=" + shellQuote(deref(digest)) + `
+if [ ! -e "$file" ] && [ ! -L "$file" ]; then exit 9; fi
+[ -n "$expected" ] || exit 10
+cd -- ` + shellQuote(path.Dir(file)) + ` || exit 12
+file=` + shellQuote("./"+path.Base(file)) + `
+check_file() {
+    [ -f "$1" ] && [ ! -L "$1" ] || return 14
+    actual=$(sha256sum < "$1") || return 12
+    [ "${actual%% *}" = "$expected" ] || return 11
+}
+check_file "$file" || exit $?
+staging=$(mktemp -d ./.pulumi-file.XXXXXXXX) || exit 13
+cleanup() {
+    if [ -e "$staging/file" ] || [ -L "$staging/file" ]; then
+        mv -nT -- "$staging/file" "$file" || true
+        if [ -e "$staging/file" ] || [ -L "$staging/file" ]; then
+            printf ' The captured entry was kept at %s/%s/file.' "$PWD" "$staging"
+        fi
+    fi
+    rmdir -- "$staging" 2>/dev/null || true
+}
+trap cleanup EXIT
+mv -T -- "$file" "$staging/file" || exit 13
+check_file "$staging/file" || exit $?
+rm -- "$staging/file"`
+}
+
+func removeWrittenFile(ctx context.Context, m *machine, path string, digest *string) (bool, error) {
+	result, err := m.ask(ctx, m.escalate(writtenFileDeleteCommand(path, digest)))
+	if err != nil {
+		return false, err
+	}
+	var reason string
+	switch result.code {
+	case 0:
+		return true, nil
+	case 9:
+		return false, nil
+	case 10:
+		reason = "state has no digest from a provider write"
+	case 11:
+		reason = "the file changed since the provider wrote it"
+	case 12:
+		return false, fmt.Errorf("could not read %s on %s.%s", path, m.describe(), result.out)
+	case 14:
+		reason = "the path no longer holds a regular file"
+	default:
+		return false, fmt.Errorf("could not delete %s on %s (exit %d): %s%s",
+			path, m.describe(), result.code, strings.TrimSpace(result.err), result.out)
+	}
+	warnRetained(ctx, path, reason+"."+result.out)
+	return false, nil
+}
+
 func (w wantedFile) state() ManagedFileState {
 	return ManagedFileState{Path: w.path, Mode: w.mode, Owner: w.owner, Group: w.group,
 		ReloadSystemd: &w.reloadSystemd, Digest: digestOf([]byte(w.content))}
@@ -184,7 +243,10 @@ func (ManagedFile) Create(ctx context.Context, req infer.CreateRequest[ManagedFi
 	if err := writeManagedFile(ctx, m, w); err != nil {
 		return infer.CreateResponse[ManagedFileState]{}, err
 	}
-	return infer.CreateResponse[ManagedFileState]{ID: w.path, Output: w.state()}, nil
+	state := w.state()
+	digest := digestOf([]byte(fileBody(w.content)))
+	state.WrittenDigest = &digest
+	return infer.CreateResponse[ManagedFileState]{ID: w.path, Output: state}, nil
 }
 
 // Read reports what the machine has. A file gone from the machine is forgotten, and the next up
@@ -235,12 +297,16 @@ func (ManagedFile) Update(ctx context.Context, req infer.UpdateRequest[ManagedFi
 	}
 	same := current != nil && current.Content == w.content &&
 		current.Mode == w.mode && current.Owner == w.owner && current.Group == w.group
+	state := w.state()
+	state.WrittenDigest = req.State.WrittenDigest
 	if !same {
 		if err := writeManagedFile(ctx, m, w); err != nil {
 			return infer.UpdateResponse[ManagedFileState]{}, err
 		}
+		digest := digestOf([]byte(fileBody(w.content)))
+		state.WrittenDigest = &digest
 	}
-	return infer.UpdateResponse[ManagedFileState]{Output: w.state()}, nil
+	return infer.UpdateResponse[ManagedFileState]{Output: state}, nil
 }
 
 // Diff is spelled out so the reason for a replacement is legible: a file at a new path is a new
@@ -277,6 +343,6 @@ func (ManagedFile) Delete(ctx context.Context, req infer.DeleteRequest[ManagedFi
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate("rm -f "+shell.Quote(req.ID)))
+	_, err = removeWrittenFile(ctx, m, req.ID, req.State.WrittenDigest)
 	return infer.DeleteResponse{}, err
 }

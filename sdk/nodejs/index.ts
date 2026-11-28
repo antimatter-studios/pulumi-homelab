@@ -150,6 +150,11 @@ export type Swap = import("./swap").Swap;
 export const Swap: typeof import("./swap").Swap = null as any;
 utilities.lazyLoad(exports, ["Swap"], () => require("./swap"));
 
+export { SwapPartitionArgs } from "./swapPartition";
+export type SwapPartition = import("./swapPartition").SwapPartition;
+export const SwapPartition: typeof import("./swapPartition").SwapPartition = null as any;
+utilities.lazyLoad(exports, ["SwapPartition"], () => require("./swapPartition"));
+
 export { SymlinkArgs } from "./symlink";
 export type Symlink = import("./symlink").Symlink;
 export const Symlink: typeof import("./symlink").Symlink = null as any;
@@ -240,6 +245,8 @@ const _module = {
                 return new SudoRule(name, <any>undefined, { urn })
             case "homelab:index:Swap":
                 return new Swap(name, <any>undefined, { urn })
+            case "homelab:index:SwapPartition":
+                return new SwapPartition(name, <any>undefined, { urn })
             case "homelab:index:Symlink":
                 return new Symlink(name, <any>undefined, { urn })
             case "homelab:index:SystemdInstance":

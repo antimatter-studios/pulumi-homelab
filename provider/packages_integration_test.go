@@ -100,7 +100,8 @@ func TestDebian13GitCheckout(t *testing.T) {
 		}
 	})
 
-	sh(t, m, "useradd -m checkout-owner")
+	// The checkout owner must be able to fetch from the root-owned fixture.
+	sh(t, m, "useradd -m checkout-owner && git config --system --add safe.directory /srv/origin.git")
 	server := newServer(t, (&capture{runner: m.runner}).factory)
 	if err := server.Configure(p.ConfigureRequest{Args: property.NewMap(with(homelabServerConfig(), "escalation", property.New("none")))}); err != nil {
 		t.Fatal(err)
@@ -110,23 +111,28 @@ func TestDebian13GitCheckout(t *testing.T) {
 			Properties: property.NewMap(map[string]property.Value{"path": property.New(path), "url": property.New(url), "commit": property.New(first), "head": property.New(first)})})
 	}
 	for _, tc := range []struct{ name, change, finding string }{
-		{"working tree", "echo changed > a", "Working tree changes:\n M a"},
-		{"staged file", "echo changed > a && git add a", "Working tree changes:\nM  a"},
-		{"untracked file", "echo changed > local.txt", "Working tree changes:\n?? local.txt"},
-		{"detached commit", "echo changed > a && git commit -qam detached-work", "detached"},
-		{"stash", "echo changed > a && git stash -q", "Stashes:\nstash@{0}"},
-		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "Unpushed branch commits:"},
+		{"working tree", "echo changed > a", " M a"},
+		{"staged file", "echo changed > a && git add a", "M  a"},
+		{"untracked file", "git config status.showUntrackedFiles no && echo changed > local.txt", "?? local.txt"},
+		{"detached commit", "echo changed > a && git commit -qam detached-work", "detached-work"},
+		{"stash", "echo changed > a && git stash -q", "stash@{0}"},
+		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "Unpushed commits:"},
+		{"stale remote ref", `echo changed > a && git commit -qam pruned-work &&
+			git push -q origin HEAD:refs/heads/pruned &&
+			test "$(git rev-parse refs/remotes/origin/pruned)" = "$(git rev-parse HEAD)" &&
+			git --git-dir=/srv/origin.git update-ref -d refs/heads/pruned`, "pruned-work"},
+		{"fetch failure", "git remote set-url origin file:///srv/missing.git", "Git fetch --prune failed"},
 	} {
-		t.Run("refuses "+tc.name, func(t *testing.T) {
-			if tc.name == "detached commit" {
-				t.Skip("blocked by #135: Delete does not check detached HEAD for local commits")
-			}
+		t.Run("retains "+tc.name, func(t *testing.T) {
+			warnings := captureDeleteWarnings(t)
 			path := "/srv/w-" + strings.ReplaceAll(tc.name, " ", "-")
 			checkout(t, path)
 			sh(t, m, "cd "+shellQuote(path)+" && "+tc.change+" && chown -R checkout-owner:checkout-owner "+shellQuote(path))
-			err := deleteResource(path)
-			if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.finding) {
-				t.Fatalf("got %v, want refusal naming %s and %q", err, path, tc.finding)
+			if err := deleteResource(path); err != nil {
+				t.Fatal(err)
+			}
+			if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, path) || !strings.Contains(log, tc.finding) {
+				t.Fatalf("expected a warning naming %s and %q, got %q", path, tc.finding, log)
 			}
 			if !exists(t, m, path) {
 				t.Fatal("checkout was removed")
@@ -143,6 +149,34 @@ func TestDebian13GitCheckout(t *testing.T) {
 		}
 		if exists(t, m, path) {
 			t.Fatal("checkout is still present")
+		}
+	})
+
+	t.Run("retains checkout when non-interactive SSH fails", func(t *testing.T) {
+		warnings := captureDeleteWarnings(t)
+		const path = "/srv/ssh-fetch"
+		checkout(t, path)
+		sh(t, m, `cat > /usr/local/bin/ssh <<'EOF'
+#!/bin/sh
+if [ "$GIT_TERMINAL_PROMPT" = 0 ] && [ "$1" = -o ] && [ "$2" = BatchMode=yes ]; then
+    touch /tmp/git-checkout-batch-ssh
+fi
+exit 1
+EOF
+chmod +x /usr/local/bin/ssh &&
+git -C /srv/ssh-fetch remote set-url origin ssh://git@example.invalid/origin.git &&
+chown -R checkout-owner:checkout-owner /srv/ssh-fetch`)
+		if err := deleteResource(path); err != nil {
+			t.Fatal(err)
+		}
+		if !exists(t, m, "/tmp/git-checkout-batch-ssh") {
+			t.Fatal("fetch did not invoke SSH in batch mode with terminal prompts disabled")
+		}
+		if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, path) || !strings.Contains(log, "Git fetch --prune failed") {
+			t.Fatalf("expected a fetch failure warning naming %s, got %q", path, log)
+		}
+		if !exists(t, m, path) {
+			t.Fatal("checkout was removed")
 		}
 	})
 }
@@ -174,7 +208,7 @@ func TestDebian13Archive(t *testing.T) {
 
 	// only the owner wrong: a chown, and the tree is not replaced
 	sh(t, m, "chown -R root:root /opt/widget/1.0 && touch /opt/widget/1.0/updated-by-itself")
-	previous := state.source()
+	previous := state
 	if state, err = settleArchive(ctx, m, args, &previous); err != nil || state.Owner != "svc" {
 		t.Fatalf("%+v %v", state, err)
 	}
@@ -189,9 +223,50 @@ func TestDebian13Archive(t *testing.T) {
 		t.Fatalf("installed a mismatched archive: %v", err)
 	}
 
-	sh(t, m, archiveDeleteCommand("/opt/widget/1.0", "/opt/widget/current"))
-	if exists(t, m, "/opt/widget/1.0") || exists(t, m, "/opt/widget/current") {
-		t.Fatal("delete left things behind")
+	if state.CreatedTree == nil || *state.CreatedTree != *previous.CreatedTree {
+		t.Fatalf("chown changed the recorded tree: %+v", state)
+	}
+	deleteTree := func(state ArchiveState) error {
+		return guardedDelete(ctx, m, state.Prefix, archiveDeleteCommand(state.Prefix, deref(state.Link), deref(state.CreatedTree)))
+	}
+	warnings := captureDeleteWarnings(t)
+	if err := deleteTree(state); err != nil {
+		t.Fatalf("delete should leave a tree with new files: %v", err)
+	}
+	if log := warnings.String(); !strings.Contains(log, "level=WARN") || !strings.Contains(log, state.Prefix) ||
+		!strings.Contains(log, "not the tree recorded at install") {
+		t.Fatalf("archive delete warning %q", log)
+	}
+	reinstall := args
+	reinstall.URL = strp(*args.URL + "?reinstall")
+	if _, err := settleArchive(ctx, m, reinstall, &state); err == nil || !strings.Contains(err.Error(), "not the tree recorded") {
+		t.Fatalf("reinstall should refuse a tree with new files: %v", err)
+	}
+	if !exists(t, m, args.Prefix+"/updated-by-itself") || !exists(t, m, *args.Link) {
+		t.Fatal("a refusal lost the extra file or the link")
+	}
+	sh(t, m, "rm -f /opt/widget/1.0/updated-by-itself; cp /src/widget.tar.gz /src/widget-reinstall.tar.gz")
+	reinstall.URL = strp("file:///src/widget-reinstall.tar.gz")
+	reinstalled, err := settleArchive(ctx, m, reinstall, &state)
+	if err != nil || reinstalled.CreatedTree == nil || *reinstalled.CreatedTree == *state.CreatedTree {
+		t.Fatalf("did not record the reinstalled tree: %+v, %v", reinstalled, err)
+	}
+
+	// Create can adopt an existing prefix without taking ownership of its tree.
+	adopted, err := settleArchive(ctx, m, reinstall, nil)
+	if err != nil || !adopted.Installed || adopted.CreatedTree != nil {
+		t.Fatalf("adopted state %+v, %v", adopted, err)
+	}
+	if _, err := settleArchive(ctx, m, args, &adopted); err == nil || !strings.Contains(err.Error(), "not the tree recorded") {
+		t.Fatalf("reinstall should refuse an adopted prefix: %v", err)
+	}
+
+	sh(t, m, "mkdir /opt/newer; ln -sfn /opt/newer /opt/widget/current")
+	if err := deleteTree(reinstalled); err != nil {
+		t.Fatal(err)
+	}
+	if exists(t, m, args.Prefix) || strings.TrimSpace(sh(t, m, "readlink /opt/widget/current")) != "/opt/newer" {
+		t.Fatal("delete should remove the recorded prefix and preserve the replacement link")
 	}
 }
 

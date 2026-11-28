@@ -18,6 +18,10 @@ export declare class Archive extends pulumi.CustomResource {
      */
     static isInstance(obj: any): obj is Archive;
     readonly binary: pulumi.Output<string | undefined>;
+    /**
+     * Identity of the tree unpacked by the provider, used to guard deletion and reinstall.
+     */
+    readonly createdTree: pulumi.Output<string | undefined>;
     readonly format: pulumi.Output<string | undefined>;
     readonly group: pulumi.Output<string>;
     readonly healthCommand: pulumi.Output<string | undefined>;

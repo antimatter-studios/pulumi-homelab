@@ -44,18 +44,19 @@ type SshTunnelArgs struct {
 
 // SshTunnelState is what is kept in state.
 type SshTunnelState struct {
-	To         string          `pulumi:"to"`
-	Port       int             `pulumi:"port"`
-	Identity   string          `pulumi:"identity"`
-	RunAs      string          `pulumi:"runAs"`
-	Forwards   []TunnelForward `pulumi:"forwards"`
-	RestartSec float64         `pulumi:"restartSec"`
-	Unit       string          `pulumi:"unit"`
-	Directory  string          `pulumi:"directory"`
-	File       string          `pulumi:"file"`
-	Active     bool            `pulumi:"active"`
-	Running    []TunnelForward `pulumi:"running"`
-	Restarts   int             `pulumi:"restarts"`
+	To            string          `pulumi:"to"`
+	Port          int             `pulumi:"port"`
+	Identity      string          `pulumi:"identity"`
+	RunAs         string          `pulumi:"runAs"`
+	Forwards      []TunnelForward `pulumi:"forwards"`
+	RestartSec    float64         `pulumi:"restartSec"`
+	Unit          string          `pulumi:"unit"`
+	Directory     string          `pulumi:"directory"`
+	File          string          `pulumi:"file"`
+	Active        bool            `pulumi:"active"`
+	Running       []TunnelForward `pulumi:"running"`
+	Restarts      int             `pulumi:"restarts"`
+	WrittenDigest *string         `pulumi:"writtenDigest,optional"`
 }
 
 const (
@@ -93,6 +94,7 @@ func (s *SshTunnelState) Annotate(a infer.Annotator) {
 	a.Describe(&s.Active, "Whether systemd says the unit is active.")
 	a.Describe(&s.Running, "The forwards the running process carries, read from /proc.")
 	a.Describe(&s.Restarts, "How many times systemd has restarted the unit.")
+	a.Describe(&s.WrittenDigest, "SHA-256 of the unit last written by the provider, used to guard deletion.")
 }
 
 func (s *SshTunnel) Annotate(a infer.Annotator) {
@@ -423,7 +425,12 @@ func settleTunnel(ctx context.Context, m *machine, args SshTunnelArgs) (SshTunne
 		return SshTunnelState{}, fmt.Errorf("started %s on %s but the running process carries %s rather than %s. %s",
 			wanted.Unit, m.describe(), running, strings.Join(declared, " "), hint)
 	}
-	return tunnelState(wanted, after), nil
+	state := tunnelState(wanted, after)
+	if rewrite {
+		digest := digestOf([]byte(file))
+		state.WrittenDigest = &digest
+	}
+	return state, nil
 }
 
 func tunnelState(w resolvedTunnel, r *tunnelRead) SshTunnelState {
@@ -551,6 +558,9 @@ func (SshTunnel) Update(ctx context.Context, req infer.UpdateRequest[SshTunnelAr
 	if err != nil {
 		return infer.UpdateResponse[SshTunnelState]{}, err
 	}
+	if state.WrittenDigest == nil && req.State.Directory == state.Directory {
+		state.WrittenDigest = req.State.WrittenDigest
+	}
 	return infer.UpdateResponse[SshTunnelState]{Output: state}, nil
 }
 
@@ -579,7 +589,7 @@ func (SshTunnel) Diff(_ context.Context, req infer.DiffRequest[SshTunnelArgs, Ss
 	return resp, nil
 }
 
-func tunnelDeleteCommand(unit, path string) string {
+func tunnelDisableCommand(unit, path string) string {
 	service := shellQuote(unit + ".service")
 	file := shellQuote(path)
 	disable := "systemctl disable --now " + service
@@ -591,7 +601,22 @@ func tunnelDeleteCommand(unit, path string) string {
 		"    'LoadState=not-found\nActiveState=inactive'|'ActiveState=inactive\nLoadState=not-found') ;;\n" +
 		"    *) " + disable + " ;;\n" +
 		"  esac\n" +
-		"fi && rm -f " + file + " && systemctl daemon-reload"
+		"fi"
+}
+
+func deleteTunnel(ctx context.Context, m *machine, unit, path string, digest *string) error {
+	if _, err := m.must(ctx, m.escalate(tunnelDisableCommand(unit, path))); err != nil {
+		return err
+	}
+	removed, err := removeWrittenFile(ctx, m, path, digest)
+	if err != nil || !removed {
+		return err
+	}
+	reloaded, err := m.ask(ctx, m.escalate("systemctl daemon-reload"))
+	if err == nil && reloaded.code != 0 {
+		p.GetLogger(ctx).Warningf("Removed %s, but systemctl daemon-reload failed (exit %d). %s", path, reloaded.code, strings.TrimSpace(reloaded.err))
+	}
+	return err
 }
 
 func (SshTunnel) Delete(ctx context.Context, req infer.DeleteRequest[SshTunnelState]) (infer.DeleteResponse, error) {
@@ -603,6 +628,6 @@ func (SshTunnel) Delete(ctx context.Context, req infer.DeleteRequest[SshTunnelSt
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate(tunnelDeleteCommand(req.ID, unitPath(req.ID, directory))))
+	err = deleteTunnel(ctx, m, req.ID, unitPath(req.ID, directory), req.State.WrittenDigest)
 	return infer.DeleteResponse{}, err
 }

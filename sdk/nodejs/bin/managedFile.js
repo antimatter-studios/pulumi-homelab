@@ -55,6 +55,7 @@ class ManagedFile extends pulumi.CustomResource {
             resourceInputs["path"] = args ? args.path : undefined;
             resourceInputs["reloadSystemd"] = (_d = (args ? args.reloadSystemd : undefined)) !== null && _d !== void 0 ? _d : false;
             resourceInputs["digest"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         else {
             resourceInputs["digest"] = undefined /*out*/;
@@ -63,6 +64,7 @@ class ManagedFile extends pulumi.CustomResource {
             resourceInputs["owner"] = undefined /*out*/;
             resourceInputs["path"] = undefined /*out*/;
             resourceInputs["reloadSystemd"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         opts = pulumi.mergeOptions(utilities.resourceOptsDefaults(), opts);
         super(ManagedFile.__pulumiType, name, resourceInputs, opts);

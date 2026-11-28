@@ -37,7 +37,7 @@ export class ProtectedFile extends pulumi.CustomResource {
     }
 
     /**
-     * SHA-256 of the content under always, and the word "seeded" under once. The only thing here derived from the content.
+     * SHA-256 of the content under always, and the word "seeded" under once.
      */
     public /*out*/ readonly digest!: pulumi.Output<string>;
     public readonly enforce!: pulumi.Output<string>;
@@ -46,6 +46,10 @@ export class ProtectedFile extends pulumi.CustomResource {
     public readonly owner!: pulumi.Output<string>;
     public readonly path!: pulumi.Output<string>;
     public readonly source!: pulumi.Output<outputs.provider.Source>;
+    /**
+     * SHA-256 of the bytes last written by the provider, used to guard deletion.
+     */
+    public /*out*/ readonly writtenDigest!: pulumi.Output<string | undefined>;
 
     /**
      * Create a ProtectedFile resource with the given unique name, arguments, and options.
@@ -71,6 +75,7 @@ export class ProtectedFile extends pulumi.CustomResource {
             resourceInputs["path"] = args ? args.path : undefined;
             resourceInputs["source"] = args ? args.source : undefined;
             resourceInputs["digest"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         } else {
             resourceInputs["digest"] = undefined /*out*/;
             resourceInputs["enforce"] = undefined /*out*/;
@@ -79,8 +84,11 @@ export class ProtectedFile extends pulumi.CustomResource {
             resourceInputs["owner"] = undefined /*out*/;
             resourceInputs["path"] = undefined /*out*/;
             resourceInputs["source"] = undefined /*out*/;
+            resourceInputs["writtenDigest"] = undefined /*out*/;
         }
         opts = pulumi.mergeOptions(utilities.resourceOptsDefaults(), opts);
+        const secretOpts = { additionalSecretOutputs: ["writtenDigest"] };
+        opts = pulumi.mergeOptions(opts, secretOpts);
         super(ProtectedFile.__pulumiType, name, resourceInputs, opts);
     }
 }

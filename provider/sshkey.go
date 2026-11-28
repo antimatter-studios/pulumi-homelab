@@ -313,7 +313,7 @@ func (SshKey) Update(ctx context.Context, req infer.UpdateRequest[SshKeyArgs, Ss
 	return infer.UpdateResponse[SshKeyState]{Output: state}, err
 }
 
-// Diff: a different path or algorithm is a different key pair, created before the old is deleted.
+// Diff replaces a different path or algorithm. An algorithm change at the same path deletes first.
 func (SshKey) Diff(_ context.Context, req infer.DiffRequest[SshKeyArgs, SshKeyState]) (p.DiffResponse, error) {
 	old, a := req.State, req.Inputs
 	keyType := orDefault(a.Type, "ed25519")
@@ -325,7 +325,7 @@ func (SshKey) Diff(_ context.Context, req infer.DiffRequest[SshKeyArgs, SshKeySt
 	if old.Path != a.Path || old.Type != keyType {
 		replaces = []string{"path", "type"}
 	}
-	return diffOf(changed, false, replaces...), nil
+	return diffOf(changed, old.Path == a.Path && old.Type != keyType, replaces...), nil
 }
 
 // sshKeyDeleteRefusal is the refusal to delete a key nobody said could go.

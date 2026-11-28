@@ -136,12 +136,13 @@ func UpsertLine(text string, args Args) string {
 
 // RemoveLine takes out every line carrying the marker, and returns the text unchanged when there
 // is none.
-func RemoveLine(text, marker string) string {
-	needle := MarkerOf(marker)
+func RemoveLine(text, marker, comment string) string {
+	prefix := " " + comment + " " + MarkerOf("")
 	lines := strings.Split(text, "\n")
 	var kept []string
 	for _, line := range lines {
-		if !strings.Contains(line, needle) {
+		_, found, marked := strings.Cut(strings.TrimSuffix(line, "\r"), prefix)
+		if !marked || found != marker {
 			kept = append(kept, line)
 		}
 	}

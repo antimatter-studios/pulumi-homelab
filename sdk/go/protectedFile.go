@@ -17,7 +17,7 @@ import (
 type ProtectedFile struct {
 	pulumi.CustomResourceState
 
-	// SHA-256 of the content under always, and the word "seeded" under once. The only thing here derived from the content.
+	// SHA-256 of the content under always, and the word "seeded" under once.
 	Digest  pulumi.StringOutput   `pulumi:"digest"`
 	Enforce pulumi.StringOutput   `pulumi:"enforce"`
 	Group   pulumi.StringOutput   `pulumi:"group"`
@@ -25,6 +25,8 @@ type ProtectedFile struct {
 	Owner   pulumi.StringOutput   `pulumi:"owner"`
 	Path    pulumi.StringOutput   `pulumi:"path"`
 	Source  provider.SourceOutput `pulumi:"source"`
+	// SHA-256 of the bytes last written by the provider, used to guard deletion.
+	WrittenDigest pulumi.StringPtrOutput `pulumi:"writtenDigest"`
 }
 
 // NewProtectedFile registers a new resource with the given unique name, arguments, and options.
@@ -52,6 +54,10 @@ func NewProtectedFile(ctx *pulumi.Context,
 	if args.Owner == nil {
 		args.Owner = pulumi.StringPtr("root")
 	}
+	secrets := pulumi.AdditionalSecretOutputs([]string{
+		"writtenDigest",
+	})
+	opts = append(opts, secrets)
 	opts = internal.PkgResourceDefaultOpts(opts)
 	var resource ProtectedFile
 	err := ctx.RegisterResource("homelab:index:ProtectedFile", name, args, &resource, opts...)
@@ -152,7 +158,7 @@ func (o ProtectedFileOutput) ToProtectedFileOutputWithContext(ctx context.Contex
 	return o
 }
 
-// SHA-256 of the content under always, and the word "seeded" under once. The only thing here derived from the content.
+// SHA-256 of the content under always, and the word "seeded" under once.
 func (o ProtectedFileOutput) Digest() pulumi.StringOutput {
 	return o.ApplyT(func(v *ProtectedFile) pulumi.StringOutput { return v.Digest }).(pulumi.StringOutput)
 }
@@ -179,6 +185,11 @@ func (o ProtectedFileOutput) Path() pulumi.StringOutput {
 
 func (o ProtectedFileOutput) Source() provider.SourceOutput {
 	return o.ApplyT(func(v *ProtectedFile) provider.SourceOutput { return v.Source }).(provider.SourceOutput)
+}
+
+// SHA-256 of the bytes last written by the provider, used to guard deletion.
+func (o ProtectedFileOutput) WrittenDigest() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *ProtectedFile) pulumi.StringPtrOutput { return v.WrittenDigest }).(pulumi.StringPtrOutput)
 }
 
 func init() {

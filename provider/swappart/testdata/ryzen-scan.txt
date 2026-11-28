@@ -1,0 +1,138 @@
+#pulumi-homelab#disk /dev/nvme0n1
+#pulumi-homelab#hash 3642b491bab6cd728e7046265197a85dfac31597cd6c12324593a30727c1ffe6
+{
+   "partitiontable": {
+      "label": "gpt",
+      "id": "A975BEDE-7073-48DA-8DC8-AAF656901E32",
+      "device": "/dev/nvme0n1",
+      "unit": "sectors",
+      "firstlba": 34,
+      "lastlba": 3907029134,
+      "sectorsize": 512,
+      "partitions": [
+         {
+            "node": "/dev/nvme0n1p1",
+            "start": 2048,
+            "size": 2097152,
+            "type": "C12A7328-F81F-11D2-BA4B-00A0C93EC93B",
+            "uuid": "8DEEEADC-FCD5-4EBB-8775-18157AA2FB20",
+            "name": "EFI"
+         },{
+            "node": "/dev/nvme0n1p2",
+            "start": 2099200,
+            "size": 3122692239,
+            "type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+            "uuid": "2756DE60-BD19-4CC8-BDC0-B24104B3C566",
+            "name": "homelab-nvme"
+         },{
+            "node": "/dev/nvme0n1p3",
+            "start": 3124793344,
+            "size": 67108864,
+            "type": "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F",
+            "uuid": "28DE59C8-13C6-4D21-A2B8-67DEA142ED23",
+            "name": "swap-nvme0"
+         },{
+            "node": "/dev/nvme0n1p4",
+            "start": 3191902208,
+            "size": 715126927,
+            "type": "E6D6D379-F507-44C2-A23C-238F2A3DF928",
+            "uuid": "C6636F54-CDAB-4E20-BB26-2CDEEA88C090",
+            "name": "cache"
+         }
+      ]
+   }
+}
+
+#pulumi-homelab#disk /dev/zram0
+#pulumi-homelab#hash e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+#pulumi-homelab#disk /dev/nvme0n1
+#pulumi-homelab#hash 3642b491bab6cd728e7046265197a85dfac31597cd6c12324593a30727c1ffe6
+{
+   "partitiontable": {
+      "label": "gpt",
+      "id": "A975BEDE-7073-48DA-8DC8-AAF656901E32",
+      "device": "/dev/nvme0n1",
+      "unit": "sectors",
+      "firstlba": 34,
+      "lastlba": 3907029134,
+      "sectorsize": 512,
+      "partitions": [
+         {
+            "node": "/dev/nvme0n1p1",
+            "start": 2048,
+            "size": 2097152,
+            "type": "C12A7328-F81F-11D2-BA4B-00A0C93EC93B",
+            "uuid": "8DEEEADC-FCD5-4EBB-8775-18157AA2FB20",
+            "name": "EFI"
+         },{
+            "node": "/dev/nvme0n1p2",
+            "start": 2099200,
+            "size": 3122692239,
+            "type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+            "uuid": "2756DE60-BD19-4CC8-BDC0-B24104B3C566",
+            "name": "homelab-nvme"
+         },{
+            "node": "/dev/nvme0n1p3",
+            "start": 3124793344,
+            "size": 67108864,
+            "type": "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F",
+            "uuid": "28DE59C8-13C6-4D21-A2B8-67DEA142ED23",
+            "name": "swap-nvme0"
+         },{
+            "node": "/dev/nvme0n1p4",
+            "start": 3191902208,
+            "size": 715126927,
+            "type": "E6D6D379-F507-44C2-A23C-238F2A3DF928",
+            "uuid": "C6636F54-CDAB-4E20-BB26-2CDEEA88C090",
+            "name": "cache"
+         }
+      ]
+   }
+}
+
+#pulumi-homelab#disk /dev/nvme1n1
+#pulumi-homelab#hash 6cef3c3f2274e6549a943012e90b2239a730bf82ec168155aec1b74a0e1f15f6
+{
+   "partitiontable": {
+      "label": "gpt",
+      "id": "FC7DD977-2488-418D-AD78-D3891AA24659",
+      "device": "/dev/nvme1n1",
+      "unit": "sectors",
+      "firstlba": 34,
+      "lastlba": 3907029134,
+      "sectorsize": 512,
+      "partitions": [
+         {
+            "node": "/dev/nvme1n1p1",
+            "start": 2048,
+            "size": 2097152,
+            "type": "C12A7328-F81F-11D2-BA4B-00A0C93EC93B",
+            "uuid": "5991A567-3C6A-43A2-BFCC-41A300E27B52",
+            "name": "EFI"
+         },{
+            "node": "/dev/nvme1n1p2",
+            "start": 2099200,
+            "size": 3122692239,
+            "type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+            "uuid": "56E3F917-F30B-46E7-BFDD-F7B679B1E3AE",
+            "name": "homelab-nvme"
+         },{
+            "node": "/dev/nvme1n1p3",
+            "start": 3124793344,
+            "size": 67108864,
+            "type": "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F",
+            "uuid": "DB046369-19FB-49E5-B49C-2AF74D2D5E1E",
+            "name": "swap-nvme1"
+         },{
+            "node": "/dev/nvme1n1p4",
+            "start": 3191902208,
+            "size": 715126927,
+            "type": "E6D6D379-F507-44C2-A23C-238F2A3DF928",
+            "uuid": "14B353B3-7CBF-469C-9F13-7B643D8487D3",
+            "name": "cache"
+         }
+      ]
+   }
+}
+

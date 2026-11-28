@@ -53,11 +53,13 @@ class SambaShare extends pulumi.CustomResource {
             resourceInputs["settings"] = args ? args.settings : undefined;
             resourceInputs["share"] = args ? args.share : undefined;
             resourceInputs["actual"] = undefined /*out*/;
+            resourceInputs["created"] = undefined /*out*/;
             resourceInputs["parses"] = undefined /*out*/;
         }
         else {
             resourceInputs["actual"] = undefined /*out*/;
             resourceInputs["config"] = undefined /*out*/;
+            resourceInputs["created"] = undefined /*out*/;
             resourceInputs["parses"] = undefined /*out*/;
             resourceInputs["path"] = undefined /*out*/;
             resourceInputs["settings"] = undefined /*out*/;

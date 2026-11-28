@@ -23,6 +23,8 @@ type ManagedFile struct {
 	Owner         pulumi.StringOutput  `pulumi:"owner"`
 	Path          pulumi.StringOutput  `pulumi:"path"`
 	ReloadSystemd pulumi.BoolPtrOutput `pulumi:"reloadSystemd"`
+	// SHA-256 of the bytes last written by the provider, used to guard deletion.
+	WrittenDigest pulumi.StringPtrOutput `pulumi:"writtenDigest"`
 }
 
 // NewManagedFile registers a new resource with the given unique name, arguments, and options.
@@ -173,6 +175,11 @@ func (o ManagedFileOutput) Path() pulumi.StringOutput {
 
 func (o ManagedFileOutput) ReloadSystemd() pulumi.BoolPtrOutput {
 	return o.ApplyT(func(v *ManagedFile) pulumi.BoolPtrOutput { return v.ReloadSystemd }).(pulumi.BoolPtrOutput)
+}
+
+// SHA-256 of the bytes last written by the provider, used to guard deletion.
+func (o ManagedFileOutput) WrittenDigest() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *ManagedFile) pulumi.StringPtrOutput { return v.WrittenDigest }).(pulumi.StringPtrOutput)
 }
 
 func init() {

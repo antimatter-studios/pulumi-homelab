@@ -240,18 +240,29 @@ func TestArchiveDeleteKeepsRepointedLink(t *testing.T) {
 	if err := os.Symlink(current, link); err != nil {
 		t.Fatal(err)
 	}
-	runner := shellStepRunner(t, map[string]string{"rm": "", "readlink": ""})
+	runner := shellStepRunner(t, map[string]string{
+		"bash": "", "dirname": "", "find": "", "mktemp": "", "mv": "", "readlink": "",
+		"rm": "", "rmdir": "", "sha256sum": "", "sort": "",
+	})
 	s := configuredServer(t, runner)
 	urn := urnOf("Archive", "test")
+	warnings := captureDeleteWarnings(t)
 	inputs := props(map[string]property.Value{
 		"name": property.New("test"), "link": property.New(link), "prefix": property.New(""),
 		"owner": property.New("root"), "group": property.New("root"), "versionCommand": property.New(""),
 		"installed": property.New(true), "version": property.New(""),
 	})
-	if err := s.Delete(p.DeleteRequest{ID: "test", Urn: urn, Properties: inputs}); err == nil || !strings.Contains(err.Error(), "state carries no prefix") || len(runner.Commands()) != 0 {
-		t.Fatalf("delete without prefix: %v, commands %v", err, runner.Commands())
+	invalid := inputs.Set("createdTree", property.New("recorded"))
+	if err := s.Delete(p.DeleteRequest{ID: "test", Urn: urn, Properties: invalid}); err != nil || len(runner.Commands()) != 0 ||
+		!strings.Contains(warnings.String(), "state has no valid archive prefix") {
+		t.Fatalf("delete without prefix: %v, commands %v, warning %q", err, runner.Commands(), warnings.String())
 	}
-	if err := s.Delete(p.DeleteRequest{ID: "test", Urn: urn, Properties: inputs.Set("prefix", property.New(old))}); err != nil {
+	output, stderr, code, err := runner.Run(t.Context(), asRoot(archiveTreeFunctions+"tree_identity "+shellQuote(old)), nil)
+	if err != nil || code != 0 || len(output) == 0 {
+		t.Fatalf("record fixture tree: exit %d, %v, stderr %s", code, err, stderr)
+	}
+	owned := inputs.Set("prefix", property.New(old)).Set("createdTree", property.New(strings.TrimSpace(string(output))))
+	if err := s.Delete(p.DeleteRequest{ID: "test", Urn: urn, Properties: owned}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
