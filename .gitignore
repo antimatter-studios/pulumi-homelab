@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 Pulumi.*.yaml
 
 # github-guard's hooks live in .git/hooks — outside the working tree, so no branch can rewrite the
