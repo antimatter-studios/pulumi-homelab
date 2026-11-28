@@ -77,7 +77,7 @@ func TestDebian13JumpHost(t *testing.T) {
 // startDebianSSHDOn is startDebianSSHD on a given docker network, publishing port 22 to the host.
 func startDebianSSHDOn(t *testing.T, network, authorized string) (Hop, string) {
 	t.Helper()
-	id := docker(t, "run", "-d", "--rm", "--network", network, "-p", "127.0.0.1::22",
+	id := docker(t, "run", "-d", "--network", network, "-p", "127.0.0.1::22",
 		"-e", "AUTHORIZED_KEY="+authorized, debianImage)
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", id).Run() })
 	return waitForSSHD(t, id)
