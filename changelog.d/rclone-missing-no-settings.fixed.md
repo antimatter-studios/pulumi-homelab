@@ -1,0 +1,1 @@
+- RcloneRemote with no settings or secrets now reports "rclone is not installed on <host>" when rclone is missing, instead of a bare exit 127.
