@@ -1,0 +1,1 @@
+- Preserve the hosts file when the Hostname resource cannot read it.
