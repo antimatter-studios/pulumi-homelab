@@ -348,7 +348,7 @@ func TestWriteCommand(t *testing.T) {
 	})
 	t.Run("groups the verify, since && and || associate left to right", func(t *testing.T) {
 		// Verification is required now, so a plain && chain needs no fallback group.
-		staged := `"$dir/autossh-b-22.service"`
+		staged := `"$dir"/'autossh-b-22.service'`
 		chain := `cat > ` + staged + ` <<'PULUMI_EOF' && systemd-analyze verify ` + staged +
 			` && install -m 0644 -o root -g root ` + staged + ` '/etc/systemd/system/autossh-b-22.service' && systemctl daemon-reload`
 		if !strings.HasSuffix(lines[0], chain) || strings.Contains(lines[0], "||") {
