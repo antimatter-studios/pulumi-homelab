@@ -3,6 +3,7 @@ package homelab
 import (
 	"context"
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 	"unicode/utf16"
@@ -140,7 +141,7 @@ func readSymlink(ctx context.Context, m *machine, path string, acceptLauncherScr
 	return &SymlinkState{Path: path, Target: found.Target}, nil
 }
 
-// symlinkParent is path.replace(/\/[^/]*$/, '') || '/'.
+// symlinkParent is path.replace(/\/[^/]*$/, ”) || '/'.
 func symlinkParent(path string) string {
 	parent := path
 	if i := strings.LastIndex(path, "/"); i >= 0 {
@@ -261,6 +262,34 @@ func (Symlink) Diff(_ context.Context, req infer.DiffRequest[SymlinkArgs, Symlin
 	return resp, nil
 }
 
+// symlinkDeleteCommand captures the directory entry with a same-directory rename.
+// Checking the captured entry avoids a type check followed by an unlink at the live path.
+func symlinkDeleteCommand(file string, target *string) string {
+	check := `[ -L "$staging/entry" ]`
+	if target != nil {
+		check += ` && [ "$(readlink -- "$staging/entry")" = ` + shellQuote(*target) + " ]"
+	}
+	return "set -e; [ -L " + shellQuote(file) + " ] || exit 0; cd -- " + shellQuote(path.Dir(file)) + "; entry=" + shellQuote("./"+path.Base(file)) + `
+[ -L "$entry" ] || exit 0
+staging=$(mktemp -d ./.pulumi-symlink.XXXXXXXX)
+trap 'rmdir -- "$staging" 2>/dev/null || true' EXIT
+if ! mv -T -- "$entry" "$staging/entry"; then
+    if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then exit 0; fi
+    exit 1
+fi
+if ` + check + `; then
+    rm -- "$staging/entry"
+    exit 0
+fi
+# The entry changed before the rename. Put it back without overwriting a concurrent arrival.
+if ! mv -nT -- "$staging/entry" "$entry" || [ -e "$staging/entry" ] || [ -L "$staging/entry" ]; then
+    printf 'The path changed during deletion. The captured entry was kept at %s/%s/entry.\n' "$PWD" "$staging" >&2
+else
+    printf 'The path changed during deletion. The captured entry was restored.\n' >&2
+fi
+exit 1`
+}
+
 // Delete removes the path only while it is still a link: if something replaced it with a real
 // directory since the last deployment, removing the resource must not be what deletes it.
 func (Symlink) Delete(ctx context.Context, req infer.DeleteRequest[SymlinkState]) (infer.DeleteResponse, error) {
@@ -268,6 +297,6 @@ func (Symlink) Delete(ctx context.Context, req infer.DeleteRequest[SymlinkState]
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate("test -L "+shellQuote(req.ID)+" && rm -f "+shellQuote(req.ID)+" || true"))
+	_, err = m.must(ctx, m.escalate(symlinkDeleteCommand(req.ID, nil)))
 	return infer.DeleteResponse{}, err
 }

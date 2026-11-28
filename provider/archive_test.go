@@ -26,7 +26,7 @@ func installScript(t *testing.T, src archiveSource, owner, group string) string 
 	if group == "" {
 		group = archiveDefaultGroup
 	}
-	s, err := archiveInstallScript(src, owner, group)
+	s, err := archiveInstallScript(src, owner, group, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,11 +124,11 @@ func TestArchiveInstallScript(t *testing.T) {
 		containsAll(t, script, "trap")
 	})
 	t.Run("unpacks to a staging directory and moves it, so a half-extracted tree is never visible", func(t *testing.T) {
-		before(t, script, `-C "$dir/unpacked"`, `mv "$dir/unpacked"`)
+		before(t, script, `-C "$dir/unpacked"`, `mv -nT -- "$dir/unpacked"`)
 		lacks(t, script, "-C '/opt/widget/1.4.2'")
 	})
 	t.Run("moves the link last, because that is the step anything else can see", func(t *testing.T) {
-		before(t, script, `mv "$dir/unpacked"`, "ln -sfn")
+		before(t, script, `mv -nT -- "$dir/unpacked"`, "ln -sfn")
 	})
 	t.Run("relinks with -n, so a link at a directory is replaced rather than written inside it", func(t *testing.T) {
 		containsAll(t, script, "ln -sfn")
@@ -164,17 +164,9 @@ func TestArchiveInstallScript(t *testing.T) {
 			t.Fatal("differs")
 		}
 	})
-	t.Run("is exactly the TypeScript script", func(t *testing.T) {
-		want := `set -e; dir=$(mktemp -d); trap "rm -rf \"$dir\"" EXIT; ` +
-			`curl -fsSL --retry 3 -o "$dir/archive" 'https://example.com/widget/v1.4.2/widget-linux-arm64.tar.gz'; ` +
-			`echo '` + strings.Repeat("a", 64) + `'"  $dir/archive" | sha256sum -c - >/dev/null; mkdir -p "$dir/unpacked"; ` +
-			`tar -z --no-same-owner -xf "$dir/archive" -C "$dir/unpacked" --strip-components=1; ` +
-			`rm -rf '/opt/widget/1.4.2'; mkdir -p "$(dirname '/opt/widget/1.4.2')"; mv "$dir/unpacked" '/opt/widget/1.4.2'; ` +
-			`chown -R 'root:root' '/opt/widget/1.4.2'; ln -sfn '/opt/widget/1.4.2' '/opt/widget/current'; ` +
-			`chown -h 'root:root' '/opt/widget/current'`
-		if script != want {
-			t.Fatalf("got\n%s\nwant\n%s", script, want)
-		}
+	t.Run("checks an existing prefix before moving it", func(t *testing.T) {
+		before(t, script, `check_tree "$prefix"`, `mv -T -- "$prefix" "$dir/previous"`)
+		before(t, script, `check_tree "$dir/previous"`, `rm -rf --one-file-system -- "$dir/previous"`)
 	})
 }
 
@@ -308,16 +300,16 @@ func TestOwnership(t *testing.T) {
 			t.Fatal(got)
 		}
 	})
-	t.Run("chowns after the move, so the tree is owned before anything points at it", func(t *testing.T) {
+	t.Run("chowns the staged tree before it is published", func(t *testing.T) {
 		s := installScript(t, archiveSrc, "svc", "svc")
-		before(t, s, `mv "$dir/unpacked"`, "chown -R")
+		before(t, s, "chown -R", `mv -nT -- "$dir/unpacked"`)
 		before(t, s, "chown -R", "ln -sfn")
 	})
 	t.Run("chowns the link itself rather than what it points at", func(t *testing.T) {
 		containsAll(t, installScript(t, archiveSrc, "svc", "svc"), "chown -h 'svc:svc' '/opt/widget/current'")
 	})
 	t.Run("defaults to root, so nothing declared before the field existed changes", func(t *testing.T) {
-		containsAll(t, installScript(t, archiveSrc, "", ""), "chown -R 'root:root'")
+		containsAll(t, installScript(t, archiveSrc, "", ""), "chown -R -- 'root:root'")
 	})
 	t.Run("does not let the archive choose who owns files on the machine", func(t *testing.T) {
 		containsAll(t, extract(t, archive.TarGz, "/t/a", "/t/u", 0), "--no-same-owner")
@@ -512,15 +504,4 @@ func TestResolveArgs(t *testing.T) {
 			t.Fatal("differs")
 		}
 	})
-}
-
-// The delete removes the link only while it still points at this prefix.
-func TestArchiveDeleteCommand(t *testing.T) {
-	if got := archiveDeleteCommand("/opt/w/1", ""); got != "rm -rf '/opt/w/1'" {
-		t.Fatal(got)
-	}
-	want := `rm -rf '/opt/w/1'; [ "$(readlink '/opt/w/current' 2>/dev/null)" = '/opt/w/1' ] && rm -f '/opt/w/current' || true`
-	if got := archiveDeleteCommand("/opt/w/1", "/opt/w/current"); got != want {
-		t.Fatal(got)
-	}
 }

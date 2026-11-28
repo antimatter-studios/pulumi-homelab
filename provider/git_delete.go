@@ -20,12 +20,12 @@ as_owner() {
   runuser -u "$(stat -Lc %U -- "$p")" -- env GIT_OPTIONAL_LOCKS=0 git -C "$p" "$@"
  fi
 }
-changes=$(as_owner status --porcelain)
+changes=$(as_owner status --porcelain --untracked-files=all)
 stashes=$(as_owner stash list)
-commits=$(as_owner log --branches --not --remotes --oneline)
+commits=$(as_owner log HEAD --branches --not --remotes --oneline)
 if [ -n "$changes" ]; then printf 'Working tree changes:\n%s\n' "$changes"; fi
 if [ -n "$stashes" ]; then printf 'Stashes:\n%s\n' "$stashes"; fi
-if [ -n "$commits" ]; then printf 'Unpushed branch commits:\n%s\n' "$commits"; fi
+if [ -n "$commits" ]; then printf 'Unpushed commits:\n%s\n' "$commits"; fi
 `
 	output, err := m.must(ctx, m.escalate(probe))
 	if err != nil {

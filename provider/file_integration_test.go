@@ -155,13 +155,18 @@ func TestManagedAndProtectedFileRealShell(t *testing.T) {
 	if diff, _ := s.Diff(p.DiffRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: inputs}); !diff.HasChanges {
 		t.Fatal("a hand edit was not drift")
 	}
-	if _, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: inputs}); err != nil {
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err == nil ||
+		!strings.Contains(err.Error(), "the file changed") || onMachine(t, d, "cat "+path) != "edited\n" {
+		t.Fatalf("delete of drifted file: %v", err)
+	}
+	updated, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: inputs})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if got := onMachine(t, d, "cat "+path); got != "A=$B\n" {
 		t.Fatalf("after update %q", got)
 	}
-	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err != nil {
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: updated.Properties}); err != nil {
 		t.Fatal(err)
 	}
 	if got := onMachine(t, d, "ls -A /etc/demo"); got != "" {
@@ -188,4 +193,27 @@ func TestManagedAndProtectedFileRealShell(t *testing.T) {
 	if diff, err := s.Diff(p.DiffRequest{ID: secretPath, Urn: protectedURN, State: again.Properties, Inputs: pin}); err != nil || diff.HasChanges {
 		t.Fatalf("diff %+v %v", diff, err)
 	}
+
+	t.Run("once preserves a service rotation", func(t *testing.T) {
+		const oncePath = "/home/chris/.config/service-token"
+		once := pin.Set("enforce", property.New("once")).Set("path", property.New(oncePath))
+		created, err := s.Create(p.CreateRequest{Urn: protectedURN, Properties: once})
+		if err != nil || !created.Properties.Get("writtenDigest").IsSecret() {
+			t.Fatalf("create once: %v", err)
+		}
+		onMachine(t, d, "printf rotated > "+oncePath)
+		refreshed, err := s.Read(p.ReadRequest{ID: oncePath, Urn: protectedURN, Inputs: once, Properties: created.Properties})
+		if err != nil || refreshed.Properties.Get("digest").AsString() != seeded {
+			t.Fatalf("read once: %v", err)
+		}
+		if err := s.Delete(p.DeleteRequest{ID: oncePath, Urn: protectedURN, Properties: refreshed.Properties}); err == nil ||
+			!strings.Contains(err.Error(), "the file changed") || onMachine(t, d, "cat "+oncePath) != "rotated" {
+			t.Fatalf("delete of rotated file: %v", err)
+		}
+		onMachine(t, d, `printf '\000\377secret' > `+oncePath)
+		if err := s.Delete(p.DeleteRequest{ID: oncePath, Urn: protectedURN, Properties: refreshed.Properties}); err != nil {
+			t.Fatal(err)
+		}
+		onMachine(t, d, "test ! -e "+oncePath)
+	})
 }

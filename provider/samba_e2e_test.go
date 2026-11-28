@@ -263,7 +263,7 @@ func TestSambaUserLifecycle(t *testing.T) {
 		t.Fatalf("delete %v", err)
 	}
 	// a failure does not put the password into the error
-	failing := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).On(setPw, remotetest.Reply{Code: 1, Stderr: "Failed to add entry for user chris.\n"})
+	failing := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).On(asRoot(listSambaUsers), remotetest.Reply{}).On(setPw, remotetest.Reply{Code: 1, Stderr: "Failed to add entry for user chris.\n"})
 	_, err = configured(t, failing).Create(p.CreateRequest{Urn: sambaURN, Properties: in("chris", "s3cret")})
 	if err == nil || strings.Contains(err.Error(), "s3cret") || !strings.Contains(err.Error(), "smbpasswd failed for user chris") ||
 		!strings.Contains(err.Error(), "(exit 1)") || strings.Contains(err.Error(), "Failed to add entry") {
@@ -277,7 +277,7 @@ func TestSambaUserErrorNeverCarriesThePassword(t *testing.T) {
 	for _, password := range []string{"  padded  ", "tab\there", "crlf\r\npart", "line one\nline two"} {
 		echo := "smbpasswd: " + password + "\n" + strings.TrimSpace(password) + "\r\n" +
 			strings.ReplaceAll(password, "\t", "\\t") + "\n" + strings.Split(password, "\n")[0] + "\n"
-		fake := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).
+		fake := remotetest.New().On("getent passwd 'chris'", remotetest.Reply{}).On(asRoot(listSambaUsers), remotetest.Reply{}).
 			When(func(c string) bool { return strings.Contains(c, "smbpasswd -s -a") }, func(string) remotetest.Reply { return remotetest.Reply{Code: 1, Stdout: echo, Stderr: echo} }, 0)
 		in := property.NewMap(map[string]property.Value{"name": property.New("chris"), "password": property.New(password).WithSecret(true)})
 		_, err := configured(t, fake).Create(p.CreateRequest{Urn: sambaURN, Properties: in})

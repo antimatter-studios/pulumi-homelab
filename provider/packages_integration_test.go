@@ -102,7 +102,9 @@ func TestDebian13GitCheckout(t *testing.T) {
 	for _, tc := range []struct{ name, change, finding string }{
 		{"working tree", "echo changed > a", "Working tree changes:\n M a"},
 		{"stash", "echo changed > a && git stash -q", "Stashes:\nstash@{0}"},
-		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "Unpushed branch commits:"},
+		{"untracked file", "git config status.showUntrackedFiles no && touch local.txt", "?? local.txt"},
+		{"unpushed branch", "git checkout -qb local && echo changed > a && git commit -qam local-work", "Unpushed commits:"},
+		{"unpushed detached HEAD", "echo changed > a && git commit -qam local-detached-work", "Unpushed commits:"},
 	} {
 		t.Run("refuses "+tc.name, func(t *testing.T) {
 			path := "/srv/w-" + strings.ReplaceAll(tc.name, " ", "-")
@@ -158,7 +160,7 @@ func TestDebian13Archive(t *testing.T) {
 
 	// only the owner wrong: a chown, and the tree is not replaced
 	sh(t, m, "chown -R root:root /opt/widget/1.0 && touch /opt/widget/1.0/updated-by-itself")
-	previous := state.source()
+	previous := state
 	if state, err = settleArchive(ctx, m, args, &previous); err != nil || state.Owner != "svc" {
 		t.Fatalf("%+v %v", state, err)
 	}
@@ -173,9 +175,46 @@ func TestDebian13Archive(t *testing.T) {
 		t.Fatalf("installed a mismatched archive: %v", err)
 	}
 
-	sh(t, m, archiveDeleteCommand("/opt/widget/1.0", "/opt/widget/current"))
-	if exists(t, m, "/opt/widget/1.0") || exists(t, m, "/opt/widget/current") {
-		t.Fatal("delete left things behind")
+	if state.CreatedTree == nil || *state.CreatedTree != *previous.CreatedTree {
+		t.Fatalf("chown changed the recorded tree: %+v", state)
+	}
+	deleteTree := func(state ArchiveState) error {
+		_, err := m.must(ctx, m.escalate(archiveDeleteCommand(state.Prefix, deref(state.Link), deref(state.CreatedTree))))
+		return err
+	}
+	if err := deleteTree(state); err == nil || !strings.Contains(err.Error(), "not the tree recorded") {
+		t.Fatalf("delete should refuse a tree with new files: %v", err)
+	}
+	reinstall := args
+	reinstall.URL = strp(*args.URL + "?reinstall")
+	if _, err := settleArchive(ctx, m, reinstall, &state); err == nil || !strings.Contains(err.Error(), "not the tree recorded") {
+		t.Fatalf("reinstall should refuse a tree with new files: %v", err)
+	}
+	if !exists(t, m, args.Prefix+"/updated-by-itself") || !exists(t, m, *args.Link) {
+		t.Fatal("a refusal lost the extra file or the link")
+	}
+	sh(t, m, "rm -f /opt/widget/1.0/updated-by-itself; cp /src/widget.tar.gz /src/widget-reinstall.tar.gz")
+	reinstall.URL = strp("file:///src/widget-reinstall.tar.gz")
+	reinstalled, err := settleArchive(ctx, m, reinstall, &state)
+	if err != nil || reinstalled.CreatedTree == nil || *reinstalled.CreatedTree == *state.CreatedTree {
+		t.Fatalf("did not record the reinstalled tree: %+v, %v", reinstalled, err)
+	}
+
+	// Create can adopt an existing prefix without taking ownership of its tree.
+	adopted, err := settleArchive(ctx, m, reinstall, nil)
+	if err != nil || !adopted.Installed || adopted.CreatedTree != nil {
+		t.Fatalf("adopted state %+v, %v", adopted, err)
+	}
+	if _, err := settleArchive(ctx, m, args, &adopted); err == nil || !strings.Contains(err.Error(), "not the tree recorded") {
+		t.Fatalf("reinstall should refuse an adopted prefix: %v", err)
+	}
+
+	sh(t, m, "mkdir /opt/newer; ln -sfn /opt/newer /opt/widget/current")
+	if err := deleteTree(reinstalled); err != nil {
+		t.Fatal(err)
+	}
+	if exists(t, m, args.Prefix) || strings.TrimSpace(sh(t, m, "readlink /opt/widget/current")) != "/opt/newer" {
+		t.Fatal("delete should remove the recorded prefix and preserve the replacement link")
 	}
 }
 

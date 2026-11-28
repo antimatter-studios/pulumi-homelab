@@ -82,3 +82,26 @@ func TestSymlinkRealShell(t *testing.T) {
 	}
 	d.sh(t, "test -f /opt/bin/t3 && test ! -L /opt/bin/t3")
 }
+
+func TestSymlinkDeleteKeepsRegularFileSwappedInBeforeRename(t *testing.T) {
+	d := startDebianShell(t)
+	d.sh(t, `mkdir /tmp/symlink-race && cd /tmp/symlink-race &&
+ln -s /missing link && printf outside > replacement &&
+cat > mv <<'SH'
+#!/bin/sh
+if [ "$1" = -T ]; then
+    /usr/bin/mv -T -- replacement ./link || exit 1
+fi
+exec /usr/bin/mv "$@"
+SH
+chmod +x mv
+chown -R chris:chris /tmp/symlink-race`)
+	command := "PATH=/tmp/symlink-race:$PATH; export PATH; " + symlinkDeleteCommand("/tmp/symlink-race/link", nil)
+	out, stderr, code, err := d.Run(t.Context(), command, nil)
+	if err != nil || code != 1 || !strings.Contains(string(stderr), "restored") {
+		t.Fatalf("delete: exit %d, %v, stdout %q, stderr %q", code, err, out, stderr)
+	}
+	if contents := d.sh(t, "test ! -L /tmp/symlink-race/link && cat /tmp/symlink-race/link"); contents != "outside" {
+		t.Fatalf("replacement contents %q", contents)
+	}
+}

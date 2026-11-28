@@ -151,7 +151,8 @@ func TestProtectedFileLifecycle(t *testing.T) {
 	fake.On(asRoot(readProtectedCommand(state.Path, "always")), remotetest.Reply{Stdout: digestOf([]byte(secret)) + "\n600 chris chris\n"})
 	fake.On(asRoot(readProtectedCommand(state.Path, "once")), remotetest.Reply{Stdout: "600 chris chris\n"})
 	fake.On(asRoot(refaceCommand(ProtectedFileState{Path: state.Path, Mode: "0600", Owner: "chris", Group: "chris"})), remotetest.Reply{})
-	fake.On(asRoot("rm -f '/home/chris/.ssh/id_ed25519'"), remotetest.Reply{})
+	digest := digestOf([]byte(secret))
+	fake.On(asRoot(writtenFileDeleteCommand(state.Path, &digest)), remotetest.Reply{})
 	s := configured(t, fake)
 
 	created, err := s.Create(p.CreateRequest{Urn: protectedURN, Properties: protectedInputs(fileSource(src), "always")})

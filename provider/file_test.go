@@ -36,7 +36,14 @@ func (d *fakeDisk) runner() *remotetest.Runner {
 		}
 		return remotetest.Reply{Stdout: d.stat + "\n" + d.content}
 	}, 0)
-	fake.When(func(c string) bool { return c == "sudo -n sh -c "+shellQuote("rm -f "+shellQuote(d.path)) }, func(string) remotetest.Reply {
+	fake.When(func(c string) bool { return strings.Contains(c, "actual=$(sha256sum") }, func(c string) remotetest.Reply {
+		if !d.exists {
+			return remotetest.Reply{Code: 9}
+		}
+		digest := digestOf([]byte(d.content))
+		if c != asRoot(writtenFileDeleteCommand(d.path, &digest)) {
+			return remotetest.Reply{Code: 11}
+		}
 		d.exists = false
 		return remotetest.Reply{}
 	}, 0)
@@ -205,14 +212,20 @@ func TestManagedFileLifecycle(t *testing.T) {
 		t.Fatal("a hand edit was not drift")
 	}
 
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err == nil ||
+		!strings.Contains(err.Error(), "the file changed") || disk.content != "hand edited\n" {
+		t.Fatalf("delete after refresh of an edited file: %v", err)
+	}
+
 	// update: writes when different, and does nothing when the machine already matches
-	if _, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: fileInputs(path, "two\n")}); err != nil {
+	updated, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: fileInputs(path, "two\n")})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if disk.content != "two\n" || disk.writes != 2 {
 		t.Fatalf("update wrote %q, %d writes", disk.content, disk.writes)
 	}
-	if _, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: drifted.Properties, Inputs: fileInputs(path, "two\n")}); err != nil {
+	if _, err := s.Update(p.UpdateRequest{ID: path, Urn: fileURN, State: updated.Properties, Inputs: fileInputs(path, "two\n")}); err != nil {
 		t.Fatal(err)
 	}
 	if disk.writes != 2 {
@@ -231,7 +244,7 @@ func TestManagedFileLifecycle(t *testing.T) {
 	}
 
 	// delete removes the file; a read afterwards forgets the resource
-	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: drifted.Properties}); err != nil {
+	if err := s.Delete(p.DeleteRequest{ID: path, Urn: fileURN, Properties: updated.Properties}); err != nil {
 		t.Fatal(err)
 	}
 	gone, err := s.Read(p.ReadRequest{ID: path, Urn: fileURN, Properties: drifted.Properties})

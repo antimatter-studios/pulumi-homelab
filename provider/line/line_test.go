@@ -184,14 +184,22 @@ func TestReadLine(t *testing.T) {
 }
 
 func TestRemoveLine(t *testing.T) {
+	t.Run("matches the full marker and comment", func(t *testing.T) {
+		other := "b # pulumi-homelab:short long\n" +
+			"c # pulumi-homelab:shorter\n" +
+			"d # pulumi-homelab:long # pulumi-homelab:short\n" +
+			"unmanaged pulumi-homelab:short\n"
+		text := MarkLine("a", "short", "#") + "\n" + other
+		eq(t, "RemoveLine", RemoveLine(text, "short", "#"), other)
+	})
 	t.Run("removes its own line and leaves the rest", func(t *testing.T) {
-		eq(t, "RemoveLine", RemoveLine(UpsertLine(guard, shims), shims.Marker), guard)
+		eq(t, "RemoveLine", RemoveLine(UpsertLine(guard, shims), shims.Marker, shims.Comment), guard)
 	})
 	t.Run("leaves a file it was never in exactly as it found it", func(t *testing.T) {
-		eq(t, "RemoveLine", RemoveLine(guard, shims.Marker), guard)
+		eq(t, "RemoveLine", RemoveLine(guard, shims.Marker, shims.Comment), guard)
 	})
 	t.Run("does not remove another marked line", func(t *testing.T) {
 		both := UpsertLine(UpsertLine(guard, shims), with(shims, func(a *Args) { a.Marker, a.Line = "other", "x=1" }))
-		eq(t, "RemoveLine", RemoveLine(both, "other"), UpsertLine(guard, shims))
+		eq(t, "RemoveLine", RemoveLine(both, "other", DefaultComment), UpsertLine(guard, shims))
 	})
 }
