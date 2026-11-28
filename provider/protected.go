@@ -157,12 +157,14 @@ func collect(ctx context.Context, source Source) ([]byte, error) {
 		var stdout bytes.Buffer
 		cmd.Stdout = &stdout
 		if err := cmd.Run(); err != nil {
-			// Source commands may print secret material or include it in their arguments.
+			// Source commands may print secret material or include it in their arguments, so the
+			// error names the program only, never its arguments or its output.
+			name := filepath.Base(argv[0])
 			var exit *exec.ExitError
 			if errors.As(err, &exit) {
-				return nil, fmt.Errorf("ProtectedFile: local source command failed (%s)", exit.ProcessState)
+				return nil, fmt.Errorf("ProtectedFile: local source command %q failed (%s)", name, exit.ProcessState)
 			}
-			return nil, errors.New("ProtectedFile: could not start local source command")
+			return nil, fmt.Errorf("ProtectedFile: could not start local source command %q", name)
 		}
 		return stdout.Bytes(), nil
 	}

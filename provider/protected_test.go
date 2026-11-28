@@ -270,7 +270,7 @@ func TestProtectedFileSourceErrorOmitsCommandOutput(t *testing.T) {
 			_, err := configured(t, fake).Create(p.CreateRequest{
 				Urn: protectedURN, Properties: protectedInputs(source, "always"),
 			})
-			if err == nil || !strings.Contains(err.Error(), "ProtectedFile: local source command failed (exit status 37)") {
+			if err == nil || !strings.Contains(err.Error(), "ProtectedFile: local source command \"sh\" failed (exit status 37)") {
 				t.Fatal("expected a generic failure with the source exit status")
 			}
 			if strings.Contains(err.Error(), secret) {
