@@ -1,7 +1,7 @@
 # pulumi-homelab
 
-Pulumi resources for a Linux machine you own. Desired state over SSH, in TypeScript, with real
-drift detection.
+Pulumi resources for a Linux machine you own. Desired state over SSH, from a provider written in
+Go with generated Node.js and Go SDKs, with real drift detection.
 
 Point it at a Raspberry Pi, a NAS or a server that has been hand-tended for years, describe the
 parts you care about, and leave the rest alone. Every resource asks the machine what it actually
@@ -128,62 +128,24 @@ It does not claim the whole machine. Anything you do not declare is left exactly
 what makes it safe to point at a server that already works and has been hand-tended for years, and
 what makes adopting one incremental rather than a rebuild.
 
-**Adoption is by convergence, not by import.** Pulumi cannot import resources belonging to a dynamic
-provider — neither `pulumi import` nor the resource-level `import` option, both of which fail inside
-Pulumi's own dynamic-provider service. So describing something that already exists means declaring
-it and letting the first `up` agree with the machine, which in turn means the declaration has to be
-byte-exact against what is there: a `ManagedFile` whose content differs by a trailing newline will
-rewrite the file rather than adopt it. The `read` is what makes that survivable — run
-`pulumi refresh` first and the diff tells you where the code and the machine disagree before
-anything is written.
+**Adopting something that already exists** is either an import or a declaration that the first `up`
+converges the machine to. Either way the declaration has to be byte-exact against what is there: a
+`ManagedFile` whose content differs by a trailing newline will rewrite the file. The `read` is what
+makes that survivable — run `pulumi refresh` first and the diff tells you where the code and the
+machine disagree before anything is written.
 
 The cost is worth stating plainly: a machine managed this way is reproducible **in the parts you
 modelled and no further**. If you need "rebuild from bare metal and get the same box", you need to
 model everything — and at that point you are describing NixOS, which already does it.
 
-## Only data crosses into a provider, never behaviour
-
-The rule that decides what is possible here, and it is invisible from the outside. Pulumi serialises
-a dynamic provider's whole closure into the state file and evaluates it again later, so **a value
-survives that trip and a running thing does not**. A consumer can hand a resource
-`{ address, user }`; it cannot hand it an object with methods, however well typed.
-
-Inside the package that constraint lifts, because the implementations travel with the closure. So
-`Transport` is an interface here and could not be one across the boundary:
-
-```ts
-export interface Transport {
-  ask(command: string): Promise<Ran>;
-  escalate(command: string): string;
-  describe(): string;
-}
-```
-
-Every resource takes a `Target`, which is either the `Host` struct or a transport. `localTransport()`
-is the other implementation, and it exists because **every bug this package has had was found by a
-real machine and invisible to its tests** — a fixture written by the same person who wrote the bug
-agrees with it. Pointing `ManagedFile` at a temporary directory lets the real `stat` answer.
-
-It found something on its first run: these reads use `stat -c`, which is GNU coreutils, and BSD
-`stat` rejects it. Not a bug — this package describes Linux machines — but an assumption nothing had
-written down until a shell was asked.
-
-The same rule is why a resource cannot take a *reference* to a secret and fetch it.
-`{ vault, entry, attr }` would survive serialisation, but only code that already understood those
-words could act on it, so the package would either learn about one particular vault or grow a
-plug-in interface with exactly one implementation. It is also why three separate failures in one day
-were one lesson: a helper named `fetch` losing its binding and landing on the global, a module-scope
-import captured by reference, and `promisify` reaching native code.
-
-### Declared, effective, overridden
+## Declared, effective, overridden
 
 The package's central idea was implemented five times before it was named. `BootConfig` asks
 `vcgencmd`, `Journald` asks `systemd-analyze cat-config`, `SambaShare` asks the file, `SshdConfig`
 asks `sshd -T` — each with its own field names for **what this resource wrote is not what the system
 does**.
 
-`Resolved<T>` names it, and `overridden` — which one resource had and four needed — is now on all of
-them: the declared keys the system does not agree with, because something else won. A drop-in that
+`overridden` — which one resource had and four needed — is now on all of them: the declared keys the system does not agree with, because something else won. A drop-in that
 sorts later, a `Match` block, a `config.txt` section that never matches the board. None of them are
 errors and all of them are silent. **Nothing reconciles it**: a resource that rewrote its own file to
 win would lose the same argument on the next run.
@@ -200,8 +162,8 @@ about a machine it has never met.
 The defaults are what Debian and its derivatives do. Anything else says so at the call site:
 
 ```ts
-new SambaShare('media', host, { share: 'media', path: '/srv/media', config: '/usr/local/etc/smb.conf' });
-new Swap('none', host, { enabled: false, unit: 'swapfile-generator' });
+new homelab.SambaShare('media', { share: 'media', path: '/srv/media', config: '/usr/local/etc/smb.conf' }, { provider: machine });
+new homelab.Swap('none', { enabled: false, unit: 'swapfile-generator' }, { provider: machine });
 ```
 
 The same goes for anything identifying. Nothing in this repository names a real host, address,
@@ -211,20 +173,48 @@ calls it.
 
 ## Using it
 
-Not on npm yet. Add it as a source dependency:
+The resources are a Pulumi provider written in Go (`provider/`, plugin `pulumi-resource-homelab`,
+tokens `homelab:index:<Type>`). Programs use it through the generated SDKs: `sdk/nodejs`
+(`@antimatter-studios/homelab`, which also carries the handwritten `FluxApp`, Claude profile and T3
+Code helpers) and `sdk/go` (`github.com/antimatter-studios/pulumi-homelab/sdk/go`).
+
+Nothing is on npm. Each release carries the plugin binaries and the Node.js SDK stamped with the same
+version, so pinning the SDK pins the plugin Pulumi downloads:
 
 ```json
-{ "dependencies": { "pulumi-homelab": "file:../pulumi-homelab" } }
+{ "dependencies": { "@antimatter-studios/homelab": "https://github.com/antimatter-studios/pulumi-homelab/releases/download/vX.Y.Z/antimatter-studios-homelab-X.Y.Z.tgz" } }
 ```
 
+To use a checkout instead, depend on `link:../pulumi-homelab/sdk/nodejs`, run `pnpm install` at the
+checkout's root (the linked SDK finds its dependencies there), and install the plugin under the
+checkout's version:
+
+```sh
+(cd provider && go build -o bin/pulumi-resource-homelab ./cmd/pulumi-resource-homelab)
+pulumi plugin install resource homelab 0.0.0-dev --file provider/bin/pulumi-resource-homelab --reinstall
+```
+
+The connection is the provider's configuration, and none of it has a default:
+
 ```ts
-import { AptPackage, SystemdUnit, Precondition, type Host } from 'pulumi-homelab';
+import * as homelab from '@antimatter-studios/homelab';
 
-const host: Host = { address: '198.51.100.10', user: 'admin' };
+const machine = new homelab.Provider('machine', {
+  address: '198.51.100.10',
+  port: 22,
+  user: 'admin',
+  agentSocketEnv: 'SSH_AUTH_SOCK',
+  hostKeysFile: 'known_hosts',
+  readSshConfig: false,
+  readDefaultKeys: false,
+  readKnownHosts: false,
+  strictHostKeyChecking: true,
+  escalation: 'sudo',
+});
 
-const node = new AptPackage('nodejs', host, { name: 'nodejs', update: true });
+const node = new homelab.AptPackage('nodejs', { name: 'nodejs', update: true }, { provider: machine });
 
-new SystemdUnit('app', host, {
+new homelab.SystemdUnit('app', {
   name: 'app',
   unit: `[Unit]
 Description=the thing this machine is for
@@ -237,77 +227,20 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 `,
-}, { dependsOn: [node] });
+}, { provider: machine, dependsOn: [node] });
 ```
 
 **Always run with `--refresh`.** A bare `pulumi up` compares your code against Pulumi's *memory* of
 the machine rather than the machine itself, which is the one way to make all of this pointless.
 
-### Two things a consumer has to know
-
-**One compiler option.** This ships sources rather than built output, so a `file:` or `link:`
-dependency means *your* compiler reads these files under *your* options. Relative imports here carry
-their `.ts` extension — which is what lets plain `node --experimental-strip-types` load the package
-with no build step, and is how `audit()` runs from a two-line script rather than only inside a
-Pulumi program. Without this you get `TS5097` pointing at files in this repo from a typecheck of
-your own:
-
-```json
-{ "compilerOptions": { "allowImportingTsExtensions": true } }
-```
-
-Nothing here emits, so it costs nothing but the line.
-
-**Install takes a few minutes the first time.** `@pulumi/kubernetes` is a dependency because
-`FluxApp` is in here: 22MB of SDK plus a `postinstall` that fetches a 178MB resource plugin into
-`~/.pulumi/plugins`. Where that plugin is already cached it is seconds, which is why two people
-report wildly different times for the same command. It is install time and not runtime — Pulumi runs
-a program through Node rather than bundling it, so a module nobody imports is never loaded — but it
-is long enough to be mistaken for a hang.
-
-### Running the tests
+To check a change to this repository:
 
 ```sh
-pnpm install
-pnpm test          # unit tests, then the package checks under plain node
-pnpm run test:unit # just the unit tests
+(cd provider && go vet ./... && go test ./...)
+(cd provider && go test -tags integration ./...)   # Debian 13 containers, needs Docker
+./scripts/gen-sdk.sh                               # regenerate the SDKs, with Pulumi 3.150.0
+pnpm install && pnpm run test:unit                 # the SDK's handwritten helpers
 ```
-
-CI runs both on Ubuntu, which matters: six tests exercise resources against a real filesystem and
-skip on macOS, because this package reads machines with GNU coreutils and BSD `stat` rejects `-c`.
-Those six only ever run in CI.
-
-### Where the pure/effectful line is
-
-A provider with no side effects would be a provider that does nothing, so the rule is not "no side
-effects" — it is that **every decision lives in a pure function and the effectful layer only
-sequences them**. Around seventy exported functions carry the decisions: every parse
-(`parseDpkgStatus`, `parseShow`, `parseSshdT`, `parseVcgencmd`, `parseHostKeys`), every comparison
-(`sambaSameValue`, `disagreeing`, `transportChanged`), every edit (`upsertFstab`, `applyToSection`,
-`setHostsName`), every command (`testparmCommand`, `installScript`, `bootedWith`), and every
-decision about what to do (`actsNeeded`, `swapAction`, `interpretSymlink`, `lockoutRefusal`,
-`renumberRefusal`).
-
-That is not tidiness. Every bug this package has had was in reading state back or in deciding what
-to do about it, and both were previously buried inside functions that need a machine. Two specific
-lessons paid for the rest:
-
-- **A test that re-implements the decision proves only that two copies agree.** `SystemdUnit`'s
-  "which of these three acts are needed" was restated in its test file; it is now imported.
-- **A test whose input is captured output cannot notice the question changing.** Reverting
-  `testparm -sv` to `-s` broke no test, because the fixtures *are* `-v` output. The command is a
-  function now, and the flag is asserted.
-
-Both refusals that cannot be exercised on a machine without taking that machine away —
-`lockoutRefusal` and `renumberRefusal` — are pure and tested for their exact wording, because a
-guard nobody has seen fire is a guard nobody knows the wording of.
-
-The package checks are separate from the unit tests on purpose, and each has a demonstrated failure
-mode: the package loads through Node's own loader, a provider closure serialises, a serialised
-provider still works when read back, an unserialisable closure is still rejected, no provider local
-shadows a global or a module binding, every `diff` notices a provider upgrade, and every resource
-declares a type and carries its legacy alias. Several exist because the thing they check went wrong
-once.
 
 ## The resources
 
@@ -388,7 +321,7 @@ the same stance `PosixAcl` takes about entries it did not grant.
 `FstabEntry` is keyed on the mount point, never regenerates the file, and writes the line
 without mounting it — mounting over a directory that has contents hides them, and a deployment
 is the worst moment to discover that. It marks its lines with a `# pulumi-homelab` comment
-which is *never matched on*; that is what lets `audit()` find orphans.
+which is *never matched on*.
 
 ### Packages
 
@@ -462,7 +395,7 @@ install that with `Archive` — which turns an unrepeatable afternoon into a ver
 **`SshTunnel`** is a machine behind NAT publishing ports on a bastion it can reach:
 
 ```ts
-new SshTunnel('tunnel-bastion', host, {
+new homelab.SshTunnel('tunnel-bastion', {
   to: 'tunnel@bastion.example.com',
   port: 10022,
   identity: '/home/chris/.ssh/id_ed25519',
@@ -472,7 +405,7 @@ new SshTunnel('tunnel-bastion', host, {
     { remote: 20080, local: 80,  what: 'k3s ingress' },
     { remote: 20443, local: 443, what: 'k3s ingress, tls' },
   ],
-});
+}, { provider: machine });
 ```
 
 **Its read has three rungs, and the third is why it is a resource rather than a module.** The unit
@@ -603,12 +536,12 @@ directory with an explicit `755` gets a mask that caps what it inherited, so `27
 already exists:
 
 ```ts
-new PosixAcl('acl-pool', host, {
+new homelab.PosixAcl('acl-pool', {
   path: '/mnt/pool',
   entries: [{ type: 'group', name: 'rwgroup', perms: 'rwx' }],
   defaultEntries: [{ type: 'group', name: 'rwgroup', perms: 'rwx' }],
   normalise: { group: 'rwgroup', from: '2755', to: '2775', ignore: ['var', 'k3s'] },
-});
+}, { provider: machine });
 ```
 
 It runs when the resource is created and whenever the entries or the rule change, and fails if any
@@ -635,14 +568,10 @@ the message you wrote. Because its `read` asks again, a machine that stops quali
 as a resource that has gone. **One condition per resource, not one compound check**: a reader
 who has to work out which half failed is doing the diagnosis the resource existed to do.
 
-Check builders to pair with it: `bootedWith(flags)`, `mountedAt(path)`, `fluxReady(name)`, and
+The Node.js SDK has check builders for Flux to pair with it: `fluxReady(name)`, and
 `fluxReason(name)` for the message.
 
-### Helpers
-
-`ask` and `must` (a non-zero exit is an *answer* to a question and a *fault* when doing),
-`escalate` / `asRoot`, `shellQuote`, `heredoc` / `heredocInto`, `sshArgs`, `normaliseMode`,
-`audit`, and `providerChanged` / `withLegacyAlias`.
+### Boot configuration
 
 `BootConfig` is `KernelCmdline`'s sibling and the section is part of its identity. A Raspberry Pi's
 `config.txt` has conditional filter sections — `[all]`, `[pi5]`, `[cm5]` — and **a setting under a
@@ -652,7 +581,7 @@ Module and never a Pi 5 Model B, so it silently never applied and the symptom wa
 drive rather than anything mentioning boot configuration.
 
 ```ts
-new BootConfig('pcie', host, { section: 'all', overlays: ['dtparam=pciex1'] });
+new homelab.BootConfig('pcie', { section: 'all', overlays: ['dtparam=pciex1'] }, { provider: machine });
 ```
 
 `settings` is typed **only where a value set is genuinely closed** — the 0/1 options as booleans,
@@ -713,7 +642,7 @@ afterwards. Its `read` answers both questions — what is active, and what is co
 active — and `enabled: false` is only satisfied when both say no:
 
 ```ts
-new Swap('none', host, { enabled: false });
+new homelab.Swap('none', { enabled: false }, { provider: machine });
 ```
 
 Which is why turning swap off means `swapoff -a`, *and* masking `dphys-swapfile` rather than merely
@@ -745,12 +674,12 @@ a syntax error there does not break the rule, it breaks sudo for every user on a
 management path is sudo over ssh.
 
 ```ts
-new SudoRule('backup-restart', host, {
+new homelab.SudoRule('backup-restart', {
   user: 'backup',
   passwordless: true,
   commands: ['/usr/bin/systemctl restart borg'],
   runAs: 'root',
-});
+}, { provider: machine });
 ```
 
 **It cannot bootstrap itself.** Everything here runs through `sudo -n`, so writing a sudoers file
@@ -776,13 +705,13 @@ other. A resource per key composes instead, and a different stack can authorise 
 touching the account's declaration.
 
 ```ts
-const key = new SshKey('deploy', host, { path: '/root/.ssh/deploy_ed25519' });
+const key = new homelab.SshKey('deploy', { path: '/root/.ssh/deploy_ed25519' }, { provider: machine });
 
-new AuthorizedKey('deploy-on-build', buildHost, {
+new homelab.AuthorizedKey('deploy-on-build', {
   user: 'ci',
   key: key.publicKey,
   options: ['from="10.0.0.0/24"', 'command="/usr/bin/deploy"'],
-});
+}, { provider: buildMachine });
 ```
 
 Generate on one machine, authorise on another, and no human copies a secret. `SshKey` makes the
@@ -836,56 +765,8 @@ Its `read` is `sshd -T`, and that needed a normalisation layer of its own:
 the same thing. Compared directly that is drift on every refresh and a correction on every
 deployment — the `0644` bug again, in a different alphabet.
 
-Host keys are deliberately not managed; `hostKeys(host)` reports their fingerprints instead. A
-machine presenting new ones has been reinstalled, which is worth being told loudly and is not worth
-rotating on purpose.
-
-### Which key gets offered: `Host.identityFile`
-
-```ts
-const host: Host = {
-  address: '10.0.0.9',
-  user: 'root',
-  port: 10022,
-  identityFile: '~/.ssh/that-one.pub',
-};
-```
-
-**A fix for an intermittent failure that points at the wrong thing.** sshd's `MaxAuthTries`
-defaults to 6. An agent holding nine keys offers them in its own order, and if the key a host
-accepts is the eighth, the connection closes with `Received disconnect: Too many authentication
-failures` before it is ever reached. That reads as the server rejecting you, and the obvious
-responses — relaxing the server's limit, unbanning an address — treat a symptom that was never the
-cause. It is also how an address gets itself fail2ban-banned: enough failed offers look exactly like
-someone guessing.
-
-What makes it worth a field rather than a note is that **the agent's order is not stable.** The same
-key was measured at position five and then at eight on one machine, the order having changed when
-the vault was re-unlocked. So an unchanged stack deploys at three o'clock and fails at five, and the
-only thing that moved was outside it.
-
-A **`.pub` path is enough and is the better thing to declare**: ssh matches the public key against
-the agent and offers only that one, so the private key never leaves the agent and nothing secret
-goes near a Pulumi program. `IdentitiesOnly=yes` is what makes `-i` a restriction rather than an
-addition — without it the file joins the list instead of replacing it, and the offer that tripped
-the limit still happens.
-
-**It applies to the jump too, and that is where `ProxyJump` has to give way.** `-J` does not pass
-options to the ssh it spawns, so pinning an identity would fix the far end and leave the bastion
-being offered every key — useless, since the bastion is usually the machine with the limit.
-Measured: `-J` with the identity pinned still failed at the bastion; the same identity inside a
-`ProxyCommand` connected. So when `identityFile` is set the jump becomes
-`ProxyCommand=ssh … -W %h:%p …`, and only then — the plain `-J` path is untouched otherwise.
-
-`-W` is not a return to the thing `ProxyJump` was chosen over: ssh still does the forwarding and
-still checks `known_hosts` for the far end, which a `ProxyCommand` piping through netcat would not.
-A **multi-hop** jump with an identity is refused rather than attempted, because chaining
-`ProxyCommand`s means nesting one inside another through two layers of shell quoting, and a command
-built wrong there does not fail cleanly — it connects somewhere unintended, or hangs.
-
-The identity is hashed into the control socket's name alongside the route. Otherwise a socket opened
-offering one key would be reused for a declaration asking for another, and the second would silently
-inherit the first's authentication.
+Host keys are deliberately not managed. A machine presenting new ones has been reinstalled, which is
+worth being told loudly and is not worth rotating on purpose.
 
 ## The one where the obvious comparison is wrong
 
@@ -925,11 +806,11 @@ edge to the service. `AptPackages` is the other case: the list of things somebod
 they wanted them on the machine.
 
 ```ts
-new AptPackages('tools', host, {
+new homelab.AptPackages('tools', {
   present: ['btop', 'duf', 'fd-find', 'gdu', 'ripgrep'],
   absent: ['nano'],
   update: true,
-});
+}, { provider: machine });
 ```
 
 The difference is round trips and resolution. Twenty single resources ask dpkg twenty times over
@@ -937,7 +818,7 @@ twenty ssh connections, and apt resolves each against a different intermediate s
 and installs the missing ones together.
 
 **Both conditions are describable, and that matters more than it looks.** Without `absent`, "not
-installed" is something the audit can report and the code cannot state — a package somebody removed
+installed" is something the code cannot state — a package somebody removed
 on purpose three years ago is indistinguishable from one nobody ever considered. Drift is read in
 both directions: something declared present that has gone, and something declared absent that has
 come back.
@@ -977,15 +858,14 @@ A package named in both lists throws rather than resolving, because that is not 
 exist, and picking a winner would be the resource deciding which half of the code to believe.
 
 `delete` does nothing in either direction: dropping the description of a machine's packages is
-neither a request to strip it nor to reinstall what was declared absent. What that leaves behind is
-what the audit reports.
+neither a request to strip it nor to reinstall what was declared absent.
 
 ## Flux
 
-The one component rather than provider, and the one thing here that is about a cluster:
+The one component rather than provider resource, and the one thing here that is about a cluster:
 
 ```ts
-new FluxApp('app', {
+new homelab.FluxApp('app', {
   url: 'https://github.com/example/app',
   branch: 'main',
   path: './deploy/flux',
@@ -1014,13 +894,13 @@ Which is the third rule again — the pointer is what you control, the reconcili
 about — so they are asked separately:
 
 ```ts
-const app = new FluxApp('app', { url, branch: 'main', path: './deploy/flux' }, { provider });
+const app = new homelab.FluxApp('app', { url, branch: 'main', path: './deploy/flux' }, { provider: cluster });
 
-new Precondition('app-reconciled', host, {
-  check: fluxReady('app'),
+new homelab.Precondition('app-reconciled', {
+  check: homelab.fluxReady('app'),
   root: true,                      // k3s writes its kubeconfig 0600, owned by root
-  message: `Flux has not reconciled app. Ask it why:\n  ${fluxReason('app')}`,
-}, { dependsOn: [app] });
+  message: `Flux has not reconciled app. Ask it why:\n  ${homelab.fluxReason('app')}`,
+}, { provider: machine, dependsOn: [app] });
 ```
 
 `fluxReady` is a `kubectl wait` rather than a read-and-compare, so a deployment running seconds
@@ -1028,97 +908,6 @@ after the objects were created is not failed merely for being early. `fluxReason
 that prints Flux's own explanation out of the Ready condition, and it belongs in the *message*
 rather than in the check: a check that printed it would still leave the operator without it once the
 deployment had stopped.
-
-## The audit
-
-Leaving undeclared things alone is what makes this safe to point at a machine that already works.
-The price is invisible rot: a package installed by hand two years ago, a unit left over from a
-service that was replaced, an account belonging to somebody who has moved on. None of it appears in
-a diff, because a diff can only talk about resources the program contains.
-
-```ts
-import { audit } from 'pulumi-homelab';
-
-const findings = await audit(host, { packages: ['nodejs'], units: ['aiworld'], users: ['aiworld'] });
-```
-
-It asks the machine what it has, subtracts what you declared, and reports the rest: manually
-installed packages (newest first, since a Debian base install marks several hundred as manual and
-they all share one timestamp), units in `/etc/systemd/system`, and accounts above the machine's own
-`UID_MIN`. It is a plain function rather than a resource — it builds nothing, and there is no
-desired state for it to hold.
-
-Managing a machine fully means describing every resource with no gaps; anything short of that means
-accepting the differences in the gaps. This is what turns accepting them into knowing their size.
-
-## Upgrading this provider is a real deployment
-
-Pulumi serialises a dynamic provider's whole closure — the transport, the quoting, every resource
-method — into the state file, and `read`, `diff` and `update` all run **the stored closure rather
-than the current source**. A resource created last month is still running last month's `ssh.ts`.
-
-So each resource carries a **transport version** in its own state, and a `diff` reports a change
-when that number is older than the package's. Bumping it is a deliberate act.
-
-**It is not only about the transport, whatever the name says** — and getting that wrong is the most
-recent bug in this file. Everything a resource does *after* connecting is in the serialised closure
-too: its `read`, its `diff`, the shape of its state. Three merged changes altered what a resource
-reads — Samba reading the file instead of `testparm`, `SshKey` asserting the mode on both halves,
-`AptPackages` marking what it declares as manual — and none bumped the version, because none touched
-the transport. All three were correct, merged, tested, and inert on every machine that already had
-those resources. It came back as *"merged and correct, and on my machine it has never executed"*.
-
-The name cannot change: the field in state is `transport`, and renaming it would make every stamped
-resource read as unstamped and wait for something else to move it. So the rule is stated instead of
-implied. **Bump it for any change that must reach resources that already exist** — a quoting fix, a
-connection option, a security fix, a different `read`, a new state field, a corrected `diff`. The
-question is never *"did I touch the transport"* but *"would a resource created last month still be
-wrong"*.
-
-And it is asked mechanically rather than remembered. `pnpm run check:revision` hashes every non-test
-source under `src/` and compares it with `provider-revision.json`, which records the hash beside the
-revision it belongs to. A source change with no bump fails in CI, and the two ways to satisfy it are
-both a decision rather than a way to silence it:
-
-```
-pnpm run revision:record              # after bumping TRANSPORT: the change must reach existing state
-pnpm run revision:record --no-bump    # it must not, and here is a commit saying so
-```
-
-`--no-bump` is the honest escape for a doc comment or a test helper. It is deliberately not the
-default, because the failure it guards is silent on every machine and obvious on none.
-
-**The first attempt at this compared the serialised closure, and it could not work.** `update` does
-not re-persist `__provider`, so once the stored text differed from the program's it differed for
-ever: the resource reported an update on every deployment, the stored value never moved, and only
-the resources whose state happened to be written at an older version were affected. On one real
-stack that was ten of them, writing to the machine on every run — a Samba reload and an avahi
-restart among them — while `pulumi up` could never answer "nothing to do", which is the answer you
-want before doing anything risky.
-
-It was also wrong in the other direction: the closure carries the source text of everything it
-captures, so a comment added to a doc block made every resource in every stack report an update.
-
-A number is data, it is carried in the resource's own state so an update persists it and the upgrade
-completes, and it moves only when somebody decides it should. State written before the mechanism
-existed reports **no** change — guessing there would mean updating every resource on every machine
-once, which is the failure being replaced.
-
-### An update that changes nothing does nothing
-
-Every resource here reads the machine before it writes to it, and skips the write when the machine
-already says what the code says. That is what keeps the paragraph above from being a problem: a
-deployment caused only by this package changing finds everything already in place and touches
-nothing.
-
-It matters most for `SystemdUnit`, which used to `systemctl restart` on every update. Combined with
-the provider check that would have meant every managed service restarting whenever anything in this
-package was edited — including a comment, since a serialised closure carries the source text of what
-it captures. A film stopping because somebody fixed a typo.
-
-The one act that is not conditional on its own field is the restart of a service whose *unit file*
-changed, even when it was already running: systemd goes on executing the definition the process was
-started with, which is the classic "why has my edit not taken effect" afternoon.
 
 ## Changelog
 
