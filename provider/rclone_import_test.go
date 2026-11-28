@@ -15,10 +15,7 @@ import (
 func TestRcloneRemoteImportKeepsCredentialsSecret(t *testing.T) {
 	fake := remotetest.New()
 	fake.When(func(c string) bool { return strings.Contains(c, "config dump") }, func(string) remotetest.Reply {
-		return remotetest.Reply{Stdout: `{"jonflix":{"type":"webdav","url":"https://dav.example/","vendor":"other","user":"jon","pass":"OBSCURED-PASS"}}`}
-	}, 0)
-	fake.When(func(c string) bool { return strings.Contains(c, "reveal") && strings.Contains(c, "OBSCURED-PASS") }, func(string) remotetest.Reply {
-		return remotetest.Reply{Stdout: "plainpass\n"}
+		return remotetest.Reply{Stdout: `{"jonflix":{"type":"webdav","url":"https://dav.example/","vendor":"other","user":"jon","pass":"is35suLTYDUARoSoPWgX_TeYnQiUhjI_Yw"}}`}
 	}, 0)
 	s := configuredServer(t, fake)
 	urn := urnOf("RcloneRemote", "jonflix")
@@ -26,6 +23,9 @@ func TestRcloneRemoteImportKeepsCredentialsSecret(t *testing.T) {
 	read, err := s.Read(p.ReadRequest{ID: "jonflix@pass", Urn: urn})
 	if err != nil || read.ID != "jonflix" {
 		t.Fatalf("read %+v %v", read, err)
+	}
+	if fake.Ran("is35suLTYDUARoSoPWgX_TeYnQiUhjI_Yw") || fake.Ran("plainpass") {
+		t.Fatal("credentials appeared in an import command")
 	}
 	for _, m := range []property.Map{read.Properties, read.Inputs} {
 		if m.Get("settings").AsMap().Get("pass").IsString() {

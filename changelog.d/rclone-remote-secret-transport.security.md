@@ -1,0 +1,1 @@
+- Keep RcloneRemote credentials out of remote command arguments and errors.
