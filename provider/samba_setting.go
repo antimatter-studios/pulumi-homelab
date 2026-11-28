@@ -89,8 +89,28 @@ func orApply(apply *string) string {
 	return *apply
 }
 
+func validateSambaApply(how string) error {
+	if _, ok := sambaApply[how]; !ok {
+		return fmt.Errorf("invalid SambaSetting apply %q: expected reload, nmbd, or all", how)
+	}
+	return nil
+}
+
+func (SambaSetting) Check(ctx context.Context, req infer.CheckRequest) (infer.CheckResponse[SambaSettingArgs], error) {
+	args, failures, err := infer.DefaultCheck[SambaSettingArgs](ctx, req.NewInputs)
+	if err == nil {
+		if invalid := validateSambaApply(orApply(args.Apply)); invalid != nil {
+			failures = append(failures, p.CheckFailure{Property: "apply", Reason: invalid.Error()})
+		}
+	}
+	return infer.CheckResponse[SambaSettingArgs]{Inputs: args, Failures: failures}, err
+}
+
 func settleSetting(ctx context.Context, m *machine, args SambaSettingArgs) (SambaSettingState, error) {
 	config, how := orConf(args.Config), orApply(args.Apply)
+	if err := validateSambaApply(how); err != nil {
+		return SambaSettingState{}, err
+	}
 	current, err := catConf(ctx, m, config)
 	if err != nil {
 		return SambaSettingState{}, err
@@ -100,11 +120,7 @@ func settleSetting(ctx context.Context, m *machine, args SambaSettingArgs) (Samb
 		if err := applyConf(ctx, m, updated, config); err != nil {
 			return SambaSettingState{}, err
 		}
-		command, ok := sambaApply[how]
-		if !ok {
-			command = sambaApply["reload"]
-		}
-		if _, err := m.must(ctx, m.escalate(command)); err != nil {
+		if _, err := m.must(ctx, m.escalate(sambaApply[how])); err != nil {
 			return SambaSettingState{}, err
 		}
 	}

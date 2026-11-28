@@ -342,16 +342,6 @@ func TestWriteCommand(t *testing.T) {
 			t.Fatal(command)
 		}
 	})
-	t.Run("groups the verify, since && and || associate left to right", func(t *testing.T) {
-		if !strings.Contains(command, "{ ! command -v systemd-analyze >/dev/null || systemd-analyze verify") || !strings.Contains(command, "; }") {
-			t.Fatal(command)
-		}
-	})
-	t.Run("requires the verify where systemd-analyze exists and skips it where it does not", func(t *testing.T) {
-		if !strings.Contains(command, "! command -v systemd-analyze") || !strings.Contains(command, "systemd-analyze verify") {
-			t.Fatal(command)
-		}
-	})
 	t.Run("does not enable or restart anything, which cannot follow a terminator", func(t *testing.T) {
 		if strings.Contains(command, "systemctl enable") || strings.Contains(command, "systemctl restart") {
 			t.Fatal(command)

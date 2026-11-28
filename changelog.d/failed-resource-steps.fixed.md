@@ -1,0 +1,1 @@
+- Report failed Samba, SSH tunnel, swap enable, and journald steps instead of accepting partial changes.

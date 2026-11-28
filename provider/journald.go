@@ -123,8 +123,8 @@ func readJournald(ctx context.Context, m *machine, file string, settings map[str
 
 func journaldApplyCommand(file, content, directory string) string {
 	path := journaldPath(file, directory)
-	return "mkdir -p " + shellQuote(directory) + " && " + heredoc(path, content) + "\n" +
-		"chmod 0644 " + shellQuote(path) + " && systemctl restart systemd-journald"
+	return "mkdir -p " + shellQuote(directory) + " && " + heredoc(path, content,
+		"chmod 0644 "+shellQuote(path), "systemctl restart systemd-journald")
 }
 
 func settleJournald(ctx context.Context, m *machine, file string, a JournaldArgs) (JournaldState, error) {
