@@ -10,6 +10,8 @@ pulumi package gen-sdk "$bin" --language nodejs --out "$out"
 pulumi package gen-sdk "$bin" --language go --out "$out"
 # Carry the handwritten Go helpers and parity tests into the new module before resolving dependencies.
 cp "$root"/sdk/go/component_*.go "$out/go/"
+mkdir -p "$out/go/testdata"
+cp "$root"/sdk/go/testdata/components-*.json "$out/go/testdata/"
 (
   cd "$out/go"
   go mod init github.com/antimatter-studios/pulumi-homelab/sdk/go

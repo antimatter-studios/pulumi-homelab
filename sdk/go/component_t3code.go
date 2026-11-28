@@ -1,7 +1,9 @@
 package homelab
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -93,14 +95,14 @@ type UnitArgs struct {
 	TmpDir string
 }
 
-// UnitLimits describes optional systemd service limits. Weights must be in [1, 10000].
+// UnitLimits describes optional systemd service limits. Weights must be integers in [1, 10000].
 type UnitLimits struct {
 	MemoryHigh    string
 	MemoryMax     string
 	MemorySwapMax string
 	OOMPolicy     string
-	CPUWeight     *int
-	IOWeight      *int
+	CPUWeight     *float64
+	IOWeight      *float64
 }
 
 // UnitResourceLines renders the optional settings in systemd [Service] order.
@@ -122,7 +124,7 @@ func UnitResourceLines(unit *UnitArgs) (string, error) {
 	}
 	for _, weight := range []struct {
 		name  string
-		value *int
+		value *float64
 	}{
 		{"CPUWeight", limits.CPUWeight},
 		{"IOWeight", limits.IOWeight},
@@ -130,10 +132,11 @@ func UnitResourceLines(unit *UnitArgs) (string, error) {
 		if weight.value == nil {
 			continue
 		}
-		if *weight.value < 1 || *weight.value > 10000 {
-			return "", fmt.Errorf("%s must be an integer from 1 to 10000, not %d", weight.name, *weight.value)
+		value := *weight.value
+		if value < 1 || value > 10000 || math.Trunc(value) != value {
+			return "", fmt.Errorf("%s must be an integer from 1 to 10000, not %s", weight.name, unitWeightText(value))
 		}
-		lines = append(lines, weight.name+"="+strconv.Itoa(*weight.value))
+		lines = append(lines, weight.name+"="+strconv.Itoa(int(value)))
 	}
 	if unit.TmpDir != "" {
 		lines = append(lines, "Environment=TMPDIR="+unit.TmpDir)
@@ -143,6 +146,23 @@ func UnitResourceLines(unit *UnitArgs) (string, error) {
 	}
 	return "\n# What the agents may take of the machine, and where their scratch goes. Declared by the stack.\n" +
 		strings.Join(lines, "\n") + "\n", nil
+}
+
+func unitWeightText(value float64) string {
+	switch {
+	case value == 0:
+		return "0"
+	case math.IsNaN(value):
+		return "NaN"
+	case math.IsInf(value, 1):
+		return "Infinity"
+	case math.IsInf(value, -1):
+		return "-Infinity"
+	default:
+		// JSON encodes finite numbers using JavaScript's decimal and exponent rules.
+		number, _ := json.Marshal(value)
+		return string(number)
+	}
 }
 
 // T3Code holds paths, resource handles and the Git public key for an installation.
@@ -162,10 +182,6 @@ type T3Code struct {
 func T3CodeResource(ctx *pulumi.Context, provider *Provider, args *T3CodeArgs) (*T3Code, error) {
 	if args == nil || provider == nil {
 		return nil, fmt.Errorf("T3CodeResource requires arguments and a provider")
-	}
-	unitLines, err := UnitResourceLines(args.Unit)
-	if err != nil {
-		return nil, err
 	}
 	const defaultAccount = "t3code"
 	account := stringOr(args.Account, defaultAccount)
@@ -311,6 +327,10 @@ func T3CodeResource(ctx *pulumi.Context, provider *Provider, args *T3CodeArgs) (
 		}, withDeps(user)...); err != nil {
 			return nil, err
 		}
+	}
+	unitLines, err := UnitResourceLines(args.Unit)
+	if err != nil {
+		return nil, err
 	}
 	if _, err := NewSystemdUnit(ctx, "unit-"+account, &SystemdUnitArgs{
 		Name: pulumi.String(unitName), Enabled: pulumi.Bool(true), Started: pulumi.Bool(true),

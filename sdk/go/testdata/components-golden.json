@@ -1,0 +1,2073 @@
+{
+  "flux app source name": {
+    "error": null,
+    "resources": [
+      {
+        "name": "app",
+        "type": "homelab:flux:FluxApp",
+        "inputs": {},
+        "parent": "",
+        "provider": "",
+        "dependencies": [],
+        "version": "",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-kustomization",
+        "type": "kubernetes:kustomize.toolkit.fluxcd.io/v1:Kustomization",
+        "inputs": {
+          "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+          "kind": "Kustomization",
+          "metadata": {
+            "name": "app",
+            "namespace": "flux-system"
+          },
+          "spec": {
+            "interval": "5m",
+            "path": "./deploy/flux",
+            "prune": true,
+            "sourceRef": {
+              "kind": "GitRepository",
+              "name": "app-source-7f3a91",
+              "namespace": "flux-system"
+            }
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:flux:FluxApp$kubernetes:source.toolkit.fluxcd.io/v1:GitRepository::app-source"
+        ],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-source",
+        "type": "kubernetes:source.toolkit.fluxcd.io/v1:GitRepository",
+        "inputs": {
+          "apiVersion": "source.toolkit.fluxcd.io/v1",
+          "kind": "GitRepository",
+          "metadata": {
+            "name": "app",
+            "namespace": "flux-system"
+          },
+          "spec": {
+            "interval": "1m",
+            "ref": {
+              "branch": "main"
+            },
+            "url": "https://github.com/example/app"
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  },
+  "flux app source namespace": {
+    "error": null,
+    "resources": [
+      {
+        "name": "app",
+        "type": "homelab:flux:FluxApp",
+        "inputs": {},
+        "parent": "",
+        "provider": "",
+        "dependencies": [],
+        "version": "",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-kustomization",
+        "type": "kubernetes:kustomize.toolkit.fluxcd.io/v1:Kustomization",
+        "inputs": {
+          "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+          "kind": "Kustomization",
+          "metadata": {
+            "name": "app",
+            "namespace": "flux-system"
+          },
+          "spec": {
+            "interval": "5m",
+            "path": "./deploy/flux",
+            "prune": true,
+            "sourceRef": {
+              "kind": "GitRepository",
+              "name": "app-source-7f3a91",
+              "namespace": "flux-system"
+            }
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:flux:FluxApp$kubernetes:source.toolkit.fluxcd.io/v1:GitRepository::app-source"
+        ],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-source",
+        "type": "kubernetes:source.toolkit.fluxcd.io/v1:GitRepository",
+        "inputs": {
+          "apiVersion": "source.toolkit.fluxcd.io/v1",
+          "kind": "GitRepository",
+          "metadata": {
+            "name": "app",
+            "namespace": "flux-system"
+          },
+          "spec": {
+            "interval": "1m",
+            "ref": {
+              "branch": "main"
+            },
+            "url": "https://github.com/example/app"
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  },
+  "flux app source kind": {
+    "error": null,
+    "resources": [
+      {
+        "name": "app",
+        "type": "homelab:flux:FluxApp",
+        "inputs": {},
+        "parent": "",
+        "provider": "",
+        "dependencies": [],
+        "version": "",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-kustomization",
+        "type": "kubernetes:kustomize.toolkit.fluxcd.io/v1:Kustomization",
+        "inputs": {
+          "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+          "kind": "Kustomization",
+          "metadata": {
+            "name": "app",
+            "namespace": "flux-system"
+          },
+          "spec": {
+            "interval": "5m",
+            "path": "./deploy/flux",
+            "prune": true,
+            "sourceRef": {
+              "kind": "GitRepository",
+              "name": "app-source-7f3a91",
+              "namespace": "flux-system"
+            }
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:flux:FluxApp$kubernetes:source.toolkit.fluxcd.io/v1:GitRepository::app-source"
+        ],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-source",
+        "type": "kubernetes:source.toolkit.fluxcd.io/v1:GitRepository",
+        "inputs": {
+          "apiVersion": "source.toolkit.fluxcd.io/v1",
+          "kind": "GitRepository",
+          "metadata": {
+            "name": "app",
+            "namespace": "flux-system"
+          },
+          "spec": {
+            "interval": "1m",
+            "ref": {
+              "branch": "main"
+            },
+            "url": "https://github.com/example/app"
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  },
+  "flux app default prune": {
+    "error": null,
+    "resources": [
+      {
+        "name": "app",
+        "type": "homelab:flux:FluxApp",
+        "inputs": {},
+        "parent": "",
+        "provider": "",
+        "dependencies": [],
+        "version": "",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-kustomization",
+        "type": "kubernetes:kustomize.toolkit.fluxcd.io/v1:Kustomization",
+        "inputs": {
+          "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+          "kind": "Kustomization",
+          "metadata": {
+            "name": "app",
+            "namespace": "flux-system"
+          },
+          "spec": {
+            "interval": "5m",
+            "path": "./deploy/flux",
+            "prune": true,
+            "sourceRef": {
+              "kind": "GitRepository",
+              "name": "app-source-7f3a91",
+              "namespace": "flux-system"
+            }
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:flux:FluxApp$kubernetes:source.toolkit.fluxcd.io/v1:GitRepository::app-source"
+        ],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-source",
+        "type": "kubernetes:source.toolkit.fluxcd.io/v1:GitRepository",
+        "inputs": {
+          "apiVersion": "source.toolkit.fluxcd.io/v1",
+          "kind": "GitRepository",
+          "metadata": {
+            "name": "app",
+            "namespace": "flux-system"
+          },
+          "spec": {
+            "interval": "1m",
+            "ref": {
+              "branch": "main"
+            },
+            "url": "https://github.com/example/app"
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  },
+  "ignore rules reinclude paths": "/*\n!/chart\n!/deploy",
+  "ignore rules add slash": "/*\n!/chart",
+  "ready waits for the condition": "KUBECONFIG='/etc/rancher/k3s/k3s.yaml' kubectl -n 'flux-system' wait 'kustomization/app' --for=condition=Ready --timeout='120s' >/dev/null 2>&1",
+  "ready uses Kustomization defaults": "KUBECONFIG='/etc/rancher/k3s/k3s.yaml' kubectl -n 'flux-system' wait 'kustomization/app' --for=condition=Ready --timeout='120s' >/dev/null 2>&1",
+  "ready can wait for the source": "KUBECONFIG='/etc/rancher/k3s/k3s.yaml' kubectl -n 'flux-system' wait 'gitrepository/app' --for=condition=Ready --timeout='120s' >/dev/null 2>&1",
+  "ready takes a timeout": "KUBECONFIG='/etc/rancher/k3s/k3s.yaml' kubectl -n 'flux-system' wait 'kustomization/app' --for=condition=Ready --timeout='300s' >/dev/null 2>&1",
+  "ready quotes the resource name": "KUBECONFIG='/etc/rancher/k3s/k3s.yaml' kubectl -n 'flux-system' wait 'kustomization/ai'\\''world' --for=condition=Ready --timeout='120s' >/dev/null 2>&1",
+  "reason reads the Ready message": "sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl -n flux-system get kustomization app -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].message}'",
+  "reason includes sudo": "sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl -n flux-system get kustomization app -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].message}'",
+  "shared target join": "/home/agent/.claude/projects",
+  "shared target trailing slash": "/home/agent/.claude/sessions",
+  "shared target several trailing slashes": "/home/agent/.claude/plugins",
+  "shared target absolute path": "/mnt/storage/t3code/.claude/settings.json",
+  "profile refusal sibling": null,
+  "profile refusal itself": "claudeProfileResource: dir and shared are the same directory (/home/agent/.claude); a profile has to be somewhere else",
+  "profile refusal itself with trailing slash": "claudeProfileResource: dir and shared are the same directory (/home/agent/.claude); a profile has to be somewhere else",
+  "profile refusal nested": null,
+  "shared defaults work entries": [
+    {
+      "name": "projects",
+      "kind": "directory",
+      "mode": "0700"
+    },
+    {
+      "name": "sessions",
+      "kind": "directory",
+      "mode": "0700"
+    },
+    {
+      "name": "session-env",
+      "kind": "directory",
+      "mode": "0775"
+    },
+    {
+      "name": "plugins",
+      "kind": "directory",
+      "mode": "0775"
+    },
+    {
+      "name": "settings.json",
+      "kind": "file"
+    }
+  ],
+  "shared defaults credential exemptions": [
+    {
+      "name": "projects",
+      "kind": "directory",
+      "mode": "0700"
+    },
+    {
+      "name": "sessions",
+      "kind": "directory",
+      "mode": "0700"
+    },
+    {
+      "name": "session-env",
+      "kind": "directory",
+      "mode": "0775"
+    },
+    {
+      "name": "plugins",
+      "kind": "directory",
+      "mode": "0775"
+    },
+    {
+      "name": "settings.json",
+      "kind": "file"
+    }
+  ],
+  "shared defaults entry modes": [
+    {
+      "name": "projects",
+      "kind": "directory",
+      "mode": "0700"
+    },
+    {
+      "name": "sessions",
+      "kind": "directory",
+      "mode": "0700"
+    },
+    {
+      "name": "session-env",
+      "kind": "directory",
+      "mode": "0775"
+    },
+    {
+      "name": "plugins",
+      "kind": "directory",
+      "mode": "0775"
+    },
+    {
+      "name": "settings.json",
+      "kind": "file"
+    }
+  ],
+  "shared defaults file entry": [
+    {
+      "name": "projects",
+      "kind": "directory",
+      "mode": "0700"
+    },
+    {
+      "name": "sessions",
+      "kind": "directory",
+      "mode": "0700"
+    },
+    {
+      "name": "session-env",
+      "kind": "directory",
+      "mode": "0775"
+    },
+    {
+      "name": "plugins",
+      "kind": "directory",
+      "mode": "0775"
+    },
+    {
+      "name": "settings.json",
+      "kind": "file"
+    }
+  ],
+  "t3 release pin": {
+    "version": "0.1.13-nightly.20261125.5245",
+    "sha256": "de331775c0ef436edf446021c05b92d21787424efe5e8b33699c04710f175152",
+    "url": "https://github.com/pingdotgg/t3code/releases/download/v0.1.13-nightly.20261125.5245/t3-0.1.13-nightly.20261125.5245-linux-x64.tar.gz"
+  },
+  "t3 release URL": {
+    "version": "0.1.13-nightly.20261125.5245",
+    "sha256": "de331775c0ef436edf446021c05b92d21787424efe5e8b33699c04710f175152",
+    "url": "https://github.com/pingdotgg/t3code/releases/download/v1.2.3-nightly.4.5/t3-1.2.3-nightly.4.5-linux-x64.tar.gz"
+  },
+  "t3 release channel": {
+    "version": "0.1.13-nightly.20261125.5245",
+    "sha256": "de331775c0ef436edf446021c05b92d21787424efe5e8b33699c04710f175152",
+    "url": "https://github.com/pingdotgg/t3code/releases/download/v0.1.13-nightly.20261125.5245/t3-0.1.13-nightly.20261125.5245-linux-x64.tar.gz"
+  },
+  "agent defaults default agents": [
+    {
+      "key": "gh",
+      "bin": "bin/gh",
+      "url": "https://github.com/cli/cli/releases/download/v2.106.0/gh_2.106.0_linux_amd64.tar.gz",
+      "sha256": "a476449fa9625413c54a3734eded62e9e480e49f421ff08e7f3b3879c059a033",
+      "strip": 1
+    },
+    {
+      "key": "claude",
+      "installer": "curl -fsSL https://claude.ai/install.sh | bash",
+      "bin": ".local/bin/claude"
+    },
+    {
+      "key": "codex",
+      "installer": "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh",
+      "bin": ".local/bin/codex"
+    },
+    {
+      "key": "opencode",
+      "installer": "curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path",
+      "bin": ".opencode/bin/opencode",
+      "link": true
+    }
+  ],
+  "agent defaults archive checksum": [
+    {
+      "key": "gh",
+      "bin": "bin/gh",
+      "url": "https://github.com/cli/cli/releases/download/v2.106.0/gh_2.106.0_linux_amd64.tar.gz",
+      "sha256": "a476449fa9625413c54a3734eded62e9e480e49f421ff08e7f3b3879c059a033",
+      "strip": 1
+    },
+    {
+      "key": "claude",
+      "installer": "curl -fsSL https://claude.ai/install.sh | bash",
+      "bin": ".local/bin/claude"
+    },
+    {
+      "key": "codex",
+      "installer": "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh",
+      "bin": ".local/bin/codex"
+    },
+    {
+      "key": "opencode",
+      "installer": "curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path",
+      "bin": ".opencode/bin/opencode",
+      "link": true
+    }
+  ],
+  "agent defaults official installers": [
+    {
+      "key": "gh",
+      "bin": "bin/gh",
+      "url": "https://github.com/cli/cli/releases/download/v2.106.0/gh_2.106.0_linux_amd64.tar.gz",
+      "sha256": "a476449fa9625413c54a3734eded62e9e480e49f421ff08e7f3b3879c059a033",
+      "strip": 1
+    },
+    {
+      "key": "claude",
+      "installer": "curl -fsSL https://claude.ai/install.sh | bash",
+      "bin": ".local/bin/claude"
+    },
+    {
+      "key": "codex",
+      "installer": "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh",
+      "bin": ".local/bin/codex"
+    },
+    {
+      "key": "opencode",
+      "installer": "curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path",
+      "bin": ".opencode/bin/opencode",
+      "link": true
+    }
+  ],
+  "agent defaults relative executables": [
+    {
+      "key": "gh",
+      "bin": "bin/gh",
+      "url": "https://github.com/cli/cli/releases/download/v2.106.0/gh_2.106.0_linux_amd64.tar.gz",
+      "sha256": "a476449fa9625413c54a3734eded62e9e480e49f421ff08e7f3b3879c059a033",
+      "strip": 1
+    },
+    {
+      "key": "claude",
+      "installer": "curl -fsSL https://claude.ai/install.sh | bash",
+      "bin": ".local/bin/claude"
+    },
+    {
+      "key": "codex",
+      "installer": "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh",
+      "bin": ".local/bin/codex"
+    },
+    {
+      "key": "opencode",
+      "installer": "curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path",
+      "bin": ".opencode/bin/opencode",
+      "link": true
+    }
+  ],
+  "unit without options": {
+    "value": ""
+  },
+  "unit resource controls": {
+    "value": "\n# What the agents may take of the machine, and where their scratch goes. Declared by the stack.\nMemoryHigh=6G\nMemoryMax=8G\nCPUWeight=20\nIOWeight=20\nEnvironment=TMPDIR=/mnt/storage/t3code/tmp\n"
+  },
+  "unit swap and OOM policy": {
+    "value": "\n# What the agents may take of the machine, and where their scratch goes. Declared by the stack.\nMemoryMax=8G\nMemorySwapMax=32G\nOOMPolicy=continue\n"
+  },
+  "unit without swap or OOM policy": {
+    "value": "\n# What the agents may take of the machine, and where their scratch goes. Declared by the stack.\nMemoryMax=8G\n"
+  },
+  "unit refuses zero weight": {
+    "error": "CPUWeight must be an integer from 1 to 10000, not 0"
+  },
+  "unit with name only": {
+    "value": ""
+  },
+  "unit refuses excessive weight": {
+    "error": "IOWeight must be an integer from 1 to 10000, not 20000"
+  },
+  "unit refuses fractional weight": {
+    "error": "CPUWeight must be an integer from 1 to 10000, not 2.5"
+  },
+  "unit refuses negative zero weight": {
+    "error": "CPUWeight must be an integer from 1 to 10000, not 0"
+  },
+  "fluxReady with spaces": "KUBECONFIG='two words' kubectl -n 'two words' wait 'two words/two words' --for=condition=Ready --timeout='two words' >/dev/null 2>&1",
+  "fluxReason with spaces": "sudo KUBECONFIG=two words kubectl -n two words get two words two words -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].message}'",
+  "fluxReady with apostrophe": "KUBECONFIG='it'\\''s' kubectl -n 'it'\\''s' wait 'it'\\''s/it'\\''s' --for=condition=Ready --timeout='it'\\''s' >/dev/null 2>&1",
+  "fluxReason with apostrophe": "sudo KUBECONFIG=it's kubectl -n it's get it's it's -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].message}'",
+  "fluxReady with dollar": "KUBECONFIG='$HOME' kubectl -n '$HOME' wait '$HOME/$HOME' --for=condition=Ready --timeout='$HOME' >/dev/null 2>&1",
+  "fluxReason with dollar": "sudo KUBECONFIG=$HOME kubectl -n $HOME get $HOME $HOME -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].message}'",
+  "fluxReady with empty": "KUBECONFIG='' kubectl -n '' wait '/' --for=condition=Ready --timeout='' >/dev/null 2>&1",
+  "fluxReason with empty": "sudo KUBECONFIG= kubectl -n  get   -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].message}'",
+  "fluxReady with newline": "KUBECONFIG='first\nsecond' kubectl -n 'first\nsecond' wait 'first\nsecond/first\nsecond' --for=condition=Ready --timeout='first\nsecond' >/dev/null 2>&1",
+  "fluxReason with newline": "sudo KUBECONFIG=first\nsecond kubectl -n first\nsecond get first\nsecond first\nsecond -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].message}'",
+  "flux wiring with patch and provider": {
+    "error": null,
+    "resources": [
+      {
+        "name": "app",
+        "type": "homelab:flux:FluxApp",
+        "inputs": {},
+        "parent": "",
+        "provider": "",
+        "dependencies": [],
+        "version": "",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-kustomization",
+        "type": "kubernetes:kustomize.toolkit.fluxcd.io/v1:Kustomization",
+        "inputs": {
+          "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+          "kind": "Kustomization",
+          "metadata": {
+            "name": "app",
+            "namespace": "ops"
+          },
+          "spec": {
+            "interval": "10m",
+            "patches": [
+              {
+                "patch": "[{\"op\":\"add\",\"path\":\"/spec/priorityClassName\",\"value\":\"critical\"}]",
+                "target": {
+                  "kind": "HelmRelease",
+                  "name": "app"
+                }
+              }
+            ],
+            "path": "./deploy",
+            "prune": false,
+            "sourceRef": {
+              "kind": "GitRepository",
+              "name": "app-source-7f3a91",
+              "namespace": "ops"
+            }
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:kubernetes::cluster::cluster-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:flux:FluxApp$kubernetes:source.toolkit.fluxcd.io/v1:GitRepository::app-source"
+        ],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-source",
+        "type": "kubernetes:source.toolkit.fluxcd.io/v1:GitRepository",
+        "inputs": {
+          "apiVersion": "source.toolkit.fluxcd.io/v1",
+          "kind": "GitRepository",
+          "metadata": {
+            "name": "app",
+            "namespace": "ops"
+          },
+          "spec": {
+            "ignore": "/*\n!/deploy",
+            "interval": "2m",
+            "ref": {
+              "branch": "stage"
+            },
+            "secretRef": {
+              "name": "deploy-key"
+            },
+            "url": "https://github.com/example/app"
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:kubernetes::cluster::cluster-id",
+        "dependencies": [],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  },
+  "flux wiring with empty optional inputs": {
+    "error": null,
+    "resources": [
+      {
+        "name": "app",
+        "type": "homelab:flux:FluxApp",
+        "inputs": {},
+        "parent": "",
+        "provider": "",
+        "dependencies": [],
+        "version": "",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-kustomization",
+        "type": "kubernetes:kustomize.toolkit.fluxcd.io/v1:Kustomization",
+        "inputs": {
+          "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+          "kind": "Kustomization",
+          "metadata": {
+            "name": "app",
+            "namespace": ""
+          },
+          "spec": {
+            "interval": "5m",
+            "path": "./",
+            "prune": true,
+            "sourceRef": {
+              "kind": "GitRepository",
+              "name": "app-source-7f3a91",
+              "namespace": ""
+            }
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:flux:FluxApp$kubernetes:source.toolkit.fluxcd.io/v1:GitRepository::app-source"
+        ],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "app-source",
+        "type": "kubernetes:source.toolkit.fluxcd.io/v1:GitRepository",
+        "inputs": {
+          "apiVersion": "source.toolkit.fluxcd.io/v1",
+          "kind": "GitRepository",
+          "metadata": {
+            "name": "app",
+            "namespace": ""
+          },
+          "spec": {
+            "ignore": "",
+            "interval": "1m",
+            "ref": {
+              "branch": "main"
+            },
+            "url": "https://github.com/example/app"
+          }
+        },
+        "parent": "urn:pulumi:stack::project::homelab:flux:FluxApp::app",
+        "provider": "",
+        "dependencies": [],
+        "version": "4.34.0",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  },
+  "flux conflicting ignore and include": {
+    "error": "app: give either include or ignore, not both — two answers to one question",
+    "resources": [
+      {
+        "name": "app",
+        "type": "homelab:flux:FluxApp",
+        "inputs": {},
+        "parent": "",
+        "provider": "",
+        "dependencies": [],
+        "version": "",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  },
+  "claude backend and profile wiring": {
+    "error": null,
+    "resources": [
+      {
+        "name": "claude-backend",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "dev",
+          "mode": "0775",
+          "owner": "dev",
+          "path": "/home/dev/.claude/"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-backend-plugins",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "dev",
+          "mode": "0775",
+          "owner": "dev",
+          "path": "/home/dev/.claude/plugins"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-backend-projects",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "dev",
+          "mode": "0700",
+          "owner": "dev",
+          "path": "/home/dev/.claude/projects"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-backend-session-env",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "dev",
+          "mode": "0775",
+          "owner": "dev",
+          "path": "/home/dev/.claude/session-env"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-backend-sessions",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "dev",
+          "mode": "0700",
+          "owner": "dev",
+          "path": "/home/dev/.claude/sessions"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-work",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "work",
+          "mode": "0700",
+          "owner": "dev",
+          "path": "/home/dev/.claude-work"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-work-plugins",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "path": "/home/dev/.claude-work/plugins",
+          "target": "/home/dev/.claude/plugins"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-plugins",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-projects",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-session-env",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-sessions",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-work"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-work-projects",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "path": "/home/dev/.claude-work/projects",
+          "target": "/home/dev/.claude/projects"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-plugins",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-projects",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-session-env",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-sessions",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-work"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-work-session-env",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "path": "/home/dev/.claude-work/session-env",
+          "target": "/home/dev/.claude/session-env"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-plugins",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-projects",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-session-env",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-sessions",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-work"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-work-sessions",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "path": "/home/dev/.claude-work/sessions",
+          "target": "/home/dev/.claude/sessions"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-plugins",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-projects",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-session-env",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-sessions",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-work"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      },
+      {
+        "name": "claude-work-settings.json",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "path": "/home/dev/.claude-work/settings.json",
+          "target": "/home/dev/.claude/settings.json"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-plugins",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-projects",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-session-env",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-backend-sessions",
+          "urn:pulumi:stack::project::homelab:index:Directory::claude-work"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": true
+      }
+    ]
+  },
+  "default t3code wiring": {
+    "error": null,
+    "resources": [
+      {
+        "name": "archive-gh",
+        "type": "homelab:index:Archive",
+        "inputs": {
+          "binary": "bin/gh",
+          "group": "t3code",
+          "healthCommand": "{}/bin/gh --version",
+          "name": "gh",
+          "owner": "t3code",
+          "prefix": "/srv/t3code/.local/opt/gh",
+          "sha256": "a476449fa9625413c54a3734eded62e9e480e49f421ff08e7f3b3879c059a033",
+          "strip": 1,
+          "url": "https://github.com/cli/cli/releases/download/v2.106.0/gh_2.106.0_linux_amd64.tar.gz",
+          "versionCommand": "{}/bin/gh --version"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-opt",
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "archive-t3",
+        "type": "homelab:index:Archive",
+        "inputs": {
+          "binary": "t3",
+          "group": "t3code",
+          "healthCommand": "{}/t3 --version",
+          "name": "t3",
+          "owner": "t3code",
+          "prefix": "/srv/t3code/.t3/runtime/versions/0.1.13-nightly.20261125.5245",
+          "sha256": "de331775c0ef436edf446021c05b92d21787424efe5e8b33699c04710f175152",
+          "strip": 1,
+          "url": "https://github.com/pingdotgg/t3code/releases/download/v0.1.13-nightly.20261125.5245/t3-0.1.13-nightly.20261125.5245-linux-x64.tar.gz",
+          "versionCommand": "{}/t3 --version"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-versions",
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-bin",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.local/bin"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-dotlocal"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-dotlocal",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.local"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-dotssh",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0700",
+          "owner": "t3code",
+          "path": "/srv/t3code/.ssh"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-dott3",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0700",
+          "owner": "t3code",
+          "path": "/srv/t3code/.t3"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-home",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0700",
+          "owner": "t3code",
+          "path": "/srv/t3code"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-opt",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.local/opt"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-dotlocal"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-runtime",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.t3/runtime"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-dott3"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-versions",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.t3/runtime/versions"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-runtime"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "file-t3-install-complete",
+        "type": "homelab:index:ManagedFile",
+        "inputs": {
+          "content": "0.1.13-nightly.20261125.5245\n",
+          "group": "t3code",
+          "mode": "0644",
+          "owner": "t3code",
+          "path": "/srv/t3code/.t3/runtime/versions/0.1.13-nightly.20261125.5245/.install-complete",
+          "reloadSystemd": false
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Archive::archive-t3"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "file-t3code-gitconfig",
+        "type": "homelab:index:ManagedFile",
+        "inputs": {
+          "content": "[user]\n    name = Test\n",
+          "group": "t3code",
+          "mode": "0644",
+          "owner": "t3code",
+          "path": "/srv/t3code/.gitconfig",
+          "reloadSystemd": false
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "install-claude",
+        "type": "homelab:index:OfficialInstall",
+        "inputs": {
+          "account": "t3code",
+          "bin": "/srv/t3code/.local/bin/claude",
+          "home": "/srv/t3code",
+          "installer": "curl -fsSL https://claude.ai/install.sh | bash"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-bin",
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "install-codex",
+        "type": "homelab:index:OfficialInstall",
+        "inputs": {
+          "account": "t3code",
+          "bin": "/srv/t3code/.local/bin/codex",
+          "home": "/srv/t3code",
+          "installer": "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-bin",
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "install-opencode",
+        "type": "homelab:index:OfficialInstall",
+        "inputs": {
+          "account": "t3code",
+          "bin": "/srv/t3code/.opencode/bin/opencode",
+          "home": "/srv/t3code",
+          "installer": "curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-bin",
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "link-gh",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "path": "/srv/t3code/.local/bin/gh",
+          "target": "/srv/t3code/.local/opt/gh/bin/gh"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Archive::archive-gh",
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-bin"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "link-opencode",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "path": "/srv/t3code/.local/bin/opencode",
+          "target": "/srv/t3code/.opencode/bin/opencode"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:OfficialInstall::install-opencode"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "link-t3",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "acceptLauncherScript": true,
+          "path": "/srv/t3code/.local/bin/t3",
+          "target": "/srv/t3code/.t3/runtime/versions/0.1.13-nightly.20261125.5245/t3"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Archive::archive-t3",
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-bin"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [
+          "target"
+        ],
+        "protect": false
+      },
+      {
+        "name": "pkg-t3code-tools",
+        "type": "homelab:index:AptPackages",
+        "inputs": {
+          "names": [
+            "git",
+            "curl",
+            "ca-certificates",
+            "unzip"
+          ]
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "sshkey-t3code-git",
+        "type": "homelab:index:SshKey",
+        "inputs": {
+          "comment": "t3code@homelab",
+          "group": "t3code",
+          "owner": "t3code",
+          "path": "/srv/t3code/.ssh/id_ed25519",
+          "type": "ed25519"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-dotssh"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "sudo-t3code-apt",
+        "type": "homelab:index:SudoRule",
+        "inputs": {
+          "file": "030_t3code",
+          "passwordless": true,
+          "runAs": "root",
+          "user": "t3code"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "unit-t3code",
+        "type": "homelab:index:SystemdUnit",
+        "inputs": {
+          "enabled": true,
+          "name": "t3code",
+          "started": true,
+          "unit": "# /etc/systemd/system/t3code.service\n# Managed by Pulumi, from the homelab-server stack. Do not run `t3 service install`: it writes a\n# competing user unit and this file would then be one of two owners of the same service.\n[Unit]\nDescription=T3 Code, headless agent harness\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser=t3code\nGroup=t3code\n# Where the add-project dialog proposes to clone is the server setting `addProjectBaseDirectory`,\n# surfaced in the UI as \"Add project base directory\". `~/` is its EMPTY fallback, not a derivation\n# from HOME -- so it is unconfigured rather than unconfigurable. It is deliberately not declared\n# here: it persists in ~/.t3/userdata/settings.json alongside every other setting the app writes,\n# so a ManagedFile owning that path would revert Chris's UI changes on each deployment with\n# nothing to connect the symptom to the cause. Set once through the app instead.\n#\n# Three things that look like the answer and are not, all tested against the binary: T3CODE_BASE_DIR\n# does not occur in it at all; --base-dir and T3CODE_HOME are T3's own DATA directory, so pointing\n# them here would move the SQLite database and four services' OAuth credentials into a directory\n# full of checkouts; and T3CODE_PROJECT_ROOT is something T3 SETS for child processes from the\n# project's cwd -- declaring it changed nothing, which was confirmed by trying it. Three\n# candidates were tested against the binary and all three are wrong: T3CODE_BASE_DIR does not\n# appear in it at all; --base-dir and T3CODE_HOME are T3's own DATA directory, so pointing them\n# here would move the SQLite database and four services' OAuth credentials into a directory full\n# of checkouts; and T3CODE_PROJECT_ROOT is something T3 SETS for child processes from the\n# project's cwd, not something it reads. The destination is chosen in the dialog.\n#\n# The workspace, not the home. `t3 serve` takes a working directory as a positional argument and\n# otherwise inherits this one, and the add-project flow offers a destination derived from it -- so\n# with the home here it proposes cloning into ~/<repo>, which is the directory holding this\n# account's OAuth credentials and its SQLite database, at 0700. Checkouts belong in the one place\n# the account has a deliberate write grant.\nWorkingDirectory=/srv/projects\n\n# The launcher. NOT a path under .t3/runtime/versions -- see the comment above this resource.\n# The trailing path is `cwd`: the working directory for provider sessions.\nExecStart=/srv/t3code/.local/bin/t3 serve /srv/projects\n\n# A system unit inherits neither of these. HOME is set explicitly rather than left for systemd to\n# derive from User=, and PATH must contain the provider CLIs because t3 discovers claude, codex and\n# opencode by looking for them there -- the default unit PATH does not include this directory, so\n# without this the harness starts cleanly and then reports that no providers are installed.\nEnvironment=HOME=/srv/t3code\n# /srv/t3code/.local/share/mise/shims comes first because that is how mise exposes what an agent\n# installs: a `go` or `node` it fetched is a shim there, not a binary in ~/.local/bin. Without it\n# an agent installs a toolchain successfully and the service still cannot find it, which reads as\n# the install having failed.\nEnvironment=PATH=/srv/t3code/.local/share/mise/shims:/srv/t3code/.local/bin:/usr/local/bin:/usr/bin:/bin\n\n# Set explicitly rather than left to the default, because it is the thing that silently broke\n# the sudo grant once and an absent line does not tell a reader a decision was made.\n#\n# The name is a double negative: `no` means \"do NOT forbid new privileges\", i.e. sudo works. It\n# reads back in /proc/<pid>/status as `NoNewPrivs: 0` -- systemd's boolean and the kernel's\n# PR_SET_NO_NEW_PRIVS flag are different things describing the same state, which is why the check\n# below is on the kernel's value and not on this line.\nNoNewPrivileges=no\n#\n# `yes` was right while the account had no sudo, to close the last route to privilege. It is\n# incompatible with the sudo grant above: it blocks every setuid binary, and setuid is how sudo\n# escalates -- so with it set, sudo refuses before it ever reads /etc/sudoers.d, and an agent sees\n# a permission failure that no sudoers rule can fix.\n#\n# Worth knowing how this hides: `sudo -u t3code ... sudo apt-get` over ssh SUCCEEDS, because a\n# login shell is not a child of this unit and does not inherit the flag. Only processes the\n# service spawns are affected. So the account tests fine and the agents still cannot install\n# anything. Verify with NoNewPrivs in /proc/<pid>/status, not with a shell.\n\nRestart=always\nRestartSec=5\n\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Archive::archive-t3",
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-bin",
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-versions"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "user-t3code",
+        "type": "homelab:index:User",
+        "inputs": {
+          "createHome": true,
+          "group": "t3code",
+          "groups": [
+            "kvm"
+          ],
+          "home": "/srv/t3code",
+          "name": "t3code",
+          "shell": "/bin/bash",
+          "uid": 1100
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Group::group-kvm",
+          "urn:pulumi:stack::project::homelab:index:Group::group-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  },
+  "secondary t3code wiring": {
+    "error": null,
+    "resources": [
+      {
+        "name": "dir-other-bin",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "other",
+          "mode": "0755",
+          "owner": "other",
+          "path": "/srv/other/.local/bin"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-other-dotlocal"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-other-dotlocal",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "other",
+          "mode": "0755",
+          "owner": "other",
+          "path": "/srv/other/.local"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-other"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-other-dotssh",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "other",
+          "mode": "0700",
+          "owner": "other",
+          "path": "/srv/other/.ssh"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-other"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-other-dott3",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "other",
+          "mode": "0700",
+          "owner": "other",
+          "path": "/srv/other/.t3"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-other"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-other-home",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "other",
+          "mode": "0700",
+          "owner": "other",
+          "path": "/srv/other"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-other"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-other-opt",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "other",
+          "mode": "0755",
+          "owner": "other",
+          "path": "/srv/other/.local/opt"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-other-dotlocal"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-other-runtime",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "other",
+          "mode": "0755",
+          "owner": "other",
+          "path": "/srv/other/.t3/runtime"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-other-dott3"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-other-versions",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "other",
+          "mode": "0755",
+          "owner": "other",
+          "path": "/srv/other/.t3/runtime/versions"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-other-runtime"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "file-other-gitconfig",
+        "type": "homelab:index:ManagedFile",
+        "inputs": {
+          "content": "",
+          "group": "other",
+          "mode": "0644",
+          "owner": "other",
+          "path": "/srv/other/.gitconfig",
+          "reloadSystemd": false
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-other"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "other-archive-t3",
+        "type": "homelab:index:Archive",
+        "inputs": {
+          "binary": "t3",
+          "group": "other",
+          "healthCommand": "{}/t3 --version",
+          "name": "t3",
+          "owner": "other",
+          "prefix": "/srv/other/.t3/runtime/versions/0.1.13-nightly.20261125.5245",
+          "sha256": "de331775c0ef436edf446021c05b92d21787424efe5e8b33699c04710f175152",
+          "strip": 1,
+          "url": "https://github.com/pingdotgg/t3code/releases/download/v0.1.13-nightly.20261125.5245/t3-0.1.13-nightly.20261125.5245-linux-x64.tar.gz",
+          "versionCommand": "{}/t3 --version"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-other-versions",
+          "urn:pulumi:stack::project::homelab:index:User::user-other"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "other-file-t3-install-complete",
+        "type": "homelab:index:ManagedFile",
+        "inputs": {
+          "content": "0.1.13-nightly.20261125.5245\n",
+          "group": "other",
+          "mode": "0644",
+          "owner": "other",
+          "path": "/srv/other/.t3/runtime/versions/0.1.13-nightly.20261125.5245/.install-complete",
+          "reloadSystemd": false
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Archive::other-archive-t3"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "other-link-t3",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "acceptLauncherScript": true,
+          "path": "/srv/other/.local/bin/t3",
+          "target": "/srv/other/.t3/runtime/versions/0.1.13-nightly.20261125.5245/t3"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Archive::other-archive-t3",
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-other-bin"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [
+          "target"
+        ],
+        "protect": false
+      },
+      {
+        "name": "pkg-other-tools",
+        "type": "homelab:index:AptPackages",
+        "inputs": {
+          "names": [
+            "git",
+            "curl",
+            "ca-certificates",
+            "unzip"
+          ]
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "sshkey-other-git",
+        "type": "homelab:index:SshKey",
+        "inputs": {
+          "comment": "",
+          "group": "other",
+          "owner": "other",
+          "path": "/srv/other/.ssh/id_ed25519",
+          "type": "ed25519"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-other-dotssh"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "unit-other",
+        "type": "homelab:index:SystemdUnit",
+        "inputs": {
+          "enabled": true,
+          "name": "t3-other",
+          "started": true,
+          "unit": "# /etc/systemd/system/t3-other.service\n# Managed by Pulumi, from the homelab-server stack. Do not run `t3 service install`: it writes a\n# competing user unit and this file would then be one of two owners of the same service.\n[Unit]\nDescription=T3 Code, headless agent harness\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser=other\nGroup=other\n# Where the add-project dialog proposes to clone is the server setting `addProjectBaseDirectory`,\n# surfaced in the UI as \"Add project base directory\". `~/` is its EMPTY fallback, not a derivation\n# from HOME -- so it is unconfigured rather than unconfigurable. It is deliberately not declared\n# here: it persists in ~/.t3/userdata/settings.json alongside every other setting the app writes,\n# so a ManagedFile owning that path would revert Chris's UI changes on each deployment with\n# nothing to connect the symptom to the cause. Set once through the app instead.\n#\n# Three things that look like the answer and are not, all tested against the binary: T3CODE_BASE_DIR\n# does not occur in it at all; --base-dir and T3CODE_HOME are T3's own DATA directory, so pointing\n# them here would move the SQLite database and four services' OAuth credentials into a directory\n# full of checkouts; and T3CODE_PROJECT_ROOT is something T3 SETS for child processes from the\n# project's cwd -- declaring it changed nothing, which was confirmed by trying it. Three\n# candidates were tested against the binary and all three are wrong: T3CODE_BASE_DIR does not\n# appear in it at all; --base-dir and T3CODE_HOME are T3's own DATA directory, so pointing them\n# here would move the SQLite database and four services' OAuth credentials into a directory full\n# of checkouts; and T3CODE_PROJECT_ROOT is something T3 SETS for child processes from the\n# project's cwd, not something it reads. The destination is chosen in the dialog.\n#\n# The workspace, not the home. `t3 serve` takes a working directory as a positional argument and\n# otherwise inherits this one, and the add-project flow offers a destination derived from it -- so\n# with the home here it proposes cloning into ~/<repo>, which is the directory holding this\n# account's OAuth credentials and its SQLite database, at 0700. Checkouts belong in the one place\n# the account has a deliberate write grant.\nWorkingDirectory=/work\n\n# The launcher. NOT a path under .t3/runtime/versions -- see the comment above this resource.\n# The trailing path is `cwd`: the working directory for provider sessions.\nExecStart=/srv/other/.local/bin/t3 serve /work\n\n# A system unit inherits neither of these. HOME is set explicitly rather than left for systemd to\n# derive from User=, and PATH must contain the provider CLIs because t3 discovers claude, codex and\n# opencode by looking for them there -- the default unit PATH does not include this directory, so\n# without this the harness starts cleanly and then reports that no providers are installed.\nEnvironment=HOME=/srv/other\n# /srv/other/.local/share/mise/shims comes first because that is how mise exposes what an agent\n# installs: a `go` or `node` it fetched is a shim there, not a binary in ~/.local/bin. Without it\n# an agent installs a toolchain successfully and the service still cannot find it, which reads as\n# the install having failed.\nEnvironment=PATH=/srv/other/.local/share/mise/shims:/srv/other/.local/bin:/usr/local/bin:/usr/bin:/bin\n\n# Set explicitly rather than left to the default, because it is the thing that silently broke\n# the sudo grant once and an absent line does not tell a reader a decision was made.\n#\n# The name is a double negative: `no` means \"do NOT forbid new privileges\", i.e. sudo works. It\n# reads back in /proc/<pid>/status as `NoNewPrivs: 0` -- systemd's boolean and the kernel's\n# PR_SET_NO_NEW_PRIVS flag are different things describing the same state, which is why the check\n# below is on the kernel's value and not on this line.\nNoNewPrivileges=no\n#\n# `yes` was right while the account had no sudo, to close the last route to privilege. It is\n# incompatible with the sudo grant above: it blocks every setuid binary, and setuid is how sudo\n# escalates -- so with it set, sudo refuses before it ever reads /etc/sudoers.d, and an agent sees\n# a permission failure that no sudoers rule can fix.\n#\n# Worth knowing how this hides: `sudo -u t3code ... sudo apt-get` over ssh SUCCEEDS, because a\n# login shell is not a child of this unit and does not inherit the flag. Only processes the\n# service spawns are affected. So the account tests fine and the agents still cannot install\n# anything. Verify with NoNewPrivs in /proc/<pid>/status, not with a shell.\n\nRestart=always\nRestartSec=5\n\n# What the agents may take of the machine, and where their scratch goes. Declared by the stack.\nCPUWeight=25\n\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=multi-user.target\n"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Archive::other-archive-t3",
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-other-bin",
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-other-versions"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "user-other",
+        "type": "homelab:index:User",
+        "inputs": {
+          "createHome": true,
+          "groups": [],
+          "home": "/srv/other",
+          "name": "other",
+          "shell": "/bin/bash"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  },
+  "t3code rejects an invalid service weight": {
+    "error": "CPUWeight must be an integer from 1 to 10000, not 2.5",
+    "resources": [
+      {
+        "name": "archive-t3",
+        "type": "homelab:index:Archive",
+        "inputs": {
+          "binary": "t3",
+          "group": "t3code",
+          "healthCommand": "{}/t3 --version",
+          "name": "t3",
+          "owner": "t3code",
+          "prefix": "/srv/t3code/.t3/runtime/versions/0.1.13-nightly.20261125.5245",
+          "sha256": "de331775c0ef436edf446021c05b92d21787424efe5e8b33699c04710f175152",
+          "strip": 1,
+          "url": "https://github.com/pingdotgg/t3code/releases/download/v0.1.13-nightly.20261125.5245/t3-0.1.13-nightly.20261125.5245-linux-x64.tar.gz",
+          "versionCommand": "{}/t3 --version"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-versions",
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-bin",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.local/bin"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-dotlocal"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-dotlocal",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.local"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-dotssh",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0700",
+          "owner": "t3code",
+          "path": "/srv/t3code/.ssh"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-dott3",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0700",
+          "owner": "t3code",
+          "path": "/srv/t3code/.t3"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-home",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0700",
+          "owner": "t3code",
+          "path": "/srv/t3code"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-opt",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.local/opt"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-dotlocal"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-runtime",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.t3/runtime"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-dott3"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "dir-t3code-versions",
+        "type": "homelab:index:Directory",
+        "inputs": {
+          "group": "t3code",
+          "mode": "0755",
+          "owner": "t3code",
+          "path": "/srv/t3code/.t3/runtime/versions"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-runtime"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "file-t3-install-complete",
+        "type": "homelab:index:ManagedFile",
+        "inputs": {
+          "content": "0.1.13-nightly.20261125.5245\n",
+          "group": "t3code",
+          "mode": "0644",
+          "owner": "t3code",
+          "path": "/srv/t3code/.t3/runtime/versions/0.1.13-nightly.20261125.5245/.install-complete",
+          "reloadSystemd": false
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Archive::archive-t3"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "file-t3code-gitconfig",
+        "type": "homelab:index:ManagedFile",
+        "inputs": {
+          "content": "",
+          "group": "t3code",
+          "mode": "0644",
+          "owner": "t3code",
+          "path": "/srv/t3code/.gitconfig",
+          "reloadSystemd": false
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:User::user-t3code"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "link-t3",
+        "type": "homelab:index:Symlink",
+        "inputs": {
+          "acceptLauncherScript": true,
+          "path": "/srv/t3code/.local/bin/t3",
+          "target": "/srv/t3code/.t3/runtime/versions/0.1.13-nightly.20261125.5245/t3"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Archive::archive-t3",
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-bin"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [
+          "target"
+        ],
+        "protect": false
+      },
+      {
+        "name": "pkg-t3code-tools",
+        "type": "homelab:index:AptPackages",
+        "inputs": {
+          "names": [
+            "git",
+            "curl",
+            "ca-certificates",
+            "unzip"
+          ]
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "sshkey-t3code-git",
+        "type": "homelab:index:SshKey",
+        "inputs": {
+          "comment": "t3code@homelab",
+          "group": "t3code",
+          "owner": "t3code",
+          "path": "/srv/t3code/.ssh/id_ed25519",
+          "type": "ed25519"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [
+          "urn:pulumi:stack::project::homelab:index:Directory::dir-t3code-dotssh"
+        ],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      },
+      {
+        "name": "user-t3code",
+        "type": "homelab:index:User",
+        "inputs": {
+          "createHome": true,
+          "groups": [],
+          "home": "/srv/t3code",
+          "name": "t3code",
+          "shell": "/bin/bash"
+        },
+        "parent": "",
+        "provider": "urn:pulumi:stack::project::pulumi:providers:homelab::machine::machine-id",
+        "dependencies": [],
+        "version": "0.0.0-dev",
+        "importId": "",
+        "ignoreChanges": [],
+        "protect": false
+      }
+    ]
+  }
+}

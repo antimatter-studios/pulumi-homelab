@@ -201,7 +201,7 @@ func TestUnitResourceLines(t *testing.T) {
 	}{
 		{"leaves existing units unchanged by default", nil, ""},
 		{"writes each limit and TMPDIR as a service line", &UnitArgs{
-			Limits: UnitLimits{MemoryHigh: "6G", MemoryMax: "8G", CPUWeight: new(20), IOWeight: new(20)},
+			Limits: UnitLimits{MemoryHigh: "6G", MemoryMax: "8G", CPUWeight: new(20.0), IOWeight: new(20.0)},
 			TmpDir: "/mnt/storage/t3code/tmp",
 		}, "MemoryHigh=6G\nMemoryMax=8G\nCPUWeight=20\nIOWeight=20\nEnvironment=TMPDIR=/mnt/storage/t3code/tmp\n"},
 		{"caps swap and sets the OOM policy", &UnitArgs{Limits: UnitLimits{
@@ -225,13 +225,13 @@ func TestUnitResourceLines(t *testing.T) {
 		})
 	}
 	t.Run("refuses weights outside the systemd range", func(t *testing.T) {
-		// Weight fields use ints, so Go rejects fractional values at compile time.
 		for _, tc := range []struct {
 			name   string
 			limits UnitLimits
 		}{
-			{"CPUWeight", UnitLimits{CPUWeight: new(0)}},
-			{"IOWeight", UnitLimits{IOWeight: new(20000)}},
+			{"CPUWeight", UnitLimits{CPUWeight: new(0.0)}},
+			{"IOWeight", UnitLimits{IOWeight: new(20000.0)}},
+			{"CPUWeight", UnitLimits{CPUWeight: new(2.5)}},
 		} {
 			_, err := UnitResourceLines(&UnitArgs{Limits: tc.limits})
 			if err == nil {

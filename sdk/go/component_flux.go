@@ -59,13 +59,12 @@ func NewFluxApp(ctx *pulumi.Context, name string, args *FluxAppArgs, opts ...pul
 	if args == nil || args.URL == nil {
 		return nil, fmt.Errorf("%s: FluxApp requires a repository URL", name)
 	}
-	if args.Include != nil && args.Ignore != nil {
-		return nil, fmt.Errorf("%s: give either include or ignore, not both — two answers to one question", name)
-	}
-
 	app := &FluxApp{}
 	if err := ctx.RegisterComponentResource("homelab:flux:FluxApp", name, app, opts...); err != nil {
 		return nil, err
+	}
+	if args.Include != nil && args.Ignore != nil {
+		return nil, fmt.Errorf("%s: give either include or ignore, not both — two answers to one question", name)
 	}
 
 	namespace := fluxStringInput(args.Namespace, fluxNamespace)

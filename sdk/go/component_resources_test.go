@@ -456,7 +456,7 @@ func TestT3CodeSecondaryAccountAndImportTransformation(t *testing.T) {
 			T3: &T3Release{Version: "custom", SHA256: "test", URL: func(version string) string {
 				return "https://example.invalid/" + version
 			}},
-			Unit: &UnitArgs{Name: new("t3-other"), Limits: UnitLimits{CPUWeight: new(25)}},
+			Unit: &UnitArgs{Name: new("t3-other"), Limits: UnitLimits{CPUWeight: new(25.0)}},
 		})
 		return err
 	})
