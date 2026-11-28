@@ -174,10 +174,16 @@ func sshdDropInOf(keywords []sshd.Keyword, criteria []sshd.Criterion) string {
 	return sshd.SshdDropIn(keywords, criteria)
 }
 
-func sshdReadCommand(file, directory, config string) string {
-	return "cat " + shellQuote(config) + " 2>/dev/null || true; echo '#pulumi-homelab#drop'; " +
-		"cat " + shellQuote(sshdPath(file, directory)) + " 2>/dev/null || true; echo '#pulumi-homelab#effective'; " +
-		"sshd -T 2>/dev/null || true"
+func sshdReadCommand(file, directory, config string, effective bool) string {
+	drop := sshdPath(file, directory)
+	main := "cat " + shellQuote(config) + " && echo '#pulumi-homelab#drop'"
+	readDrop := "cat " + shellQuote(drop)
+	if effective {
+		return whenFilePresent(drop, main+" && "+readDrop+" && echo '#pulumi-homelab#effective' && sshd -T -f "+shellQuote(config))
+	}
+	// Before applying a change, only the current file and Include matter.
+	// The change validates the new configuration before making it live.
+	return main + " || exit $?; " + whenFilePresent(drop, readDrop)
 }
 
 type sshdRead struct {
@@ -196,13 +202,10 @@ func parseSshdRead(out, directory string) sshdRead {
 	return read
 }
 
-func readSshdConfig(ctx context.Context, m *machine, file, directory, config string) (sshdRead, error) {
-	asked, err := m.ask(ctx, m.escalate(sshdReadCommand(file, directory, config)))
+func readSshdConfig(ctx context.Context, m *machine, file, directory, config string, effective bool) (sshdRead, error) {
+	asked, err := m.commandResult(ctx, "cat / sshd -T", m.escalate(sshdReadCommand(file, directory, config, effective)))
 	if err != nil {
 		return sshdRead{}, err
-	}
-	if asked.code != 0 {
-		return sshdRead{}, fmt.Errorf("could not read the sshd configuration: %s", jscompat.Trim(asked.err))
 	}
 	return parseSshdRead(asked.out, directory), nil
 }
@@ -215,7 +218,7 @@ func settleSshd(ctx context.Context, m *machine, file string, a SshdConfigArgs) 
 	directory, config := orDefault(a.Directory, sshdDirectory), orDefault(a.Config, sshdConfig)
 	keywords, settings, criteria, match := sshdRendered(a)
 	content := sshdDropInOf(keywords, criteria)
-	before, err := readSshdConfig(ctx, m, file, directory, config)
+	before, err := readSshdConfig(ctx, m, file, directory, config, false)
 	if err != nil {
 		return SshdConfigState{}, err
 	}
@@ -229,7 +232,7 @@ func settleSshd(ctx context.Context, m *machine, file string, a SshdConfigArgs) 
 			return SshdConfigState{}, err
 		}
 	}
-	actual, err := readSshdConfig(ctx, m, file, directory, config)
+	actual, err := readSshdConfig(ctx, m, file, directory, config, true)
 	if err != nil {
 		return SshdConfigState{}, err
 	}
@@ -391,7 +394,7 @@ func (SshdConfig) Read(ctx context.Context, req infer.ReadRequest[SshdConfigArgs
 	if imported {
 		state.Directory, state.Config = sshdDirectory, sshdConfig
 	}
-	actual, err := readSshdConfig(ctx, m, req.ID, state.Directory, state.Config)
+	actual, err := readSshdConfig(ctx, m, req.ID, state.Directory, state.Config, true)
 	if err != nil || actual.content == nil {
 		return infer.ReadResponse[SshdConfigArgs, SshdConfigState]{}, err
 	}

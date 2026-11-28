@@ -1,0 +1,1 @@
+- Report command failures for User, SystemdInstance, SystemdUnit, Swap, AptPackage, AptPackages, GitCheckout, SshdConfig, SshKey, and FstabEntry.

@@ -53,10 +53,9 @@ func (r *AptPackage) Annotate(an infer.Annotator) {
 
 // readPackage is what dpkg says about it: the version, or ok false when it is not installed.
 func readPackage(ctx context.Context, m *machine, name string) (version string, ok bool, err error) {
-	// dpkg-query exits non-zero for a package it has never heard of, which is an answer and not a
-	// fault. It also reports packages that are known but removed, hence the status check.
-	asked, err := m.ask(ctx, "dpkg-query -W -f='${db:Status-Status} ${Version}' "+shellQuote(name)+" 2>/dev/null")
-	if err != nil || asked.code != 0 {
+	// dpkg-query -W returns 1 for missing packages and 2 for fatal errors.
+	asked, err := m.commandResult(ctx, "dpkg-query", "dpkg-query -W -f='${db:Status-Status} ${Version}' -- "+shellQuote(name), 1)
+	if err != nil || asked.code == 1 {
 		return "", false, err
 	}
 	version, ok = apt.ParseDpkgStatus(asked.out)
@@ -65,7 +64,7 @@ func readPackage(ctx context.Context, m *machine, name string) (version string, 
 
 // readManual is whether apt holds this one as manually installed.
 func readManual(ctx context.Context, m *machine, name string) (bool, error) {
-	asked, err := m.ask(ctx, "apt-mark showmanual "+shellQuote(name)+" 2>/dev/null || true")
+	asked, err := m.commandResult(ctx, "apt-mark showmanual", "apt-mark showmanual -- "+shellQuote(name))
 	if err != nil {
 		return false, err
 	}

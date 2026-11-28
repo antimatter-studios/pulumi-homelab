@@ -255,6 +255,15 @@ func (SystemdInstance) Delete(ctx context.Context, req infer.DeleteRequest[Syste
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate("systemctl disable --now "+shellQuote(req.ID)+" || true"))
+	unit := shellQuote(req.ID)
+	state, err := m.commandResult(ctx, "systemctl show", m.escalate("systemctl show --property=LoadState --property=ActiveState -- "+unit))
+	if err != nil {
+		return infer.DeleteResponse{}, err
+	}
+	shown := systemd.ParseShow(state.out)
+	if shown["LoadState"] == "not-found" && shown["ActiveState"] == "inactive" {
+		return infer.DeleteResponse{}, nil
+	}
+	_, err = m.commandResult(ctx, "systemctl disable --now", m.escalate("systemctl disable --now -- "+unit))
 	return infer.DeleteResponse{}, err
 }

@@ -148,10 +148,10 @@ type keyOnDisk struct {
 }
 
 func sshKeyReadCommand(path string) string {
-	return "test -f " + shellQuote(path) + " || exit 9; " +
-		"cat " + shellQuote(path+".pub") + "; echo '" + fingerprintMarker + "'; " +
-		"ssh-keygen -lf " + shellQuote(path+".pub") + " 2>/dev/null || true; echo '" + statMarker + "'; " +
-		"stat -c '%a|%U|%G' " + shellQuote(path) + " " + shellQuote(path+".pub") + " 2>/dev/null || true"
+	return whenFilePresent(path,
+		"cat "+shellQuote(path+".pub")+" && echo '"+fingerprintMarker+"' && "+
+			"ssh-keygen -lf "+shellQuote(path+".pub")+" && echo '"+statMarker+"' && "+
+			"stat -c '%a|%U|%G' "+shellQuote(path)+" "+shellQuote(path+".pub"))
 }
 
 func parseKeyOnDisk(out string) keyOnDisk {
@@ -161,15 +161,9 @@ func parseKeyOnDisk(out string) keyOnDisk {
 }
 
 func readSshKey(ctx context.Context, m *machine, path string) (*keyOnDisk, error) {
-	asked, err := m.ask(ctx, m.escalate(sshKeyReadCommand(path)))
-	if err != nil {
+	asked, err := m.commandResult(ctx, "cat / ssh-keygen -lf / stat", m.escalate(sshKeyReadCommand(path)))
+	if err != nil || asked.out == "" {
 		return nil, err
-	}
-	if asked.code == 9 {
-		return nil, nil
-	}
-	if asked.code != 0 {
-		return nil, fmt.Errorf("could not read the key at %s: %s", path, jscompat.Trim(asked.err))
 	}
 	read := parseKeyOnDisk(asked.out)
 	return &read, nil

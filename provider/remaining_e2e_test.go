@@ -52,10 +52,8 @@ func TestFstabEntryImportAndDelete(t *testing.T) {
 	text := fstabText
 	fake := remotetest.New()
 	fake.When(contains2("cat > "), func(c string) remotetest.Reply { wrote = c; return remotetest.Reply{} }, 0)
-	fake.When(contains2("findmnt"), func(string) remotetest.Reply {
-		return remotetest.Reply{Stdout: text + "#pulumi-homelab#mounted\n/dev/sda1 btrfs rw\n"}
-	}, 0)
-	fake.When(contains2("cat '\\''/etc/fstab'\\''"), func(string) remotetest.Reply { return remotetest.Reply{Stdout: text} }, 0)
+	fake.When(contains2("findmnt"), reply(`{"filesystems":[{"target":"/mnt/storage","source":"/dev/sda1","fstype":"btrfs","options":"rw"}]}`, 0), 0)
+	fake.When(contains2("/etc/fstab"), func(string) remotetest.Reply { return remotetest.Reply{Stdout: text} }, 0)
 	s := configured(t, fake)
 	read, _ := importAndDiff(t, s, "FstabEntry", "/mnt/storage")
 	if read.Inputs.Get("source").AsString() != "UUID=abcd" || read.Inputs.Get("options").AsArray().Len() != 2 {
@@ -81,6 +79,7 @@ func TestSwapImport(t *testing.T) {
 		t.Errorf("%v", read.Inputs)
 	}
 	// delete only unmasks the unit
+	fake.When(contains2("systemctl list-unit-files"), reply("dphys-swapfile.service masked enabled\n", 0), 0)
 	fake.When(contains2("systemctl unmask"), reply("", 0), 0)
 	if err := s.Delete(p.DeleteRequest{ID: "/var/swap", Urn: urnOf("Swap", "s"), Properties: read.Properties}); err != nil {
 		t.Fatal(err)

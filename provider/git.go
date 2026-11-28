@@ -121,19 +121,14 @@ func checkoutChanged(oldHead, oldCommit, oldURL, commit, url string) bool {
 
 // readCheckout is what the checkout is at, or nil when there is no checkout there.
 func readCheckout(ctx context.Context, m *machine, path string) (*git.Checkout, error) {
-	asked, err := m.ask(ctx, m.escalate(
-		// a missing checkout is an answer rather than a fault, and 9 is not a code git itself returns
-		"test -d "+shellQuote(path+"/.git")+" || exit 9; "+
-			"git -C "+shellQuote(path)+" rev-parse HEAD; echo '"+git.HeadMarker+"'; "+
-			"git -C "+shellQuote(path)+" remote get-url origin 2>/dev/null || true"))
-	if err != nil {
+	at := "git -C " + shellQuote(path)
+	command := whenFilePresent(path+"/.git",
+		at+" rev-parse HEAD && echo '"+git.HeadMarker+"' && { "+
+			at+` remote get-url origin; status=$?; [ "$status" -eq 2 ] || exit "$status"; }`)
+	// git remote get-url returns 2 when the remote does not exist.
+	asked, err := m.commandResult(ctx, "git rev-parse HEAD / git remote get-url origin", m.escalate(command))
+	if err != nil || asked.out == "" {
 		return nil, err
-	}
-	if asked.code == 9 {
-		return nil, nil
-	}
-	if asked.code != 0 {
-		return nil, fmt.Errorf("could not read the checkout at %s: %s", path, jscompat.Trim(asked.err))
 	}
 	c := git.ParseCheckout(asked.out)
 	return &c, nil

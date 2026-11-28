@@ -171,7 +171,12 @@ func readManagedFile(ctx context.Context, m *machine, path string) (*actualFile,
 
 // writtenFileDeleteCommand checks the on-disk bytes without transmitting file contents.
 func writtenFileDeleteCommand(file string, digest *string) string {
-	return "file=" + shellQuote(file) + "; expected=" + shellQuote(deref(digest)) + `
+	return stagedFileDeleteCommand(file, deref(digest), "", "", "")
+}
+
+// beforeStage and afterStage run only while the file matches the expected digest.
+func stagedFileDeleteCommand(file, digest, alternateDigest, beforeStage, afterStage string) string {
+	return "file=" + shellQuote(file) + "; expected=" + shellQuote(digest) + "; alternate=" + shellQuote(alternateDigest) + `
 if [ ! -e "$file" ] && [ ! -L "$file" ]; then exit 9; fi
 [ -n "$expected" ] || exit 10
 cd -- ` + shellQuote(path.Dir(file)) + ` || exit 12
@@ -179,9 +184,11 @@ file=` + shellQuote("./"+path.Base(file)) + `
 check_file() {
     [ -f "$1" ] && [ ! -L "$1" ] || return 14
     actual=$(sha256sum < "$1") || return 12
-    [ "${actual%% *}" = "$expected" ] || return 11
+    actual=${actual%% *}
+    [ "$actual" = "$expected" ] || { [ -n "$alternate" ] && [ "$actual" = "$alternate" ]; } || return 11
 }
 check_file "$file" || exit $?
+` + beforeStage + `
 staging=$(mktemp -d ./.pulumi-file.XXXXXXXX) || exit 13
 cleanup() {
     if [ -e "$staging/file" ] || [ -L "$staging/file" ]; then
@@ -195,6 +202,7 @@ cleanup() {
 trap cleanup EXIT
 mv -T -- "$file" "$staging/file" || exit 13
 check_file "$staging/file" || exit $?
+` + afterStage + `
 rm -- "$staging/file"`
 }
 

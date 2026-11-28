@@ -34,7 +34,10 @@ func shellStepRunner(t *testing.T, utilities map[string]string) *remotetest.Runn
 		}
 	}
 	return remotetest.New().When(func(string) bool { return true }, func(command string) remotetest.Reply {
-		cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", unescalate(command))
+		if strings.HasPrefix(command, "sudo -n sh -c ") {
+			command = unescalate(command)
+		}
+		cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", command)
 		cmd.Env = append(os.Environ(), "PATH="+bin)
 		out, err := cmd.Output()
 		reply := remotetest.Reply{Stdout: string(out)}

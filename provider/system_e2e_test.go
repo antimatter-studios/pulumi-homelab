@@ -84,9 +84,10 @@ func TestUserRefusesToDropSudo(t *testing.T) {
 		t.Fatal("changed the account anyway")
 	}
 	// delete never removes the home
-	fake.On(`sudo -n sh -c 'userdel '\''admin'\'' || true'`, remotetest.Reply{})
+	fake.On("getent -s files passwd -- 'admin'", remotetest.Reply{Stdout: "admin:x:1000:1000::/home/admin:/bin/bash\n"})
+	fake.When(contains2("userdel --"), reply("", 0), 1)
 	state := property.NewMap(map[string]property.Value{
-		"name": property.New("admin"), "shell": property.New("/bin/bash"), "home": property.New("/home/admin"),
+		"name": property.New("admin"), "uid": property.New(1000.0), "shell": property.New("/bin/bash"), "home": property.New("/home/admin"),
 		"createHome": property.New(true), "groups": property.New([]property.Value{}), "allowGroupRemoval": property.New(false),
 	})
 	if err := s.Delete(p.DeleteRequest{ID: "admin", Urn: urnOf("User", "admin"), Properties: state}); err != nil {

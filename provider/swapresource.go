@@ -169,20 +169,73 @@ func readSwap(ctx context.Context, m *machine, path, unit, fstab string) (SwapSt
 	return parseSwapRead(asked.out, path), nil
 }
 
-func swapDisableCommand(dphys *string, unit, fstab string, only *string) string {
-	first, o := "swapoff -a || true", ""
-	if only != nil {
-		first, o = "swapoff "+shellQuote(*only)+" 2>/dev/null || true", *only
+func swapDisableCommand(fstab string, only *string) string {
+	// ENVIRON preserves literal backslashes in the swap path.
+	return "only=" + shellQuote(deref(only)) + " awk " +
+		`'BEGIN{OFS=FS=" "; only=ENVIRON["only"]} /^[[:space:]]*#/ {print; next} $3 == "swap" && (only == "" || $1 == only) {print "#" $0; next} {print}' ` +
+		shellQuote(fstab) + " > " + shellQuote(fstab+".pulumi") + " && mv " + shellQuote(fstab+".pulumi") + " " + shellQuote(fstab)
+}
+
+// list-unit-files with a filter exits 1 for no match. List all unit files
+// successfully before deciding that the configured service is absent.
+func swapUnitFileState(ctx context.Context, m *machine, unit string) (string, error) {
+	result, err := m.commandResult(ctx, "systemctl list-unit-files", m.escalate("systemctl list-unit-files --no-legend --no-pager"))
+	if err != nil {
+		return "", err
 	}
-	steps := []string{first,
-		"awk -v only=" + shellQuote(o) + " " +
-			`'BEGIN{OFS=FS=" "} /^[[:space:]]*#/ {print; next} $3 == "swap" && (only == "" || $1 == only) {print "#" $0; next} {print}' ` +
-			shellQuote(fstab) + " > " + shellQuote(fstab+".pulumi") + " && mv " + shellQuote(fstab+".pulumi") + " " + shellQuote(fstab),
+	name := unit
+	if !strings.HasSuffix(name, ".service") {
+		name += ".service"
 	}
-	if dphys != nil {
-		steps = append(steps, "systemctl disable --now "+shellQuote(unit)+" || true", "systemctl mask "+shellQuote(unit)+" || true")
+	for _, line := range strings.Split(result.out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == name {
+			return fields[1], nil
+		}
 	}
-	return strings.Join(steps, "; ")
+	return "", nil
+}
+
+func disableSwap(ctx context.Context, m *machine, unit, fstab string, only *string) error {
+	state, err := swapUnitFileState(ctx, m, unit)
+	if err != nil {
+		return err
+	}
+	active, err := m.commandResult(ctx, "cat /proc/swaps", m.escalate("cat /proc/swaps"))
+	if err != nil {
+		return err
+	}
+	swapping := slices.ContainsFunc(swap.ParseProcSwaps(active.out), func(s swap.Active) bool {
+		return only == nil || s.Path == *only
+	})
+	if swapping {
+		command := "swapoff -a"
+		if only != nil {
+			command = "swapoff -- " + shellQuote(*only)
+		}
+		if _, err := m.commandResult(ctx, "swapoff", m.escalate(command)); err != nil {
+			return err
+		}
+	}
+	if _, err := m.commandResult(ctx, "awk / mv (fstab)", m.escalate(swapDisableCommand(fstab, only))); err != nil {
+		return err
+	}
+
+	switch state {
+	case "":
+		return nil
+	case "masked", "masked-runtime":
+		_, err := m.commandResult(ctx, "systemctl stop", m.escalate("systemctl stop -- "+shellQuote(unit)))
+		if err != nil || state == "masked" {
+			return err
+		}
+	default:
+		if _, err := m.commandResult(ctx, "systemctl disable --now", m.escalate("systemctl disable --now -- "+shellQuote(unit))); err != nil {
+			return err
+		}
+	}
+	_, err = m.commandResult(ctx, "systemctl mask", m.escalate("systemctl mask -- "+shellQuote(unit)))
+	return err
 }
 
 func swapEnableCommand(path string, sizeMb int, active bool, dphys *string, unit, fstab string) string {
@@ -238,7 +291,7 @@ func swapSettle(ctx context.Context, m *machine, a SwapArgs) (SwapState, error) 
 		if otherSwap == "allow" {
 			only = &path
 		}
-		if _, err := m.must(ctx, m.escalate(swapDisableCommand(before.Dphys, unit, fstab, only))); err != nil {
+		if err := disableSwap(ctx, m, unit, fstab, only); err != nil {
 			return SwapState{}, err
 		}
 	}
@@ -361,6 +414,18 @@ func (Swap) Delete(ctx context.Context, req infer.DeleteRequest[SwapState]) (inf
 	if unit == "" {
 		unit = swapDphys
 	}
-	_, err = m.must(ctx, m.escalate("systemctl unmask "+shellQuote(unit)+" 2>/dev/null || true; test -n "+shellQuote(req.ID)))
+	state, err := swapUnitFileState(ctx, m, unit)
+	if err != nil || (state != "masked" && state != "masked-runtime") {
+		return infer.DeleteResponse{}, err
+	}
+	if req.State.Dphys == nil || *req.State.Dphys != state {
+		warnRetained(ctx, unit, "its current mask does not match the recorded state")
+		return infer.DeleteResponse{}, nil
+	}
+	command := "systemctl unmask"
+	if state == "masked-runtime" {
+		command += " --runtime"
+	}
+	_, err = m.commandResult(ctx, "systemctl unmask", m.escalate(command+" -- "+shellQuote(unit)))
 	return infer.DeleteResponse{}, err
 }
