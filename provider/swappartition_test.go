@@ -323,6 +323,22 @@ func TestSwapPartitionCreateCommandHoldsTheLockAndChecksTheTable(t *testing.T) {
 	}
 }
 
+// The partition is checked again inside the lock it is deleted under, before anything is wiped.
+func TestSwapPartitionDeleteCommandChecksInsideTheLock(t *testing.T) {
+	c := deleteSwapPartCommand("/dev/sdx", 3, "/dev/sdx3", "swap-x", "28de59c8-13c6-4d21-a2b8-67dea142ed23")
+	inside, after, ok := strings.Cut(strings.TrimPrefix(c, "flock '/dev/sdx' sh -c "), " && { partx -d")
+	if !ok || !strings.HasPrefix(c, "flock '/dev/sdx' sh -c ") {
+		t.Fatalf("%s", c)
+	}
+	check := strings.Index(inside, "sfdisk --part-uuid")
+	label := strings.Index(inside, "sfdisk --part-label")
+	wipe := strings.Index(inside, "wipefs -q -a")
+	del := strings.Index(inside, "sgdisk -d 3")
+	if check < 0 || label < 0 || wipe < check || wipe < label || del < wipe || !strings.Contains(inside, "28DE59C8-13C6-4D21-A2B8-67DEA142ED23") || !strings.Contains(after, "--nr 3") {
+		t.Fatalf("%s", c)
+	}
+}
+
 func TestSwapPartitionDelete(t *testing.T) {
 	machine := ryzenMachine(t)
 	unit := swappart.Unit("swap-nvme0", 10, nil)
@@ -364,7 +380,7 @@ func TestSwapPartitionDelete(t *testing.T) {
 	if err := s.Delete(p.DeleteRequest{ID: "swap-nvme0", Urn: urn, Properties: st.Set("deletePartition", property.New(true))}); err != nil {
 		t.Fatal(err)
 	}
-	if !sent(fake, "wipefs -q -a '\\''/dev/nvme0n1p3'\\''") || !sent(fake, "sgdisk -d 3 '\\''/dev/nvme0n1'\\''") {
+	if !sent(fake, "sfdisk --part-uuid") || !sent(fake, "wipefs -q -a") || !sent(fake, "sgdisk -d 3 ") || !sent(fake, "28DE59C8-13C6-4D21-A2B8-67DEA142ED23") {
 		t.Fatalf("%v", fake.Commands())
 	}
 }

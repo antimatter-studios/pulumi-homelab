@@ -159,6 +159,23 @@ func TestSwapPartitionDeletePartitionOnDebian13(t *testing.T) {
 		t.Fatalf("\n%s\n%s", before, after)
 	}
 	expect(t, root, "cat /run/swaps; test -e /disk.img3 || echo gone", "gone\n")
+
+	// the table changed under it between the read and the lock: the entry at that number has another
+	// GPT id, and it is left alone
+	created, err = s.Create(p.CreateRequest{Urn: urn, Properties: m("disk", "/disk.img", "name", "swap-test", "sizeGib", 1, "priority", 5, "deletePartition", true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uuid := created.Properties.Get("partUuid").AsString()
+	root("sgdisk -u 3:R /disk.img >/dev/null")
+	changed := partitions(root)
+	if out := root("sh -c " + shellQuote(deleteSwapPartCommand("/disk.img", 3, "/disk.img3", "swap-test", uuid)) + " 2>&1 || echo refused"); !strings.Contains(out, "not the recorded one; it is left alone\nrefused") {
+		t.Fatalf("%q", out)
+	}
+	expect(t, root, "blkid -p -o value -s LABEL /disk.img3", "swap-test\n")
+	if after := partitions(root); after != changed {
+		t.Fatalf("\n%s\n%s", changed, after)
+	}
 }
 
 // Two partitions made on one disk at once: the disk's lock and the table check mean they never

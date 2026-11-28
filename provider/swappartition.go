@@ -559,6 +559,18 @@ func moves(replaces []string) []string {
 	return out
 }
 
+// deleteSwapPartCommand wipes and removes partition num, under the disk's lock and only after
+// checking, inside that lock, that the entry at num still has the recorded GPT id and name: the
+// read the resource acted on was taken before the lock, and the table can change in between.
+func deleteSwapPartCommand(disk string, num int, node, name, partUUID string) string {
+	d, n, nd := shellQuote(disk), strconv.Itoa(num), shellQuote(node)
+	inner := `g=$(sfdisk --part-uuid ` + d + ` ` + n + ` 2>/dev/null | tr a-z A-Z); l=$(sfdisk --part-label ` + d + ` ` + n + ` 2>/dev/null); ` +
+		`if [ "$g" != ` + shellQuote(strings.ToUpper(partUUID)) + ` ] || [ "$l" != ` + shellQuote(name) + ` ]; then ` +
+		`echo "partition `+n+` of "` + d + `" is now $l ($g), not the recorded one; it is left alone" >&2; exit 1; fi; ` +
+		`wipefs -q -a ` + nd + ` && sgdisk -d ` + n + ` ` + d + ` >/dev/null`
+	return "flock " + d + " sh -c " + shellQuote(inner) + " && { partx -d --nr " + n + " " + d + " 2>/dev/null || true; }"
+}
+
 func sameString(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -605,11 +617,7 @@ func (SwapPartition) Delete(ctx context.Context, req infer.DeleteRequest[SwapPar
 		if s.PartUuid == "" || !strings.EqualFold(part.UUID, s.PartUuid) {
 			return infer.DeleteResponse{}, fmt.Errorf("%s (%s) has GPT id %s, not the %s this resource recorded; the partition is left alone", node, name, part.UUID, s.PartUuid)
 		}
-		disk, num := shellQuote(table.Path), strconv.Itoa(part.Number)
-		steps = append(steps,
-			"wipefs -q -a "+n,
-			"flock "+disk+" sgdisk -d "+num+" "+disk+" >/dev/null",
-			"partx -d --nr "+num+" "+disk+" 2>/dev/null || true")
+		steps = append(steps, deleteSwapPartCommand(table.Path, part.Number, node, name, s.PartUuid))
 	}
 	for _, step := range steps {
 		if _, err := m.must(ctx, m.escalate(step)); err != nil {
