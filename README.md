@@ -658,6 +658,10 @@ edits the `127.0.1.1` line in place, and restarts avahi when the name really cha
 avahi publishes `<hostname>.local` and the usual reason to rename a machine is that the old name
 should stop answering. A reload can leave the previous name published; the restart is deliberate.
 
+Hostname refuses to write through a dangling hosts-file symlink. If the hosts file is missing and
+`sudo` also prints an `unable to resolve host` warning, the operation returns an error and leaves
+the file absent.
+
 `SambaSetting` is the surgical form of `SambaShare`, and the third instance of an idiom this package
 already had twice. `[global]` on a hand-tuned machine is dozens of settings nobody can reproduce
 from memory, so declaring the section means owning all of them — but being unable to change one key

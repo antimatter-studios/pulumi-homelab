@@ -65,8 +65,14 @@ type hostnameRead struct {
 	hostsLine string
 }
 
+func rejectDanglingHostsLink(hostsPath string) string {
+	path := shellQuote(hostsPath)
+	message := shellQuote("hosts path is a dangling symlink: " + hostsPath)
+	return "if [ -L " + path + " ] && [ ! -e " + path + " ]; then printf '%s\\n' " + message + " >&2; exit 1; fi"
+}
+
 func hostnameReadCommand(hostsPath string) string {
-	return "hostnamectl --static 2>/dev/null || cat /etc/hostname 2>/dev/null || true; " +
+	return rejectDanglingHostsLink(hostsPath) + "; hostnamectl --static 2>/dev/null || cat /etc/hostname 2>/dev/null || true; " +
 		"echo " + shellQuote(hostnameMark+"now") + "; hostname 2>/dev/null || true; " +
 		"echo " + shellQuote(hostnameMark+"hosts") + "; LC_ALL=C cat -- " + shellQuote(hostsPath)
 }
@@ -81,6 +87,8 @@ func readHostname(ctx context.Context, m *machine, hostsPath string) (hostnameRe
 	if asked.code != 0 {
 		// A failed existence test can also mean a permissions or I/O error.
 		// Check the single-file cat diagnostic in the fixed C locale instead.
+		// Additional stderr, including sudo's hostname resolution warning,
+		// makes the read fail rather than permitting creation of the file.
 		diagnostic := strings.TrimSuffix(asked.err, "\n")
 		if asked.code != 1 || !strings.HasSuffix(asked.out, hostnameMark+"hosts\n") ||
 			!strings.HasPrefix(diagnostic, "cat: ") ||
@@ -102,7 +110,10 @@ func hostnameSettleCommand(name, hostsPath, current, updated string, renaming bo
 	if updated != current {
 		steps = append(steps, heredoc(hostsPath, updated))
 	}
-	return strings.Join(steps, " && ")
+	if len(steps) == 0 {
+		return ""
+	}
+	return rejectDanglingHostsLink(hostsPath) + " && " + strings.Join(steps, " && ")
 }
 
 func settleHostname(ctx context.Context, m *machine, a HostnameArgs) (HostnameState, error) {
