@@ -77,6 +77,8 @@ func (m *module) Construct(ctx *pulumi.Context, name, typ, urn string) (r pulumi
 		r = &SudoRule{}
 	case "homelab:index:Swap":
 		r = &Swap{}
+	case "homelab:index:SwapPartition":
+		r = &SwapPartition{}
 	case "homelab:index:Symlink":
 		r = &Symlink{}
 	case "homelab:index:SystemdInstance":

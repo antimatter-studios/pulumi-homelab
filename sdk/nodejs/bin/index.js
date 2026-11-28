@@ -16,7 +16,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ignoreRules = exports.FluxApp = exports.types = exports.config = exports.User = exports.SystemdUnit = exports.SystemdInstance = exports.Symlink = exports.Swap = exports.SudoRule = exports.SshdConfig = exports.SshTunnel = exports.SshKey = exports.SambaUser = exports.SambaShare = exports.SambaSetting = exports.RcloneRemote = exports.Provider = exports.ProtectedFile = exports.Precondition = exports.PosixAcl = exports.OfficialInstall = exports.ManagedLine = exports.ManagedFile = exports.KernelCmdline = exports.Journald = exports.Hostname = exports.Group = exports.GitCheckout = exports.FstabEntry = exports.Directory = exports.DebPackage = exports.BootConfig = exports.AuthorizedKey = exports.Archive = exports.AptPackages = exports.AptPackage = void 0;
+exports.ignoreRules = exports.FluxApp = exports.types = exports.config = exports.User = exports.SystemdUnit = exports.SystemdInstance = exports.Symlink = exports.SwapPartition = exports.Swap = exports.SudoRule = exports.SshdConfig = exports.SshTunnel = exports.SshKey = exports.SambaUser = exports.SambaShare = exports.SambaSetting = exports.RcloneRemote = exports.Provider = exports.ProtectedFile = exports.Precondition = exports.PosixAcl = exports.OfficialInstall = exports.ManagedLine = exports.ManagedFile = exports.KernelCmdline = exports.Journald = exports.Hostname = exports.Group = exports.GitCheckout = exports.FstabEntry = exports.Directory = exports.DebPackage = exports.BootConfig = exports.AuthorizedKey = exports.Archive = exports.AptPackages = exports.AptPackage = void 0;
 const pulumi = require("@pulumi/pulumi");
 const utilities = require("./utilities");
 exports.AptPackage = null;
@@ -77,6 +77,8 @@ exports.SudoRule = null;
 utilities.lazyLoad(exports, ["SudoRule"], () => require("./sudoRule"));
 exports.Swap = null;
 utilities.lazyLoad(exports, ["Swap"], () => require("./swap"));
+exports.SwapPartition = null;
+utilities.lazyLoad(exports, ["SwapPartition"], () => require("./swapPartition"));
 exports.Symlink = null;
 utilities.lazyLoad(exports, ["Symlink"], () => require("./symlink"));
 exports.SystemdInstance = null;
@@ -150,6 +152,8 @@ const _module = {
                 return new exports.SudoRule(name, undefined, { urn });
             case "homelab:index:Swap":
                 return new exports.Swap(name, undefined, { urn });
+            case "homelab:index:SwapPartition":
+                return new exports.SwapPartition(name, undefined, { urn });
             case "homelab:index:Symlink":
                 return new exports.Symlink(name, undefined, { urn });
             case "homelab:index:SystemdInstance":

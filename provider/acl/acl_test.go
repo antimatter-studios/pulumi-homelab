@@ -247,3 +247,31 @@ func TestJavaScriptWhitespace(t *testing.T) {
 		t.Errorf("NEL effective: %+v", access)
 	}
 }
+
+func TestParseOwnership(t *testing.T) {
+	out := "# file: /srv/docs/.env\n# owner: root\n# group: rwgroup\n# flags: -s-\nuser::rw-\ngroup::rw-\nother::---\n"
+	if owner, group := ParseOwnership(out); owner != "root" || group != "rwgroup" {
+		t.Fatalf("got %q %q", owner, group)
+	}
+	// -c output has no header, and says nothing about ownership
+	if owner, group := ParseOwnership("user::rw-\ngroup::rw-\nother::---\n"); owner != "" || group != "" {
+		t.Fatalf("got %q %q", owner, group)
+	}
+	// the header is comments, so the entries parse the same with or without it
+	access, _ := ParseGetfacl(out)
+	if len(access) != 3 || access[2].Type != Other || access[2].Perms != "---" {
+		t.Fatalf("entries %+v", access)
+	}
+}
+
+func TestNamed(t *testing.T) {
+	for _, c := range []struct {
+		kind EntryType
+		name string
+		want bool
+	}{{User, "svc", true}, {Group, "rogroup", true}, {User, "", false}, {Group, "", false}, {Other, "", false}, {Mask, "", false}} {
+		if got := Named(c.kind, c.name); got != c.want {
+			t.Errorf("%s:%s: got %v", c.kind, c.name, got)
+		}
+	}
+}

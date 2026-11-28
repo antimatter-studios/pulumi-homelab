@@ -7,7 +7,7 @@ import * as outputs from "./types/output";
 import * as utilities from "./utilities";
 
 /**
- * Named entries on a POSIX ACL, set and removed without touching anybody else's.
+ * Entries on a POSIX ACL, and optionally the owner and group, set and read back without touching the content.
  */
 export class PosixAcl extends pulumi.CustomResource {
     /**
@@ -45,12 +45,29 @@ export class PosixAcl extends pulumi.CustomResource {
      */
     public /*out*/ readonly defaultActual!: pulumi.Output<outputs.provider.AclEntryActual[]>;
     public readonly defaultEntries!: pulumi.Output<outputs.provider.AclEntrySettled[]>;
+    /**
+     * Named default entries on the path that are not declared, for an exact declaration.
+     */
+    public /*out*/ readonly defaultExtra!: pulumi.Output<outputs.provider.AclEntryActual[] | undefined>;
     public readonly entries!: pulumi.Output<outputs.provider.AclEntrySettled[]>;
+    public readonly exact!: pulumi.Output<boolean | undefined>;
+    /**
+     * Named access entries on the path that are not declared, for an exact declaration.
+     */
+    public /*out*/ readonly extra!: pulumi.Output<outputs.provider.AclEntryActual[] | undefined>;
+    /**
+     * The owning group getfacl reports, while one is declared.
+     */
+    public readonly group!: pulumi.Output<string | undefined>;
     public readonly normalise!: pulumi.Output<outputs.provider.AclNormaliseArgs | undefined>;
     /**
      * How many directories the last normalise changed.
      */
     public /*out*/ readonly normalised!: pulumi.Output<number | undefined>;
+    /**
+     * The owning user getfacl reports, while one is declared.
+     */
+    public readonly owner!: pulumi.Output<string | undefined>;
     public readonly path!: pulumi.Output<string>;
 
     /**
@@ -69,18 +86,28 @@ export class PosixAcl extends pulumi.CustomResource {
             }
             resourceInputs["defaultEntries"] = args ? args.defaultEntries : undefined;
             resourceInputs["entries"] = args ? args.entries : undefined;
+            resourceInputs["exact"] = args ? args.exact : undefined;
+            resourceInputs["group"] = args ? args.group : undefined;
             resourceInputs["normalise"] = args ? args.normalise : undefined;
+            resourceInputs["owner"] = args ? args.owner : undefined;
             resourceInputs["path"] = args ? args.path : undefined;
             resourceInputs["actual"] = undefined /*out*/;
             resourceInputs["defaultActual"] = undefined /*out*/;
+            resourceInputs["defaultExtra"] = undefined /*out*/;
+            resourceInputs["extra"] = undefined /*out*/;
             resourceInputs["normalised"] = undefined /*out*/;
         } else {
             resourceInputs["actual"] = undefined /*out*/;
             resourceInputs["defaultActual"] = undefined /*out*/;
             resourceInputs["defaultEntries"] = undefined /*out*/;
+            resourceInputs["defaultExtra"] = undefined /*out*/;
             resourceInputs["entries"] = undefined /*out*/;
+            resourceInputs["exact"] = undefined /*out*/;
+            resourceInputs["extra"] = undefined /*out*/;
+            resourceInputs["group"] = undefined /*out*/;
             resourceInputs["normalise"] = undefined /*out*/;
             resourceInputs["normalised"] = undefined /*out*/;
+            resourceInputs["owner"] = undefined /*out*/;
             resourceInputs["path"] = undefined /*out*/;
         }
         opts = pulumi.mergeOptions(utilities.resourceOptsDefaults(), opts);
@@ -101,9 +128,21 @@ export interface PosixAclArgs {
      */
     entries?: pulumi.Input<pulumi.Input<inputs.provider.AclEntryArgsArgs>[]>;
     /**
+     * The path's named entries, access and default, are exactly the declared ones: any other is removed, as setfacl --set would, and one that appears later is drift. Without it, entries this resource did not declare are left alone.
+     */
+    exact?: pulumi.Input<boolean>;
+    /**
+     * The owning group, by name, chowned and read back from getfacl. Left alone when absent.
+     */
+    group?: pulumi.Input<string>;
+    /**
      * Correct directories under the path that have one exact mode and group to another mode.
      */
     normalise?: pulumi.Input<inputs.provider.AclNormaliseArgsArgs>;
+    /**
+     * The owning user, by name, chowned and read back from getfacl. Left alone when absent.
+     */
+    owner?: pulumi.Input<string>;
     /**
      * The path whose ACL this sets.
      */

@@ -40,10 +40,9 @@ func TestEntryRefusal(t *testing.T) {
 			t.Fatal(r)
 		}
 	})
-	t.Run("refuses the base entries as access entries, and names the resource that owns them", func(t *testing.T) {
+	t.Run("allows the base entries as access entries, which on a file are its mode bits", func(t *testing.T) {
 		for _, kind := range []acl.EntryType{acl.User, acl.Group, acl.Other} {
-			r := entryRefusal(named(kind, "", "rwx"), acl.Access)
-			if !strings.Contains(r, "mode") || !strings.Contains(r, "Directory") {
+			if r := entryRefusal(named(kind, "", "rw-"), acl.Access); r != "" {
 				t.Errorf("%s: %q", kind, r)
 			}
 		}
@@ -66,12 +65,6 @@ func TestEntryRefusal(t *testing.T) {
 	t.Run("refuses an other entry that names somebody", func(t *testing.T) {
 		if r := entryRefusal(named(acl.Other, "svc", "rwx"), acl.Access); !strings.Contains(r, "no name") {
 			t.Fatal(r)
-		}
-	})
-	t.Run("says it in the words the TypeScript did", func(t *testing.T) {
-		want := "group:: is the group mode bits under another name, and setting it here would fight Directory's mode over the same three numbers. Set the mode there. As a defaultEntry it is a different thing and is allowed, because no mode sets that."
-		if r := entryRefusal(named(acl.Group, "", "rwx"), acl.Access); r != want {
-			t.Fatalf("got %q", r)
 		}
 	})
 }

@@ -6,7 +6,7 @@ exports.PosixAcl = void 0;
 const pulumi = require("@pulumi/pulumi");
 const utilities = require("./utilities");
 /**
- * Named entries on a POSIX ACL, set and removed without touching anybody else's.
+ * Entries on a POSIX ACL, and optionally the owner and group, set and read back without touching the content.
  */
 class PosixAcl extends pulumi.CustomResource {
     /**
@@ -46,19 +46,29 @@ class PosixAcl extends pulumi.CustomResource {
             }
             resourceInputs["defaultEntries"] = args ? args.defaultEntries : undefined;
             resourceInputs["entries"] = args ? args.entries : undefined;
+            resourceInputs["exact"] = args ? args.exact : undefined;
+            resourceInputs["group"] = args ? args.group : undefined;
             resourceInputs["normalise"] = args ? args.normalise : undefined;
+            resourceInputs["owner"] = args ? args.owner : undefined;
             resourceInputs["path"] = args ? args.path : undefined;
             resourceInputs["actual"] = undefined /*out*/;
             resourceInputs["defaultActual"] = undefined /*out*/;
+            resourceInputs["defaultExtra"] = undefined /*out*/;
+            resourceInputs["extra"] = undefined /*out*/;
             resourceInputs["normalised"] = undefined /*out*/;
         }
         else {
             resourceInputs["actual"] = undefined /*out*/;
             resourceInputs["defaultActual"] = undefined /*out*/;
             resourceInputs["defaultEntries"] = undefined /*out*/;
+            resourceInputs["defaultExtra"] = undefined /*out*/;
             resourceInputs["entries"] = undefined /*out*/;
+            resourceInputs["exact"] = undefined /*out*/;
+            resourceInputs["extra"] = undefined /*out*/;
+            resourceInputs["group"] = undefined /*out*/;
             resourceInputs["normalise"] = undefined /*out*/;
             resourceInputs["normalised"] = undefined /*out*/;
+            resourceInputs["owner"] = undefined /*out*/;
             resourceInputs["path"] = undefined /*out*/;
         }
         opts = pulumi.mergeOptions(utilities.resourceOptsDefaults(), opts);

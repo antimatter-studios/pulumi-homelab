@@ -15,14 +15,17 @@ import (
 	"github.com/pulumi/pulumi-go-provider/infer"
 )
 
-// PosixAcl is named entries on a path's POSIX ACL, and only those. Ported from
+// PosixAcl is entries on a path's POSIX ACL, and optionally its owner and group. Ported from
 // src/resources/acl.ts.
 //
-// It sets what it declares, removes what it declared before and no longer does, and never touches
-// an entry somebody else put there (no setfacl -b or --set). The owner, group and other entries
-// belong to Directory's mode and are refused as access entries; a mask is computed by setfacl and is
-// refused in either scope. The optional normalise rule walks the tree with find on the machine,
-// counting through wc, so nothing of the walk is buffered here.
+// It sets what it declares, removes what it declared before and no longer does, and by default
+// never touches an entry somebody else put there (no setfacl -b or --set). With exact, the named
+// entries on the path are exactly the declared ones, and any other is removed. The owning user::,
+// group:: and other:: entries may be declared as access entries, which on a file are its mode bits;
+// a mask is computed by setfacl and is refused in either scope. Owner and group are chowned, and
+// read back by name from getfacl's header. Nothing here reads or writes the path's content. The
+// optional normalise rule walks the tree with find on the machine, counting through wc, so nothing
+// of the walk is buffered here.
 type PosixAcl struct{}
 
 // AclEntryArgs is one declared entry.
@@ -61,6 +64,9 @@ type PosixAclArgs struct {
 	Entries        []AclEntryArgs    `pulumi:"entries,optional"`
 	DefaultEntries []AclEntryArgs    `pulumi:"defaultEntries,optional"`
 	Normalise      *AclNormaliseArgs `pulumi:"normalise,optional"`
+	Owner          *string           `pulumi:"owner,optional"`
+	Group          *string           `pulumi:"group,optional"`
+	Exact          *bool             `pulumi:"exact,optional"`
 }
 
 // PosixAclState is what is kept in state.
@@ -72,11 +78,22 @@ type PosixAclState struct {
 	DefaultActual  []AclEntryActual  `pulumi:"defaultActual"`
 	Normalise      *AclNormaliseArgs `pulumi:"normalise,optional"`
 	Normalised     *int              `pulumi:"normalised,optional"`
+	// Owner and Group are what getfacl's header says, kept only while they are declared (or for an
+	// import, which cannot know whether they will be), so a state that never declared them is
+	// unchanged.
+	Owner *string `pulumi:"owner,optional"`
+	Group *string `pulumi:"group,optional"`
+	// Exact is set only when true, and Extra and DefaultExtra are the named entries the path has
+	// that are not declared: drift, for an exact declaration.
+	Exact        *bool            `pulumi:"exact,optional"`
+	Extra        []AclEntryActual `pulumi:"extra,optional"`
+	DefaultExtra []AclEntryActual `pulumi:"defaultExtra,optional"`
 }
 
 func (a *AclEntryArgs) Annotate(an infer.Annotator) {
-	an.Describe(&a.Type, "user, group, mask or other. A mask is refused; user, group and other without a name are refused as access entries.")
-	an.Describe(&a.Name, "Who the entry is for. Empty or absent for the owning entries, which only defaultEntries may set.")
+	an.Describe(&a.Type, "user, group, mask or other. A mask is refused, because setfacl computes it.")
+	an.Describe(&a.Name, "Who the entry is for. Empty or absent for the owning entries user::, group:: and other::, "+
+		"which as access entries are the mode bits.")
 	an.Describe(&a.Perms, "rwx, r-x, rw, an octal digit... settled to the three-letter form getfacl prints.")
 }
 
@@ -92,16 +109,25 @@ func (a *PosixAclArgs) Annotate(an infer.Annotator) {
 	an.Describe(&a.Entries, "Access entries: named users and groups.")
 	an.Describe(&a.DefaultEntries, "Default entries, which new entries under a directory inherit.")
 	an.Describe(&a.Normalise, "Correct directories under the path that have one exact mode and group to another mode.")
+	an.Describe(&a.Owner, "The owning user, by name, chowned and read back from getfacl. Left alone when absent.")
+	an.Describe(&a.Group, "The owning group, by name, chowned and read back from getfacl. Left alone when absent.")
+	an.Describe(&a.Exact, "The path's named entries, access and default, are exactly the declared ones: any other is "+
+		"removed, as setfacl --set would, and one that appears later is drift. Without it, entries this resource "+
+		"did not declare are left alone.")
 }
 
 func (a *PosixAclState) Annotate(an infer.Annotator) {
 	an.Describe(&a.Actual, "What getfacl grants for each declared access entry, effective permissions included.")
 	an.Describe(&a.DefaultActual, "What getfacl grants for each declared default entry.")
 	an.Describe(&a.Normalised, "How many directories the last normalise changed.")
+	an.Describe(&a.Owner, "The owning user getfacl reports, while one is declared.")
+	an.Describe(&a.Group, "The owning group getfacl reports, while one is declared.")
+	an.Describe(&a.Extra, "Named access entries on the path that are not declared, for an exact declaration.")
+	an.Describe(&a.DefaultExtra, "Named default entries on the path that are not declared, for an exact declaration.")
 }
 
 func (a *PosixAcl) Annotate(an infer.Annotator) {
-	an.Describe(&a, "Named entries on a POSIX ACL, set and removed without touching anybody else's.")
+	an.Describe(&a, "Entries on a POSIX ACL, and optionally the owner and group, set and read back without touching the content.")
 	an.SetToken("index", "PosixAcl")
 }
 
@@ -123,17 +149,74 @@ func entryRefusal(entry acl.EntryArgs, scope acl.Scope) string {
 	if entry.Type == acl.Other && named {
 		return "an other entry names nobody, so it takes no name"
 	}
-	if !named && scope == acl.Access {
-		bits := map[acl.EntryType]string{acl.User: "owner", acl.Group: "group", acl.Other: "other"}[entry.Type]
-		if bits == "" {
-			// { user, group, other }[type] is undefined for a type that is none of them
-			bits = "undefined"
-		}
-		return string(entry.Type) + ":: is the " + bits + " mode bits under another name, and setting it here would " +
-			"fight Directory's mode over the same three numbers. Set the mode there. As a defaultEntry it " +
-			"is a different thing and is allowed, because no mode sets that."
+	return ""
+}
+
+var numericID = regexp.MustCompile(`^[0-9]+$`)
+
+// ownershipRefusal says why an owner or group cannot be declared, or "" when it can. getfacl reports
+// names, so a numeric id would differ from what is read on every refresh.
+func ownershipRefusal(value *string, what string) string {
+	if value == nil {
+		return ""
+	}
+	if jscompat.Trim(*value) == "" {
+		return "an empty " + what + " names nobody: leave it out to leave the " + what + " alone"
+	}
+	if numericID.MatchString(*value) {
+		return *value + " is a numeric id, and getfacl reports the " + what + " by name, so the two would differ " +
+			"on every refresh. Write the name."
 	}
 	return ""
+}
+
+// aclChownCommand is the chown for a declared owner and group that getfacl says differ, or "".
+func aclChownCommand(path string, owner, group *string, found *aclRead) string {
+	wantOwner := owner != nil && *owner != found.owner
+	wantGroup := group != nil && *group != found.group
+	switch {
+	case wantOwner && wantGroup:
+		return "chown " + shellQuote(*owner+":"+*group) + " " + shellQuote(path)
+	case wantOwner:
+		return "chown " + shellQuote(*owner) + " " + shellQuote(path)
+	case wantGroup:
+		return "chgrp " + shellQuote(*group) + " " + shellQuote(path)
+	}
+	return ""
+}
+
+// extraOf is the named entries found that are not wanted, as getfacl reports them.
+func extraOf(found []acl.Entry, wanted []AclEntrySettled) []AclEntryActual {
+	keys := map[string]bool{}
+	for _, w := range wanted {
+		keys[acl.EntryKey(acl.EntryType(w.Type), w.Name)] = true
+	}
+	out := []AclEntryActual{}
+	for _, e := range found {
+		if acl.Named(e.Type, e.Name) && !keys[acl.EntryKey(e.Type, e.Name)] {
+			out = append(out, AclEntryActual{Type: string(e.Type), Name: e.Name, Perms: e.Perms, Effective: e.Effective})
+		}
+	}
+	return out
+}
+
+// namedOnly drops the owning entries and other, which are always there and cannot be removed.
+func namedOnly(list []acl.EntryArgs) []acl.EntryArgs {
+	out := []acl.EntryArgs{}
+	for _, e := range list {
+		if acl.Named(e.Type, e.Name) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func trueOrNil(b *bool) *bool {
+	if b != nil && *b {
+		t := true
+		return &t
+	}
+	return nil
 }
 
 // aclStep is one entry to set or remove, in a scope.
@@ -301,11 +384,13 @@ func normaliseCheckCommand(path string, rule AclNormaliseArgs) string {
 
 type aclRead struct {
 	access, defaults []acl.Entry
+	owner, group     string
 }
 
 func readAcl(ctx context.Context, m *machine, path string) (*aclRead, error) {
 	// a path that is not there is an answer rather than a fault, and 9 is not a code getfacl uses
-	asked, err := m.ask(ctx, m.escalate("test -e "+shellQuote(path)+" || exit 9; getfacl -pc "+shellQuote(path)))
+	// -p without -c: the header carries the owner and group, read in the same call
+	asked, err := m.ask(ctx, m.escalate("test -e "+shellQuote(path)+" || exit 9; getfacl -p "+shellQuote(path)))
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +405,8 @@ func readAcl(ctx context.Context, m *machine, path string) (*aclRead, error) {
 		return nil, fmt.Errorf("could not read the ACL on %s: %s", path, jscompat.Trim(asked.err))
 	}
 	access, defaults := acl.ParseGetfacl(asked.out)
-	return &aclRead{access: access, defaults: defaults}, nil
+	owner, group := acl.ParseOwnership(asked.out)
+	return &aclRead{access: access, defaults: defaults, owner: owner, group: group}, nil
 }
 
 func actualOf(found []acl.Entry, wanted []AclEntrySettled) []AclEntryActual {
@@ -353,6 +439,15 @@ func settleAcl(ctx context.Context, m *machine, args PosixAclArgs, previous *Pos
 	if err != nil {
 		return PosixAclState{}, err
 	}
+	for _, o := range []struct {
+		value *string
+		what  string
+	}{{args.Owner, "owner"}, {args.Group, "group"}} {
+		if bad := ownershipRefusal(o.value, o.what); bad != "" {
+			return PosixAclState{}, errors.New(bad)
+		}
+	}
+	exact := deref(args.Exact)
 	before, err := readAcl(ctx, m, args.Path)
 	if err != nil {
 		return PosixAclState{}, err
@@ -379,16 +474,42 @@ func settleAcl(ctx context.Context, m *machine, args PosixAclArgs, previous *Pos
 	if previous != nil {
 		prevEntries, prevDefaults = previous.Entries, previous.DefaultEntries
 	}
-	for _, e := range acl.Abandoned(settledArgs(prevEntries), settledArgs(wanted.Entries)) {
-		remove = append(remove, aclStep{Entry: e, Scope: acl.Access})
-	}
-	for _, e := range acl.Abandoned(settledArgs(prevDefaults), settledArgs(wanted.DefaultEntries)) {
-		remove = append(remove, aclStep{Entry: e, Scope: acl.Default})
+	removing := map[string]bool{}
+	for _, pair := range []struct {
+		previous, wanted []AclEntrySettled
+		found            []acl.Entry
+		scope            acl.Scope
+	}{{prevEntries, wanted.Entries, before.access, acl.Access}, {prevDefaults, wanted.DefaultEntries, before.defaults, acl.Default}} {
+		gone := acl.Abandoned(settledArgs(pair.previous), settledArgs(pair.wanted))
+		if pair.scope == acl.Access {
+			// an owning access entry no longer declared is left as it is: it is the mode, and cannot be removed
+			gone = namedOnly(gone)
+		}
+		if exact {
+			for _, e := range extraOf(pair.found, pair.wanted) {
+				gone = append(gone, acl.EntryArgs{Type: acl.EntryType(e.Type), Name: e.Name, Perms: e.Perms})
+			}
+		}
+		for _, e := range gone {
+			key := string(pair.scope) + "|" + acl.EntryKey(e.Type, e.Name)
+			if !removing[key] {
+				removing[key] = true
+				remove = append(remove, aclStep{Entry: e, Scope: pair.scope})
+			}
+		}
 	}
 
 	command, err := setfaclCommand(args.Path, set, remove)
 	if err != nil {
 		return PosixAclState{}, err
+	}
+	// chown before setfacl: it changes no entry, and an entry set after it is checked after it
+	if chown := aclChownCommand(args.Path, args.Owner, args.Group, before); chown != "" {
+		if command == "" {
+			command = chown
+		} else {
+			command = chown + " && " + command
+		}
 	}
 	if command != "" {
 		if _, err := m.must(ctx, m.escalate(command)); err != nil {
@@ -429,8 +550,21 @@ func settleAcl(ctx context.Context, m *machine, args PosixAclArgs, previous *Pos
 			"grant it — a mask is suppressing it, which a chmod after this would explain",
 			strings.Join(stillWrong, ", "), args.Path, m.describe())
 	}
+	if (args.Owner != nil && *args.Owner != after.owner) || (args.Group != nil && *args.Group != after.group) {
+		return PosixAclState{}, fmt.Errorf("set the ownership of %s at %s to %s:%s and getfacl says %s:%s",
+			args.Path, m.describe(), deref(args.Owner), deref(args.Group), after.owner, after.group)
+	}
 
 	state := PosixAclState{Path: args.Path, Entries: wanted.Entries, DefaultEntries: wanted.DefaultEntries, Actual: actual, DefaultActual: defaultActual}
+	recordOwnership(&state, args.Owner != nil, args.Group != nil, after)
+	if exact {
+		state.Exact = trueOrNil(args.Exact)
+		state.Extra, state.DefaultExtra = extraOf(after.access, wanted.Entries), extraOf(after.defaults, wanted.DefaultEntries)
+		if len(state.Extra) > 0 || len(state.DefaultExtra) > 0 {
+			return PosixAclState{}, fmt.Errorf("removed the undeclared named entries on %s at %s and getfacl still lists %d",
+				args.Path, m.describe(), len(state.Extra)+len(state.DefaultExtra))
+		}
+	}
 	if args.Normalise == nil {
 		return state, nil
 	}
@@ -480,6 +614,14 @@ func (PosixAcl) Check(ctx context.Context, req infer.CheckRequest) (infer.CheckR
 			failures = append(failures, p.CheckFailure{Property: "normalise", Reason: bad})
 		}
 	}
+	for _, o := range []struct {
+		value *string
+		what  string
+	}{{args.Owner, "owner"}, {args.Group, "group"}} {
+		if bad := ownershipRefusal(o.value, o.what); bad != "" {
+			failures = append(failures, p.CheckFailure{Property: o.what, Reason: bad})
+		}
+	}
 	return infer.CheckResponse[PosixAclArgs]{Inputs: args, Failures: failures}, nil
 }
 
@@ -488,8 +630,13 @@ func previewAcl(args PosixAclArgs) (PosixAclState, error) {
 	if err != nil {
 		return PosixAclState{}, err
 	}
-	return PosixAclState{Path: args.Path, Entries: wanted.Entries, DefaultEntries: wanted.DefaultEntries,
-		Actual: []AclEntryActual{}, DefaultActual: []AclEntryActual{}}, nil
+	state := PosixAclState{Path: args.Path, Entries: wanted.Entries, DefaultEntries: wanted.DefaultEntries,
+		Actual: []AclEntryActual{}, DefaultActual: []AclEntryActual{}, Owner: args.Owner, Group: args.Group,
+		Exact: trueOrNil(args.Exact)}
+	if state.Exact != nil {
+		state.Extra, state.DefaultExtra = []AclEntryActual{}, []AclEntryActual{}
+	}
+	return state, nil
 }
 
 // Create sets the declared entries.
@@ -540,10 +687,17 @@ func (PosixAcl) Read(ctx context.Context, req infer.ReadRequest[PosixAclArgs, Po
 		state.DefaultEntries = []AclEntrySettled{}
 	}
 	if adopted(state) {
-		state.Actual, state.DefaultActual = everyEntry(actual)
+		var access []AclEntryActual
+		access, state.DefaultActual = everyEntry(actual)
+		state.Actual = append(access, baseEntries(actual)...)
+		recordOwnership(&state, true, true, actual)
 	} else {
 		state.Actual = actualOf(actual.access, state.Entries)
 		state.DefaultActual = actualOf(actual.defaults, state.DefaultEntries)
+		recordOwnership(&state, state.Owner != nil || inputs.Owner != nil, state.Group != nil || inputs.Group != nil, actual)
+		if deref(state.Exact) {
+			state.Extra, state.DefaultExtra = extraOf(actual.access, state.Entries), extraOf(actual.defaults, state.DefaultEntries)
+		}
 	}
 	return infer.ReadResponse[PosixAclArgs, PosixAclState]{ID: req.ID, Inputs: inputs, State: state}, nil
 }
@@ -572,6 +726,31 @@ func everyEntry(found *aclRead) (access, defaults []AclEntryActual) {
 	return access, defaults
 }
 
+// baseEntries is the owning user::, group:: and other:: access entries, as getfacl reports them:
+// what an import records so a declaration of them can be checked against the path.
+func baseEntries(found *aclRead) []AclEntryActual {
+	out := []AclEntryActual{}
+	for _, e := range found.access {
+		if e.Type != acl.Mask && !acl.Named(e.Type, e.Name) {
+			out = append(out, AclEntryActual{Type: string(e.Type), Name: e.Name, Perms: e.Perms, Effective: e.Effective})
+		}
+	}
+	return out
+}
+
+// recordOwnership keeps what getfacl says about the owner and group, for those that are tracked.
+func recordOwnership(state *PosixAclState, owner, group bool, found *aclRead) {
+	state.Owner, state.Group = nil, nil
+	if owner {
+		o := found.owner
+		state.Owner = &o
+	}
+	if group {
+		g := found.group
+		state.Group = &g
+	}
+}
+
 // importedAcl is the state and inputs an import establishes.
 //
 // Given the declaration (a read with inputs), it owns exactly the declared entries and projects
@@ -589,6 +768,11 @@ func importedAcl(id string, given PosixAclArgs, found *aclRead) (PosixAclState, 
 		}
 		state := PosixAclState{Path: id, Entries: wanted.Entries, DefaultEntries: wanted.DefaultEntries,
 			Actual: actualOf(found.access, wanted.Entries), DefaultActual: actualOf(found.defaults, wanted.DefaultEntries)}
+		recordOwnership(&state, given.Owner != nil, given.Group != nil, found)
+		if deref(given.Exact) {
+			state.Exact = trueOrNil(given.Exact)
+			state.Extra, state.DefaultExtra = extraOf(found.access, wanted.Entries), extraOf(found.defaults, wanted.DefaultEntries)
+		}
 		if given.Normalise != nil {
 			rule, err := resolveNormalise(*given.Normalise)
 			if err != nil {
@@ -600,7 +784,11 @@ func importedAcl(id string, given PosixAclArgs, found *aclRead) (PosixAclState, 
 		return state, given, nil
 	}
 	access, defaults := everyEntry(found)
-	state := PosixAclState{Path: id, Entries: []AclEntrySettled{}, DefaultEntries: []AclEntrySettled{}, Actual: access, DefaultActual: defaults}
+	// the owning entries and ownership are recorded for the diff, not offered as inputs: an import
+	// declares only the named entries, and leaves the mode and owner to whoever already owns them
+	state := PosixAclState{Path: id, Entries: []AclEntrySettled{}, DefaultEntries: []AclEntrySettled{},
+		Actual: append(slices.Clone(access), baseEntries(found)...), DefaultActual: defaults}
+	recordOwnership(&state, true, true, found)
 	inputs := PosixAclArgs{Path: id}
 	for _, e := range access {
 		inputs.Entries = append(inputs.Entries, declaredOf(e))
@@ -656,6 +844,14 @@ func (PosixAcl) Diff(_ context.Context, req infer.DiffRequest[PosixAclArgs, Posi
 		return strings.Join(parts, ",")
 	}
 	resp := p.DiffResponse{DeleteBeforeReplace: true, DetailedDiff: map[string]p.PropertyDiff{}}
+	for _, o := range []struct {
+		wanted, found *string
+		property      string
+	}{{req.Inputs.Owner, old.Owner, "owner"}, {req.Inputs.Group, old.Group, "group"}} {
+		if o.wanted != nil && (o.found == nil || *o.found != *o.wanted) {
+			resp.DetailedDiff[o.property] = p.PropertyDiff{Kind: p.Update}
+		}
+	}
 	if adopted(old) {
 		// imported without a declaration: no change while the path grants everything declared
 		for _, pair := range []struct {
@@ -669,6 +865,10 @@ func (PosixAcl) Diff(_ context.Context, req infer.DiffRequest[PosixAclArgs, Posi
 				return p.DiffResponse{}, err
 			}
 			if len(missing) > 0 {
+				resp.DetailedDiff[pair.property] = p.PropertyDiff{Kind: p.Update}
+			}
+			// exact: a named entry the path has and the declaration does not is a change
+			if deref(req.Inputs.Exact) && len(extraOf(actualEntries(pair.found), pair.wanted)) > 0 {
 				resp.DetailedDiff[pair.property] = p.PropertyDiff{Kind: p.Update}
 			}
 		}
@@ -695,6 +895,15 @@ func (PosixAcl) Diff(_ context.Context, req infer.DiffRequest[PosixAclArgs, Posi
 	if declared(old.DefaultEntries) != declared(wanted.DefaultEntries) || len(defaultDrift) > 0 {
 		resp.DetailedDiff["defaultEntries"] = p.PropertyDiff{Kind: p.Update}
 	}
+	if deref(old.Exact) != deref(req.Inputs.Exact) {
+		resp.DetailedDiff["exact"] = p.PropertyDiff{Kind: p.Update}
+	}
+	if deref(old.Exact) && len(old.Extra) > 0 {
+		resp.DetailedDiff["entries"] = p.PropertyDiff{Kind: p.Update}
+	}
+	if deref(old.Exact) && len(old.DefaultExtra) > 0 {
+		resp.DetailedDiff["defaultEntries"] = p.PropertyDiff{Kind: p.Update}
+	}
 	changed, err := normaliseChanged(old.Normalise, req.Inputs.Normalise)
 	if err != nil {
 		return p.DiffResponse{}, err
@@ -717,8 +926,10 @@ func (PosixAcl) Delete(ctx context.Context, req infer.DeleteRequest[PosixAclStat
 		path = req.ID
 	}
 	var remove []aclStep
-	for _, e := range req.State.Entries {
-		remove = append(remove, aclStep{Entry: e.acl(), Scope: acl.Access})
+	// the owning entries, other, owner and group are left as they are: they cannot be removed, and
+	// loosening them because a declaration went away is the opposite of safe
+	for _, e := range namedOnly(settledArgs(req.State.Entries)) {
+		remove = append(remove, aclStep{Entry: e, Scope: acl.Access})
 	}
 	for _, e := range req.State.DefaultEntries {
 		remove = append(remove, aclStep{Entry: e.acl(), Scope: acl.Default})

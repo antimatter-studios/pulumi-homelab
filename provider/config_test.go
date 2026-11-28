@@ -471,6 +471,7 @@ func TestRouteChangeLeavesEveryResourceDiffUnchanged(t *testing.T) {
 		"SshdConfig":      declaration(map[string]any{"file": "90-tool"}),
 		"SudoRule":        declaration(map[string]any{"user": "example", "passwordless": true}),
 		"Swap":            declaration(map[string]any{"enabled": false}),
+		"SwapPartition":   declaration(map[string]any{"disk": "/dev/sdx", "name": "swap-x", "sizeGib": 1.0, "priority": 10.0}),
 		"Symlink":         declaration(map[string]any{"path": "/srv/link", "target": "/srv/tool"}),
 		"SystemdInstance": declaration(map[string]any{"template": "example@.service", "instance": "test"}),
 		"SystemdUnit":     declaration(map[string]any{"name": "tool.service", "unit": "[Service]\nExecStart=/bin/true\n"}),

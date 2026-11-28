@@ -5,10 +5,9 @@ name: Release
 # the version in its ldflags, and publish a GitHub release whose notes are the CHANGELOG.md entries
 # added under "## Unreleased" since the previous tag (scripts/release.sh).
 #
-# Nothing is committed: main is protected (a pull request and a green CI for every change, admins
-# included), so a release is only a tag on a commit main already has. Callers run this after their
-# CI on main has passed (release-on-green.yml here); pulumi-homelab-k3s calls it the same way with
-# its own binary. The release script always comes from this repository's main.
+# The plugin release tag points to an existing green main commit. The Go module tag points to a
+# separate commit with the SDK version stamped in. The release script comes from this repository's
+# main.
 on:
   workflow_call:
     inputs:
@@ -158,6 +157,40 @@ jobs:
               fs.writeFileSync(file, JSON.stringify(pkg, null, 4) + "\n");
             }'
           npm pack --pack-destination "$GITHUB_WORKSPACE/dist"
+
+      - name: Go SDK
+        # Go resolves subdirectory modules from prefixed tags. The stamped commit is reachable
+        # through the Go module tag, while vX.Y.Z still points to the green main commit.
+        working-directory: src
+        env:
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          python3 - "$V" <<'PY'
+          from pathlib import Path
+          import sys
+
+          version = sys.argv[1]
+          replacements = [
+              ("pulumi-plugin.json", '"version": "0.0.0-dev"', f'"version": "{version}"', 1),
+              ("internal/pulumiUtilities.go", 'semver.MustParse("0.0.0-dev")',
+               f'semver.MustParse("{version}")', 2),
+              ("internal/pulumiVersion.go", '= semver.Version{}', f'= semver.MustParse("{version}")', 1),
+          ]
+          for name, original, stamped, count in replacements:
+              path = Path("sdk/go") / name
+              source = path.read_text()
+              if source.count(original) != count:
+                  sys.exit(f"{path}: expected {count} occurrences of {original}")
+              path.write_text(source.replace(original, stamped))
+          PY
+
+          # Use the release commit's timestamp so a rerun produces the same tagged commit.
+          release_date="$(git show -s --format=%cI HEAD)"
+          export GIT_AUTHOR_DATE="$release_date" GIT_COMMITTER_DATE="$release_date"
+          git add sdk/go
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Stamp Go SDK for v$V"
+          git push origin "HEAD:refs/tags/sdk/go/v$V"
 
       - name: GitHub release
         env:

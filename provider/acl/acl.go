@@ -117,6 +117,26 @@ func ParseGetfacl(out string) (access, defaults []Entry) {
 	return access, defaults
 }
 
+// ParseOwnership reads the owner and group from the header getfacl prints without -c ("# owner:"
+// and "# group:"), by name as getfacl gives them; "" for a line the output did not have.
+func ParseOwnership(out string) (owner, group string) {
+	for _, raw := range strings.Split(out, "\n") {
+		line := jscompat.Trim(raw)
+		if v, ok := strings.CutPrefix(line, "# owner:"); ok {
+			owner = jscompat.Trim(v)
+		} else if v, ok := strings.CutPrefix(line, "# group:"); ok {
+			group = jscompat.Trim(v)
+		}
+	}
+	return owner, group
+}
+
+// Named reports whether an entry is for a named user or group, which is what setfacl -x can
+// remove; the owning entries and other are always there.
+func Named(kind EntryType, name string) bool {
+	return (kind == User || kind == Group) && name != ""
+}
+
 // EntryKey identifies an entry by type and name.
 func EntryKey(kind EntryType, name string) string {
 	return string(kind) + ":" + name
