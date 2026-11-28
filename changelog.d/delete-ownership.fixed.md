@@ -1,1 +1,0 @@
-- Preserve externally managed files, archive prefixes, Samba shares and accounts during deletion. Guard tunnel units and shared configuration edits, and delete SSH keys before replacing their type at the same path.
