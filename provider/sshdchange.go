@@ -146,8 +146,12 @@ roots="$(dirname "$config") $dir"
 for r in $roots; do
   mkdir -p "$mirror$r" && cp -a "$r/." "$mirror$r/" || refuse "could not copy $r to check the change"
 done
-find "$mirror" -type f | while IFS= read -r f; do
-  grep -qi '^[[:space:]]*include[[:space:]]' "$f" 2>/dev/null || continue
+find "$mirror" -type f > "$work/mirror-files" || refuse "could not list the mirrored configuration files"
+while IFS= read -r f; do
+  grep -qi '^[[:space:]]*include[[:space:]]' "$f" || {
+    [ "$?" -eq 1 ] && continue
+    refuse "could not inspect Include directives in $f"
+  }
   awk -v m="$mirror" -v roots="$roots" '
     BEGIN { n = split(roots, r, " ") }
     tolower($1) == "include" {
@@ -160,8 +164,9 @@ find "$mirror" -type f | while IFS= read -r f; do
       }
       print out; next
     }
-    { print }' "$f" > "$f.pulumi-include" && cat "$f.pulumi-include" > "$f" && rm -f "$f.pulumi-include"
-done
+    { print }' "$f" > "$f.pulumi-include" && cat "$f.pulumi-include" > "$f" && rm -f "$f.pulumi-include" ||
+    refuse "could not rewrite Include directives in $f"
+done < "$work/mirror-files"
 if [ "$mode" = install ]; then
   cp "$work/candidate" "$mirror$target" || refuse "could not stage the new drop-in"
 else

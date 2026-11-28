@@ -143,9 +143,9 @@ func TestWriteFileCommand(t *testing.T) {
 		t.Fatalf("direct write got %q, want %q", got, wantDirect)
 	}
 	w.content += "x"
-	wantStaged := "mkdir -p '/srv/www' && (umask 077 && cat > '/srv/www/page.html.pulumi-upload') && " +
-		"chmod '0640' '/srv/www/page.html.pulumi-upload' && chown 'www-data:www-data' '/srv/www/page.html.pulumi-upload' && " +
-		"mv -f '/srv/www/page.html.pulumi-upload' '/srv/www/page.html' && systemctl daemon-reload"
+	wantStaged := `mkdir -p '/srv/www' && staged=$(mktemp -- '/srv/www/.pulumi-file.XXXXXX') &&
+trap 'rm -f -- "$staged"' EXIT &&
+cat > "$staged" && chmod '0640' "$staged" && chown 'www-data:www-data' "$staged" && mv -fT -- "$staged" '/srv/www/page.html' && systemctl daemon-reload`
 	if got := writeFileCommand(w); got != wantStaged {
 		t.Fatalf("staged write got %q, want %q", got, wantStaged)
 	}

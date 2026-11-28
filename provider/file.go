@@ -114,7 +114,8 @@ func digestOf(content []byte) string {
 func writeFileCommand(w wantedFile) string {
 	const inlineBytes = 64 * 1024
 	path := shell.Quote(w.path)
-	parent := shell.Quote(parentOf(w.path))
+	directory := parentOf(w.path)
+	parent := shell.Quote(directory)
 	reload := ""
 	if w.reloadSystemd {
 		reload = " && systemctl daemon-reload"
@@ -126,9 +127,11 @@ func writeFileCommand(w wantedFile) string {
 	if len(w.content) <= inlineBytes {
 		return fmt.Sprintf("mkdir -p %s && cat > %s\n%s%s", parent, path, attributes(path), reload)
 	}
-	staged := shell.Quote(w.path + ".pulumi-upload")
-	return fmt.Sprintf("mkdir -p %s && (umask 077 && cat > %s) && %s && mv -f %s %s%s",
-		parent, staged, attributes(staged), staged, path, reload)
+	template := shell.Quote(strings.TrimSuffix(directory, "/") + "/.pulumi-file.XXXXXX")
+	const stage = `mkdir -p %s && staged=$(mktemp -- %s) &&
+trap 'rm -f -- "$staged"' EXIT &&
+cat > "$staged" && %s && mv -fT -- "$staged" %s%s`
+	return fmt.Sprintf(stage, parent, template, attributes(`"$staged"`), path, reload)
 }
 
 // writeManagedFile puts the file there, exactly as described.
