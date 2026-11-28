@@ -75,11 +75,12 @@ func narrowTo(effective samba.Settings, keys []string) samba.Settings {
 // sambaApplyCommand stages the new file, refuses one testparm cannot parse, installs it and asks
 // samba to reload.
 func sambaApplyCommand(updated, config string) string {
-	return "staging=$(mktemp) && " +
-		heredocInto(`"$staging"`, updated) + "\n" +
-		`testparm -s "$staging" >/dev/null 2>&1 || { rm -f "$staging"; echo "the resulting smb.conf does not parse" >&2; exit 1; }; ` +
-		`install -m 0644 -o root -g root "$staging" ` + shellQuote(config) + ` && rm -f "$staging" && ` +
-		`smbcontrol all reload-config >/dev/null 2>&1 || true`
+	return `staging=$(mktemp) && trap 'rm -f "$staging"' EXIT && ` +
+		heredocInto(`"$staging"`, updated,
+			`{ testparm -s "$staging" >/dev/null 2>&1 || { echo "the resulting smb.conf does not parse" >&2; exit 1; }; }`,
+			`install -m 0644 -o root -g root "$staging" `+shellQuote(config),
+			// There may be no running Samba process to notify.
+			`{ smbcontrol all reload-config >/dev/null 2>&1 || true; }`)
 }
 
 func catConf(ctx context.Context, m *machine, config string) (string, error) {

@@ -1,10 +1,14 @@
 package homelab
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/antimatter-studios/pulumi-homelab/provider/remote"
 )
 
 func fwd(remote, local int, more ...string) TunnelForward {
@@ -343,13 +347,49 @@ func TestWriteCommand(t *testing.T) {
 		}
 	})
 	t.Run("groups the verify, since && and || associate left to right", func(t *testing.T) {
-		if !strings.Contains(command, "{ ! command -v systemd-analyze >/dev/null || systemd-analyze verify") || !strings.Contains(command, "; }") {
-			t.Fatal(command)
+		// Verification is required now, so a plain && chain needs no fallback group.
+		staged := `"$dir"/'autossh-b-22.service'`
+		chain := `cat > ` + staged + ` <<'PULUMI_EOF' && systemd-analyze verify ` + staged +
+			` && install -m 0644 -o root -g root ` + staged + ` '/etc/systemd/system/autossh-b-22.service' && systemctl daemon-reload`
+		if !strings.HasSuffix(lines[0], chain) || strings.Contains(lines[0], "||") {
+			t.Fatalf("verification must gate installation: %s", lines[0])
 		}
 	})
-	t.Run("requires the verify where systemd-analyze exists and skips it where it does not", func(t *testing.T) {
-		if !strings.Contains(command, "! command -v systemd-analyze") || !strings.Contains(command, "systemd-analyze verify") {
-			t.Fatal(command)
+	t.Run("refuses install without systemd-analyze and verifies when available", func(t *testing.T) {
+		for _, available := range []bool{false, true} {
+			name := "missing verifier"
+			if available {
+				name = "available verifier"
+			}
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				verified := shellQuote(filepath.Join(dir, "verified"))
+				path := unitPath("autossh-b-22", dir)
+				utilities := map[string]string{
+					"mktemp": "", "cat": "", "rm": "",
+					"install":   "test -s " + verified + ` && cat "$7" > "$8"`,
+					"systemctl": "test -s " + shellQuote(path),
+				}
+				if available {
+					utilities["systemd-analyze"] = `test "$1" = verify && test -s "$2" && printf '%s' "$2" > ` + verified
+				}
+				m := &machine{runner: shellStepRunner(t, utilities), cfg: remote.Config{Escalation: "sudo"}}
+				_, err := m.must(t.Context(), m.escalate(writeCommand("autossh-b-22", path, file)))
+				if !available {
+					requireStepError(t, err, "systemd-analyze: not found")
+					if _, err := os.Stat(path); !os.IsNotExist(err) {
+						t.Fatalf("unit must remain absent after verification fails: %v", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				installed, err := os.ReadFile(path)
+				if err != nil || string(installed) != file {
+					t.Fatalf("verified unit was not installed: %v", err)
+				}
+			})
 		}
 	})
 	t.Run("does not enable or restart anything, which cannot follow a terminator", func(t *testing.T) {

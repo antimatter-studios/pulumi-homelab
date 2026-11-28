@@ -160,6 +160,14 @@ func (SambaUser) Delete(ctx context.Context, req infer.DeleteRequest[SambaUserSt
 	if err != nil {
 		return infer.DeleteResponse{}, err
 	}
-	_, err = m.must(ctx, m.escalate("smbpasswd -x "+shellQuote(req.ID)+" >/dev/null 2>&1 || true"))
+	// A failed passdb lookup cannot tell us the user is already gone.
+	users, err := m.must(ctx, m.escalate("pdbedit -L"))
+	if err != nil {
+		return infer.DeleteResponse{}, err
+	}
+	if !slices.Contains(samba.ParseSambaUsers(users), req.ID) {
+		return infer.DeleteResponse{}, nil
+	}
+	_, err = m.must(ctx, m.escalate("smbpasswd -x "+shellQuote(req.ID)))
 	return infer.DeleteResponse{}, err
 }

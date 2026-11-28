@@ -264,13 +264,13 @@ func sameForwards(a, b []TunnelForward) bool {
 	return shape(a) == shape(b)
 }
 
-// writeCommand stages the unit in a private directory, verifies it where systemd-analyze exists,
+// writeCommand stages the unit in a private directory, verifies it with systemd-analyze,
 // installs it and reloads systemd, with the heredoc terminator alone on its line.
 func writeCommand(unit, path, file string) string {
 	staged := `"$dir"/` + shellQuote(unit+".service")
 	return `dir=$(mktemp -d) && trap 'rm -rf "$dir"' EXIT && ` +
 		heredocInto(staged, file,
-			"{ ! command -v systemd-analyze >/dev/null || systemd-analyze verify "+staged+"; }",
+			"systemd-analyze verify "+staged,
 			"install -m 0644 -o root -g root "+staged+" "+shellQuote(path),
 			"systemctl daemon-reload")
 }
@@ -378,9 +378,8 @@ func settleTunnel(ctx context.Context, m *machine, args SshTunnelArgs) (SshTunne
 			if detail == "" {
 				detail = wrote.out
 			}
-			return SshTunnelState{}, fmt.Errorf("could not install %s on %s: %s\n"+
-				"Nothing was installed — the unit was checked in a temporary directory first, so the "+
-				"machine still has whatever it had before.", path, m.describe(), jscompat.Trim(detail))
+			return SshTunnelState{}, fmt.Errorf("could not install %s on %s (exit %d): %s",
+				path, m.describe(), wrote.code, jscompat.Trim(detail))
 		}
 	}
 	if rewrite || bounce {
@@ -582,7 +581,17 @@ func (SshTunnel) Diff(_ context.Context, req infer.DiffRequest[SshTunnelArgs, Ss
 
 func tunnelDeleteCommand(unit, path string) string {
 	service := shellQuote(unit + ".service")
-	return "systemctl disable --now " + service + " || true; rm -f " + shellQuote(path) + " && systemctl daemon-reload"
+	file := shellQuote(path)
+	disable := "systemctl disable --now " + service
+	// If the file is gone, systemd may still have a running unit. Only skip
+	// disabling it when systemd confirms the unit is missing and inactive.
+	return "if [ -e " + file + " ] || [ -L " + file + " ]; then " + disable + "; else\n" +
+		"  state=$(systemctl show --property=LoadState --property=ActiveState " + service + ") || exit $?\n" +
+		"  case \"$state\" in\n" +
+		"    'LoadState=not-found\nActiveState=inactive'|'ActiveState=inactive\nLoadState=not-found') ;;\n" +
+		"    *) " + disable + " ;;\n" +
+		"  esac\n" +
+		"fi && rm -f " + file + " && systemctl daemon-reload"
 }
 
 func (SshTunnel) Delete(ctx context.Context, req infer.DeleteRequest[SshTunnelState]) (infer.DeleteResponse, error) {

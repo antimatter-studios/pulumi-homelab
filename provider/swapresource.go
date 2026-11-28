@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -184,23 +185,33 @@ func swapDisableCommand(dphys *string, unit, fstab string, only *string) string 
 	return strings.Join(steps, "; ")
 }
 
-func swapEnableCommand(path string, sizeMb int, dphys *string, unit, fstab string) string {
+func swapEnableCommand(path string, sizeMb int, active bool, dphys *string, unit, fstab string) string {
 	file, directory := shellQuote(path), shellQuote(parentOf(path))
 	size := strconv.Itoa(sizeMb)
-	guard := `if [ "$(stat -f -c %T ` + directory + `)" = btrfs ]; then ` +
-		`echo "a swapfile on btrfs needs chattr +C on an empty file, which this resource does not do" >&2; exit 1; fi`
 	steps := []string{
-		"swapoff " + file + " 2>/dev/null || true",
-		"{ fallocate -l " + size + "M " + file + " || dd if=/dev/zero of=" + file + " bs=1M count=" + size + " status=none; }",
-		"chmod 0600 " + file,
-		"mkswap " + file + " >/dev/null",
-		"swapon " + file,
-		"grep -q " + file + " " + shellQuote(fstab) + ` || printf '%s none swap sw 0 0\n' ` + file + " >> " + shellQuote(fstab),
+		"filesystem=$(stat -f -c %T " + directory + ")",
+		`if [ "$filesystem" = btrfs ]; then echo "a swapfile on btrfs needs chattr +C on an empty file, which this resource does not do" >&2; exit 1; fi`,
 	}
+	if active {
+		steps = append(steps, "swapoff "+file)
+	}
+	steps = append(steps,
+		"{ fallocate -l "+size+"M "+file+" || dd if=/dev/zero of="+file+" bs=1M count="+size+" status=none; }",
+		"chmod 0600 "+file,
+		"mkswap "+file+" >/dev/null",
+		"swapon "+file,
+		"if grep -qF -- "+file+" "+shellQuote(fstab)+"; then :; "+
+			`else status=$?; [ "$status" -eq 1 ] || exit "$status"; printf '%s none swap sw 0 0\n' `+file+" >> "+shellQuote(fstab)+"; fi",
+	)
 	if dphys != nil {
-		steps = append(steps, "systemctl disable --now "+shellQuote(unit)+" || true", "systemctl mask "+shellQuote(unit)+" || true")
+		if *dphys == "masked" || *dphys == "masked-runtime" {
+			steps = append(steps, "systemctl stop "+shellQuote(unit))
+		} else {
+			steps = append(steps, "systemctl disable --now "+shellQuote(unit))
+		}
+		steps = append(steps, "systemctl mask "+shellQuote(unit))
 	}
-	return guard + "; " + strings.Join(steps, " && ")
+	return strings.Join(steps, " && ")
 }
 
 func swapSettle(ctx context.Context, m *machine, a SwapArgs) (SwapState, error) {
@@ -218,7 +229,8 @@ func swapSettle(ctx context.Context, m *machine, a SwapArgs) (SwapState, error) 
 		if a.SizeMb == nil {
 			return SwapState{}, errors.New("swap that is enabled needs a sizeMb")
 		}
-		if _, err := m.must(ctx, m.escalate(swapEnableCommand(path, *a.SizeMb, before.Dphys, unit, fstab))); err != nil {
+		active := slices.ContainsFunc(before.Active, func(s SwapActive) bool { return s.Path == path })
+		if _, err := m.must(ctx, m.escalate(swapEnableCommand(path, *a.SizeMb, active, before.Dphys, unit, fstab))); err != nil {
 			return SwapState{}, err
 		}
 	case "disable":
