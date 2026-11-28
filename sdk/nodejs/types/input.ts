@@ -8,7 +8,7 @@ import * as outputs from "../types/output";
 export namespace provider {
     export interface AclEntryArgsArgs {
         /**
-         * Who the entry is for. Empty or absent for the owning entries, which only defaultEntries may set.
+         * Who the entry is for. Empty or absent for the owning entries user::, group:: and other::, which as access entries are the mode bits.
          */
         name?: pulumi.Input<string>;
         /**
@@ -16,7 +16,7 @@ export namespace provider {
          */
         perms: pulumi.Input<string>;
         /**
-         * user, group, mask or other. A mask is refused; user, group and other without a name are refused as access entries.
+         * user, group, mask or other. A mask is refused, because setfacl computes it.
          */
         type: pulumi.Input<string>;
     }
